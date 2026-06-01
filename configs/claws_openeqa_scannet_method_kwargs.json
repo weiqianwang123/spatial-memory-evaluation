@@ -1,0 +1,18 @@
+{
+  "spatial_rag_root": "/home/robin_wang/ClawS-SpatialRAG",
+  "memory_db": "spatial-memory-evaluation/results/openeqa-scannet-dbs/{episode}.db",
+  "scene_id": "auto",
+  "build_from_sequence": true,
+  "overwrite_memory_db": false,
+  "embedding_provider": "mock",
+  "embedding_dim": 1024,
+  "top_k": 5,
+  "object_limit": 500,
+  "max_build_frames": null,
+  "build_frame_stride": 1,
+  "yolo_model": "/home/robin_wang/ClawS-SpatialRAG/yolo11n.pt",
+  "track_confidence": 0.45,
+  "min_store_confidence": 0.45,
+  "min_confirm_frames": 2,
+  "lexical_fallback": true
+}
