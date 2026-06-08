@@ -120,6 +120,98 @@ spatial-memory-evaluation/results/dualmap-current-scene-object-metrics.json
 spatial-memory-evaluation/results/dualmap-current-scene-object-metrics.md
 ```
 
+For full scene recall over every exported DualMap object:
+
+```bash
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/evaluate_dualmap_current_scene_recall.py
+```
+
+## HOV-SG Current Scene Baseline
+
+HOV-SG only supports `get_object(query)` in this harness. `get_memory_text`
+intentionally raises `NotImplementedError`.
+
+The adapter expects a precomputed HOV-SG feature map:
+
+```text
+<hovsg-result-path>/
+  mask_feats.pt
+  objects/
+    pcd_0.ply
+    pcd_1.ply
+    ...
+```
+
+The HOV-SG repo is expected at:
+
+```text
+/home/robin_wang/HOV-SG
+```
+
+Evaluate the current ScanNet++ scene once the HOV-SG feature map exists:
+
+```bash
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/evaluate_hovsg_current_scene_recall.py \
+  --hovsg-result-path /data/mondo-training-dataset/semantic_mapping/hovsg/scannetpp_036bce3393/scannet
+```
+
+To build that feature map from the already exported ScanNet++ RGB-D sequence:
+
+```bash
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/build_hovsg_current_scene_map.py \
+  --skip-frames 100
+```
+
+For a fast environment smoke test, use `--skip-frames 2000 --merge-type sequential`.
+
+Visualize the saved HOV-SG map:
+
+```bash
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/visualize_hovsg_map.py \
+  --mode masked
+```
+
+Useful modes:
+
+```bash
+# Raw RGB point cloud
+python spatial-memory-evaluation/scripts/visualize_hovsg_map.py --mode full
+
+# Random-colored object masks
+python spatial-memory-evaluation/scripts/visualize_hovsg_map.py --mode masked
+
+# Highlight get_object results
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/visualize_hovsg_map.py \
+  --mode query \
+  --query chair \
+  --show-full-context
+```
+
+Outputs:
+
+```text
+spatial-memory-evaluation/results/hovsg-current-scene-objects.json
+spatial-memory-evaluation/results/hovsg-full-recall-memory.db
+spatial-memory-evaluation/results/hovsg-full-recall.json
+spatial-memory-evaluation/results/hovsg-full-recall.md
+```
+
+The default HOV-SG CLIP settings in this machine-local config are `ViT-B-32`
+with `laion2b_s34b_b79k`, because those weights are already cached here. If the
+map was generated with a different CLIP backbone, update
+`spatial-memory-evaluation/configs/hovsg_current_scene_method_kwargs.json`
+before evaluating.
+
 ## OpenEQA ScanNet Run
 
 OpenEQA `scannet-v0` requires the original ScanNet `.sens` files. RGB videos or

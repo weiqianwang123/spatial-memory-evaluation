@@ -12,3 +12,11 @@ imageio==2.34.0
 pypng==0.20220715
 matplotlib==3.8.0
 natsort==8.4.0
+
+# HOV-SG get_object baseline.
+-e /home/robin_wang/HOV-SG
+git+https://github.com/facebookresearch/segment-anything.git
+torchmetrics>=1.4
+pyvista>=0.48
+scikit-fmm>=2025.6.23
+pathos>=0.3.3
