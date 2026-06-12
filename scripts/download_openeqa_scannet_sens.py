@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scenes-file",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/openeqa-scannet-required-scenes.txt"),
+        default=Path("data/openeqa-scannet-required-scenes.txt"),
         help="Optional newline-separated scene id list.",
     )
     parser.add_argument(

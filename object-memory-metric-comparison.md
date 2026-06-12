@@ -35,6 +35,6 @@ simply because it misses many objects.
 
 ## Source Reports
 
-- SpatialRAG (ClawS): `spatial-memory-evaluation/results/claws-current-scene-object-metrics.json`
-- DualMap: `spatial-memory-evaluation/results/dualmap-full-recall.json`
-- HOV-SG: `spatial-memory-evaluation/results/hovsg-full-recall.json`
+- SpatialRAG (ClawS): `results/claws/current-scene-smoke/<timestamp>/object-metrics.json`
+- DualMap: `results/dualmap/object-recall/<timestamp>/metrics.json`
+- HOV-SG: `results/hovsg/object-recall/<timestamp>/metrics.json`

@@ -14,6 +14,7 @@ from adapters.claws_spatial_rag import (
     create_method,
 )
 from spatial_memory_evaluation import RGBDSequence
+from spatial_memory_evaluation.output_paths import timestamped_result_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,42 +25,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument("--memory-db", type=Path, default=DEFAULT_MEMORY_DB)
     parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="directory for result outputs. Default: results/claws/current-scene-smoke/<timestamp>",
+    )
+    parser.add_argument(
         "--object-queries",
         type=Path,
         default=Path(
-            "spatial-memory-evaluation/examples/claws_current_scene_object_queries.json"
+            "examples/claws_current_scene_object_queries.json"
         ),
     )
     parser.add_argument(
         "--memory-questions",
         type=Path,
         default=Path(
-            "spatial-memory-evaluation/examples/claws_current_scene_memory_questions.json"
+            "examples/claws_current_scene_memory_questions.json"
         ),
     )
     parser.add_argument(
         "--object-output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/claws-current-scene-objects.json"),
+        default=None,
     )
     parser.add_argument(
         "--memory-output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/claws-current-scene-memory.json"),
+        default=None,
     )
     parser.add_argument(
         "--metric-output-json",
         type=Path,
-        default=Path(
-            "spatial-memory-evaluation/results/claws-current-scene-object-metrics.json"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--metric-output-md",
         type=Path,
-        default=Path(
-            "spatial-memory-evaluation/results/claws-current-scene-object-metrics.md"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--dataset-root",
@@ -74,6 +77,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
+    _resolve_output_paths(args)
     args.object_output.parent.mkdir(parents=True, exist_ok=True)
     args.memory_output.parent.mkdir(parents=True, exist_ok=True)
     args.metric_output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -126,6 +130,19 @@ def main(args: argparse.Namespace) -> None:
 
     if not args.skip_metric:
         _run_current_scene_metric(args)
+
+
+def _resolve_output_paths(args: argparse.Namespace) -> None:
+    if args.run_dir is None:
+        args.run_dir = timestamped_result_dir("claws", "current-scene-smoke")
+    if args.object_output is None:
+        args.object_output = args.run_dir / "object-predictions.json"
+    if args.memory_output is None:
+        args.memory_output = args.run_dir / "memory-contexts.json"
+    if args.metric_output_json is None:
+        args.metric_output_json = args.run_dir / "object-metrics.json"
+    if args.metric_output_md is None:
+        args.metric_output_md = args.run_dir / "object-metrics.md"
 
 
 def _run_current_scene_metric(args: argparse.Namespace) -> None:

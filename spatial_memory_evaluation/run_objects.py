@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover
 
 from .interfaces import ObjectPrediction
 from .method_loader import load_method, parse_method_kwargs
+from .output_paths import method_name_from_spec, timestamped_result_dir
 from .rgbd import load_rgbd_sequence
 
 
@@ -47,14 +48,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/object-predictions.json"),
-        help="output object predictions JSON",
+        default=None,
+        help=(
+            "output object predictions JSON. Default: "
+            "results/<method>/object-query/<timestamp>/predictions.json"
+        ),
     )
     parser.add_argument(
         "--metrics-output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/object-metrics.json"),
-        help="where an external ScanNet evaluator should write metrics",
+        default=None,
+        help="where an external ScanNet evaluator should write metrics. Default: output dir/metrics.json",
     )
     parser.add_argument(
         "--scannet-evaluator-cmd",
@@ -90,6 +94,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
+    method_kwargs = parse_method_kwargs(args.method_kwargs)
+    if args.output is None:
+        method_name = method_name_from_spec(args.method, method_kwargs)
+        args.output = timestamped_result_dir(method_name, "object-query") / "predictions.json"
+    if args.metrics_output is None:
+        args.metrics_output = args.output.parent / "metrics.json"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -97,7 +107,6 @@ def main(args: argparse.Namespace) -> None:
     if args.dry_run:
         queries = queries[:5]
 
-    method_kwargs = parse_method_kwargs(args.method_kwargs)
     results = _load_existing_results(args.output)
     completed = {item["query_id"] for item in results}
 

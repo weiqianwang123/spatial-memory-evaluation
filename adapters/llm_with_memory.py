@@ -10,6 +10,7 @@ from typing import Any, List, Mapping, Optional
 
 from spatial_memory_evaluation import ObjectPrediction, RGBDSequence
 from spatial_memory_evaluation.method_loader import load_method
+from spatial_memory_evaluation.output_paths import method_name_from_spec, timestamped_memory_dir
 
 
 DEFAULT_PROMPT = """You are an embodied question answering agent.
@@ -94,7 +95,8 @@ class LLMMemoryAnsweringMethod:
         db_path = self._resolved_memory_db()
         if self.config.prefer_exported_memory and hasattr(self.base_method, "export_spatial_memory_db"):
             if db_path is None:
-                db_path = Path("spatial-memory-evaluation/results/llm-memory-export.db")
+                method_name = method_name_from_spec(self.config.base_method)
+                db_path = timestamped_memory_dir(method_name, "memory-qa") / "memory.db"
             exported = self.base_method.export_spatial_memory_db(db_path)
             self._records = _load_memory_db(Path(exported))
             return self._records

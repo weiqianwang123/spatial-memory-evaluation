@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DUALMAP_ROOT = Path("/home/robin_wang/DualMap")
 DEFAULT_CLAWS_ROOT = Path("/home/robin_wang/ClawS-SpatialRAG")
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
@@ -49,13 +49,13 @@ def main(args: argparse.Namespace) -> int:
         [
             str(args.dualmap_root),
             str(args.claws_root),
-            str(args.repo_root / "spatial-memory-evaluation"),
+            str(args.repo_root),
             env.get("PYTHONPATH", ""),
         ]
     )
 
     if not args.skip_export:
-        export_script = args.repo_root / "spatial-memory-evaluation/scripts/export_scannetpp_for_dualmap.py"
+        export_script = args.repo_root / "scripts/export_scannetpp_for_dualmap.py"
         export_cmd = [
             sys.executable,
             str(export_script),

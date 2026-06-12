@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from spatial_memory_evaluation.output_paths import timestamped_result_dir
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -16,12 +18,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/openeqa-scannet-data-report.json"),
+        default=None,
+        help="report path. Default: results/_data/data-check/<timestamp>/report.json",
     )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace) -> int:
+    if args.report is None:
+        args.report = timestamped_result_dir("_data", "data-check") / "report.json"
     args.report.parent.mkdir(parents=True, exist_ok=True)
     dataset = _load_dataset(args.dataset)
     episodes = _scannet_episodes(dataset)

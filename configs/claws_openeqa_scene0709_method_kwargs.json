@@ -1,6 +1,6 @@
 {
   "spatial_rag_root": "/home/robin_wang/ClawS-SpatialRAG",
-  "memory_db": "/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_dbs/{episode}.db",
+  "memory_db": "memories/claws/openeqa-scene0709/{episode}.db",
   "scene_id": "auto",
   "build_from_sequence": true,
   "overwrite_memory_db": false,

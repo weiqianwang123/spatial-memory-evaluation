@@ -12,8 +12,46 @@ The harness does not import or change the upstream `openeqa` package. Run
 commands from the repository root and add this folder to `PYTHONPATH`.
 
 ```bash
-export PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH
+export PYTHONPATH=.:$PYTHONPATH
 ```
+
+## Project Layout
+
+This repository is now standalone at:
+
+```text
+/home/robin_wang/spatial-memory-evaluation
+```
+
+- `.codex/`: agent-facing project notes and workflow context.
+- `adapters/`: method adapters that build or load spatial memory.
+- `configs/`: adapter kwargs and run presets.
+- `memories/`: local generated memory artifacts. This is ignored by Git.
+- `results/`: evaluation predictions, metrics, reports, and logs. This is ignored by Git.
+- `data/`: optional local data cache. Prefer NAS paths when available.
+
+Default workflow:
+
+```text
+NAS or local data -> adapter -> memories/ -> evaluation -> results/
+```
+
+Result outputs must be grouped by method, then evaluation type, then timestamp:
+
+```text
+results/<method>/<evaluation>/<YYYYMMDD-HHMMSS>/
+```
+
+Examples:
+
+```text
+results/claws/memory-qa/20260612-153012/predictions.json
+results/dualmap/object-recall/20260612-153245/metrics.json
+results/_data/data-check/20260612-153500/report.json
+```
+
+Use `_data` only for data-prep or data-check outputs that do not belong to one
+method.
 
 ## Shared Conda Environment
 
@@ -23,14 +61,14 @@ fastest path on this machine is to extend the existing `spatial-rag` env:
 ```bash
 source /home/robin_wang/miniforge3/etc/profile.d/conda.sh
 conda activate spatial-rag
-pip install -r spatial-memory-evaluation/requirements.evaluation.txt
-export PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH
+pip install -r requirements.evaluation.txt
+export PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH
 ```
 
 Or create a clean combined env:
 
 ```bash
-conda env create -f spatial-memory-evaluation/environment.evaluation.yml
+conda env create -f environment.evaluation.yml
 conda activate spatial-memory-eval
 ```
 
@@ -49,7 +87,7 @@ The built-in adapter is:
 For the current ScanNet++ scene used by the ClawS repo, use:
 
 ```bash
---method-kwargs spatial-memory-evaluation/configs/claws_current_scene_method_kwargs.json
+--method-kwargs configs/claws_current_scene_method_kwargs.json
 ```
 
 This points at:
@@ -73,17 +111,17 @@ This runs `get_object`, writes a few memory-context examples, and then runs the
 same existing ScanNet++ metric script on scene `036bce3393`.
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python3 spatial-memory-evaluation/scripts/run_claws_current_scene.py
+PYTHONPATH=.:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python3 scripts/run_claws_current_scene.py
 ```
 
 Outputs:
 
 ```text
-spatial-memory-evaluation/results/claws-current-scene-objects.json
-spatial-memory-evaluation/results/claws-current-scene-memory.json
-spatial-memory-evaluation/results/claws-current-scene-object-metrics.json
-spatial-memory-evaluation/results/claws-current-scene-object-metrics.md
+results/claws/current-scene-smoke/<timestamp>/object-predictions.json
+results/claws/current-scene-smoke/<timestamp>/memory-contexts.json
+results/claws/current-scene-smoke/<timestamp>/object-metrics.json
+results/claws/current-scene-smoke/<timestamp>/object-metrics.md
 ```
 
 ## DualMap Current Scene Baseline
@@ -102,31 +140,31 @@ source /home/robin_wang/miniforge3/etc/profile.d/conda.sh
 conda activate spatial-rag
 
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/build_dualmap_current_scene_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/build_dualmap_current_scene_map.py \
   --run-stride 1
 
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/run_dualmap_current_scene.py
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/run_dualmap_current_scene.py
 ```
 
 Outputs:
 
 ```text
 /data/mondo-training-dataset/semantic_mapping/dualmap/scannetpp_036bce3393/map/*.pkl
-spatial-memory-evaluation/results/dualmap-current-scene-objects.json
-spatial-memory-evaluation/results/dualmap-current-scene-memory.db
-spatial-memory-evaluation/results/dualmap-current-scene-object-metrics.json
-spatial-memory-evaluation/results/dualmap-current-scene-object-metrics.md
+memories/dualmap/current-scene-smoke/<timestamp>/memory.db
+results/dualmap/current-scene-smoke/<timestamp>/object-predictions.json
+results/dualmap/current-scene-smoke/<timestamp>/object-metrics.json
+results/dualmap/current-scene-smoke/<timestamp>/object-metrics.md
 ```
 
 For full scene recall over every exported DualMap object:
 
 ```bash
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/evaluate_dualmap_current_scene_recall.py
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/evaluate_dualmap_current_scene_recall.py
 ```
 
 ## HOV-SG Current Scene Baseline
@@ -156,8 +194,8 @@ Evaluate the current ScanNet++ scene once the HOV-SG feature map exists:
 
 ```bash
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/evaluate_hovsg_current_scene_recall.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/HOV-SG:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/evaluate_hovsg_current_scene_recall.py \
   --hovsg-result-path /data/mondo-training-dataset/semantic_mapping/hovsg/scannetpp_036bce3393/scannet
 ```
 
@@ -165,8 +203,8 @@ To build that feature map from the already exported ScanNet++ RGB-D sequence:
 
 ```bash
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/build_hovsg_current_scene_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+python scripts/build_hovsg_current_scene_map.py \
   --skip-frames 1
 ```
 
@@ -176,8 +214,8 @@ Visualize the saved HOV-SG map:
 
 ```bash
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/visualize_hovsg_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:$PYTHONPATH \
+python scripts/visualize_hovsg_map.py \
   --mode masked
 ```
 
@@ -185,15 +223,15 @@ Useful modes:
 
 ```bash
 # Raw RGB point cloud
-python spatial-memory-evaluation/scripts/visualize_hovsg_map.py --mode full
+python scripts/visualize_hovsg_map.py --mode full
 
 # Random-colored object masks
-python spatial-memory-evaluation/scripts/visualize_hovsg_map.py --mode masked
+python scripts/visualize_hovsg_map.py --mode masked
 
 # Highlight get_object results
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/visualize_hovsg_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:$PYTHONPATH \
+python scripts/visualize_hovsg_map.py \
   --mode query \
   --query chair \
   --show-full-context
@@ -202,16 +240,16 @@ python spatial-memory-evaluation/scripts/visualize_hovsg_map.py \
 Outputs:
 
 ```text
-spatial-memory-evaluation/results/hovsg-current-scene-objects.json
-spatial-memory-evaluation/results/hovsg-full-recall-memory.db
-spatial-memory-evaluation/results/hovsg-full-recall.json
-spatial-memory-evaluation/results/hovsg-full-recall.md
+memories/hovsg/object-recall/<timestamp>/memory.db
+results/hovsg/object-recall/<timestamp>/object-predictions.json
+results/hovsg/object-recall/<timestamp>/metrics.json
+results/hovsg/object-recall/<timestamp>/metrics.md
 ```
 
 The default HOV-SG CLIP settings in this machine-local config are `ViT-B-32`
 with `laion2b_s34b_b79k`, because those weights are already cached here. If the
 map was generated with a different CLIP backbone, update
-`spatial-memory-evaluation/configs/hovsg_current_scene_method_kwargs.json`
+`configs/hovsg_current_scene_method_kwargs.json`
 before evaluating.
 
 ## OpenEQA ScanNet Run
@@ -223,8 +261,8 @@ only recovered from `.sens`.
 Check the local data state:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/check_openeqa_scannet_data.py \
+PYTHONPATH=.:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/check_openeqa_scannet_data.py \
   --scannet-root data/raw/scannet \
   --frames-root data/frames
 ```
@@ -234,7 +272,7 @@ Python 3 downloader for the same `.sens` URLs. It downloads only the ScanNet
 scenes referenced by OpenEQA `scannet-v0`:
 
 ```bash
-python spatial-memory-evaluation/scripts/download_openeqa_scannet_sens.py \
+python scripts/download_openeqa_scannet_sens.py \
   --out-dir data/raw/scannet \
   --agree-tos
 ```
@@ -249,11 +287,11 @@ To keep ScanNet off local disk, put the raw `.sens` and converted RGB-D frames
 there instead:
 
 ```bash
-python spatial-memory-evaluation/scripts/download_openeqa_scannet_sens.py \
+python scripts/download_openeqa_scannet_sens.py \
   --out-dir /data/mondo-training-dataset/semantic_mapping/scannet \
   --agree-tos
 
-python spatial-memory-evaluation/scripts/prepare_scannet_sens_rgbd.py \
+python scripts/prepare_scannet_sens_rgbd.py \
   --scannet-root /data/mondo-training-dataset/semantic_mapping/scannet \
   --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
   --layout-root /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd
@@ -262,7 +300,7 @@ python spatial-memory-evaluation/scripts/prepare_scannet_sens_rgbd.py \
 For a non-downloading preview:
 
 ```bash
-python spatial-memory-evaluation/scripts/download_openeqa_scannet_sens.py \
+python scripts/download_openeqa_scannet_sens.py \
   --out-dir /data/mondo-training-dataset/semantic_mapping/scannet \
   --dry-run
 ```
@@ -274,7 +312,7 @@ If raw ScanNet exists, convert each available `.sens` into both useful views:
   `<layout-root>/exported/<scene_id>/`.
 
 ```bash
-python spatial-memory-evaluation/scripts/prepare_scannet_sens_rgbd.py \
+python scripts/prepare_scannet_sens_rgbd.py \
   --scannet-root data/raw/scannet \
   --frames-root data/frames \
   --layout-root data/openeqa_scannet_rgbd
@@ -287,35 +325,33 @@ explicit debugging run.
 Then run ClawS SpatialRAG on the OpenEQA ScanNet split:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/run_openeqa_scannet_memory.py \
-  --frames-root data/frames \
-  --output spatial-memory-evaluation/results/openeqa-scannet-memory.json
+PYTHONPATH=.:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/run_openeqa_scannet_memory.py \
+  --frames-root data/frames
 ```
 
 With NAS-backed frames and per-episode SpatialRAG DBs:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/run_openeqa_scannet_memory.py \
+PYTHONPATH=.:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/run_openeqa_scannet_memory.py \
   --scannet-root /data/mondo-training-dataset/semantic_mapping/scannet \
   --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --method-kwargs spatial-memory-evaluation/configs/claws_openeqa_scannet_nas_method_kwargs.json \
-  --output spatial-memory-evaluation/results/openeqa-scannet-memory.json
+  --method-kwargs configs/claws_openeqa_scannet_nas_method_kwargs.json
 ```
 
 For a quick first episode smoke test:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/run_openeqa_scannet_memory.py \
+PYTHONPATH=.:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/run_openeqa_scannet_memory.py \
   --dry-run
 ```
 
 The per-episode ClawS DBs are written under:
 
 ```text
-spatial-memory-evaluation/results/openeqa-scannet-dbs/
+memories/claws/openeqa-scannet/
 ```
 
 ## OpenEQA Scene0709 LLM-With-Memory Run
@@ -343,8 +379,8 @@ Build or load method memory first:
 
 # DualMap: build a concrete map from the full ScanNet-style RGB-D sequence.
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/build_dualmap_current_scene_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python scripts/build_dualmap_current_scene_map.py \
   --skip-export \
   --scene-id scene0709_00 \
   --dualmap-dataset-root /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd \
@@ -354,8 +390,8 @@ python spatial-memory-evaluation/scripts/build_dualmap_current_scene_map.py \
 
 # HOV-SG: build a feature map from the same full ScanNet-style RGB-D sequence.
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
-python spatial-memory-evaluation/scripts/build_hovsg_current_scene_map.py \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+python scripts/build_hovsg_current_scene_map.py \
   --scene-id scene0709_00 \
   --dataset-path /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd/exported/scene0709_00 \
   --output-root /data/mondo-training-dataset/semantic_mapping/hovsg/openeqa_scannet_scene0709_00 \
@@ -371,43 +407,39 @@ export OPENAI_API_KEY=...
 
 # ClawS SpatialRAG memory -> LLM answer
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
 python -m spatial_memory_evaluation.run_memory \
   --method adapters.llm_with_memory:create_method \
-  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_claws_kwargs.json \
+  --method-kwargs configs/llm_openeqa_scene0709_claws_kwargs.json \
   --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00 \
-  --output spatial-memory-evaluation/results/openeqa-scene0709-claws-llm.json
+  --episode-history scannet-v0/002-scannet-scene0709_00
 
 # DualMap object memory -> LLM answer
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:$PYTHONPATH \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:$PYTHONPATH \
 python -m spatial_memory_evaluation.run_memory \
   --method adapters.llm_with_memory:create_method \
-  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_dualmap_kwargs.json \
+  --method-kwargs configs/llm_openeqa_scene0709_dualmap_kwargs.json \
   --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00 \
-  --output spatial-memory-evaluation/results/openeqa-scene0709-dualmap-llm.json
+  --episode-history scannet-v0/002-scannet-scene0709_00
 
 # HOV-SG object memory -> LLM answer
 PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
 python -m spatial_memory_evaluation.run_memory \
   --method adapters.llm_with_memory:create_method \
-  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_hovsg_kwargs.json \
+  --method-kwargs configs/llm_openeqa_scene0709_hovsg_kwargs.json \
   --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00 \
-  --output spatial-memory-evaluation/results/openeqa-scene0709-hovsg-llm.json
+  --episode-history scannet-v0/002-scannet-scene0709_00
 ```
 
 Score the predictions with the internal OpenEQA-compatible LLM-Match evaluator:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python -m spatial_memory_evaluation.evaluate_memory \
-  spatial-memory-evaluation/results/openeqa-scene0709-claws-llm.json \
-  --dataset data/open-eqa-v0.json \
-  --output spatial-memory-evaluation/results/openeqa-scene0709-claws-llm-match.json
+  results/claws/memory-qa/<timestamp>/predictions.json \
+  --dataset data/open-eqa-v0.json
 ```
 
 For a no-API wiring check, set `answer_mode` to `context` in the relevant
@@ -488,13 +520,12 @@ This runs `get_memory_text(question)` for each ScanNet OpenEQA question and
 writes a normal OpenEQA prediction file.
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.run_memory \
   --method my_spatial_rag.eval_adapter:create_method \
   --dataset data/open-eqa-v0.json \
   --frames-root data/frames \
-  --episode-prefix scannet-v0 \
-  --output spatial-memory-evaluation/results/memory-predictions.json
+  --episode-prefix scannet-v0
 ```
 
 Useful options:
@@ -511,19 +542,18 @@ LLM-Match prompt and 1-5 scoring but does not import the upstream `openeqa`
 package. It requires `OPENAI_API_KEY` or `--openai-key`.
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.evaluate_memory \
-  spatial-memory-evaluation/results/memory-predictions.json \
-  --dataset data/open-eqa-v0.json \
-  --output spatial-memory-evaluation/results/memory-metrics.json
+  results/my-spatial-rag/memory-qa/<timestamp>/predictions.json \
+  --dataset data/open-eqa-v0.json
 ```
 
 Optional scorer settings:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.evaluate_memory \
-  spatial-memory-evaluation/results/memory-predictions.json \
+  results/my-spatial-rag/memory-qa/<timestamp>/predictions.json \
   --dataset data/open-eqa-v0.json \
   --openai-model gpt-4-1106-preview \
   --openai-temperature 0.2 \
@@ -547,12 +577,11 @@ Prepare object queries as JSON:
 Then run:
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.run_objects \
   --method my_spatial_rag.eval_adapter:create_method \
-  --queries spatial-memory-evaluation/examples/object_queries.sample.json \
-  --frames-root data/frames \
-  --output spatial-memory-evaluation/results/object-predictions.json
+  --queries examples/object_queries.sample.json \
+  --frames-root data/frames
 ```
 
 The output format is:
@@ -581,12 +610,10 @@ If your older ScanNet evaluator is a script, pass it as a command template.
 The harness fills `{predictions}`, `{queries}`, and `{output}`.
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.run_objects \
   --method my_spatial_rag.eval_adapter:create_method \
   --queries path/to/scannet_object_queries.json \
-  --output spatial-memory-evaluation/results/object-predictions.json \
-  --metrics-output spatial-memory-evaluation/results/object-metrics.json \
   --scannet-evaluator-cmd "python3 path/to/scannet_eval.py --predictions {predictions} --queries {queries} --output {output}"
 ```
 
@@ -599,7 +626,7 @@ The dummy adapter verifies the harness wiring once you have at least one
 matching extracted ScanNet episode under `data/frames`.
 
 ```bash
-PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+PYTHONPATH=.:$PYTHONPATH \
 python3 -m spatial_memory_evaluation.run_memory \
   --method examples.dummy_method:create_method \
   --episode-prefix scannet-v0 \

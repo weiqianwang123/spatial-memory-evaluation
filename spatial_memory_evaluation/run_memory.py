@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover
     tqdm = lambda x, **_: x
 
 from .method_loader import load_method, parse_method_kwargs
+from .output_paths import method_name_from_spec, timestamped_result_dir
 from .rgbd import iter_episode_histories, load_open_eqa_dataset, load_rgbd_sequence, questions_for_episode
 
 
@@ -55,8 +56,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/memory-predictions.json"),
-        help="output predictions JSON in OpenEQA format",
+        default=None,
+        help=(
+            "output predictions JSON in OpenEQA format. Default: "
+            "results/<method>/memory-qa/<timestamp>/predictions.json"
+        ),
     )
     parser.add_argument(
         "--max-frames",
@@ -84,11 +88,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-
     dataset = load_open_eqa_dataset(args.dataset)
     episode_prefix = args.episode_prefix or None
     method_kwargs = parse_method_kwargs(args.method_kwargs)
+    if args.output is None:
+        method_name = method_name_from_spec(args.method, method_kwargs)
+        args.output = timestamped_result_dir(method_name, "memory-qa") / "predictions.json"
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
     results = _load_existing_results(args.output)
     completed = {item["question_id"] for item in results}
     total_written = len(results)

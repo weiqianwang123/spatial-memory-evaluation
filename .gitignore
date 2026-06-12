@@ -15,6 +15,7 @@ env/
 results/
 outputs/
 data/
+memories/
 
 *.db
 *.sqlite

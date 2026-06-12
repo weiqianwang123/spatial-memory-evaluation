@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,16 +15,10 @@ import numpy as np
 from tqdm import tqdm
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCANNET_READER_ROOT = REPO_ROOT / "data" / "scannet"
-if str(SCANNET_READER_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCANNET_READER_ROOT))
-
-from SensorData import SensorData  # noqa: E402
-
-
-DEFAULT_REPORT = Path(
-    "spatial-memory-evaluation/results/scannet-sens-rgbd-prepare-report.json"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SCANNET_READER_ROOTS = (
+    REPO_ROOT / "data" / "scannet",
+    Path("/home/robin_wang/open-eqa/data/scannet"),
 )
 
 
@@ -53,6 +48,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data/raw/scannet"),
         help="Root containing scans/<scene>/<scene>.sens and/or scans_test/...",
+    )
+    parser.add_argument(
+        "--scannet-reader-root",
+        type=Path,
+        default=None,
+        help="Directory containing ScanNet SensorData.py. Defaults to repo data/scannet, then the old open-eqa path.",
     )
     parser.add_argument(
         "--frames-root",
@@ -101,11 +102,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Report what would be converted without opening or writing .sens output.",
     )
-    parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="report path. Default: results/_data/data-prepare/<timestamp>/report.json",
+    )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace) -> int:
+    if args.report is None:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        args.report = Path("results") / "_data" / "data-prepare" / timestamp / "report.json"
+
     if args.frame_skip < 1:
         raise ValueError("--frame-skip must be >= 1")
     if args.max_frames < 0:
@@ -201,7 +211,8 @@ def _convert_target(
     if args.overwrite:
         _clear_managed_outputs(frame_dir, color_dir, depth_dir, pose_dir, intrinsic_dir)
 
-    sensor = SensorData(str(sens_path))
+    sensor_data = _load_sensor_data_class(args.scannet_reader_root)
+    sensor = sensor_data(str(sens_path))
     selected_indices = list(range(0, len(sensor.frames), args.frame_skip))
     if args.max_frames:
         selected_indices = selected_indices[: args.max_frames]
@@ -233,6 +244,31 @@ def _convert_target(
         }
     )
     return entry
+
+
+def _load_sensor_data_class(reader_root: Optional[Path]):
+    roots = []
+    if reader_root is not None:
+        roots.append(reader_root)
+    env_root = os.environ.get("SPATIAL_MEMORY_SCANNET_READER_ROOT")
+    if env_root:
+        roots.append(Path(env_root))
+    roots.extend(DEFAULT_SCANNET_READER_ROOTS)
+
+    for root in roots:
+        sensor_data_py = root / "SensorData.py"
+        if sensor_data_py.exists():
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            from SensorData import SensorData
+
+            return SensorData
+
+    searched = ", ".join(str(root) for root in roots)
+    raise FileNotFoundError(
+        "Could not find ScanNet SensorData.py. Pass --scannet-reader-root or set "
+        f"SPATIAL_MEMORY_SCANNET_READER_ROOT. Searched: {searched}"
+    )
 
 
 def _write_intrinsics(

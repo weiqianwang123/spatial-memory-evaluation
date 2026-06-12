@@ -14,10 +14,15 @@ from adapters.dualmap import (
     create_method,
 )
 from spatial_memory_evaluation import RGBDSequence
+from spatial_memory_evaluation.output_paths import (
+    run_timestamp,
+    timestamped_memory_dir,
+    timestamped_result_dir,
+)
 
 
 DEFAULT_KWARGS = Path(
-    "spatial-memory-evaluation/configs/dualmap_current_scene_method_kwargs.json"
+    "configs/dualmap_current_scene_method_kwargs.json"
 )
 DEFAULT_CLAWS_ROOT = Path("/home/robin_wang/ClawS-SpatialRAG")
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
@@ -34,24 +39,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--map-dir", type=Path, default=DEFAULT_MAP_DIR)
     parser.add_argument("--method-kwargs", type=Path, default=DEFAULT_KWARGS)
     parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="directory for result outputs. Default: results/dualmap/object-recall/<timestamp>",
+    )
+    parser.add_argument(
+        "--memory-dir",
+        type=Path,
+        default=None,
+        help="directory for generated memory. Default: memories/dualmap/object-recall/<timestamp>",
+    )
+    parser.add_argument(
         "--memory-db",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/dualmap-full-recall-memory.db"),
+        default=None,
     )
     parser.add_argument(
         "--output-json",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/dualmap-full-recall.json"),
+        default=None,
     )
     parser.add_argument(
         "--output-md",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/dualmap-full-recall.md"),
+        default=None,
     )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace) -> int:
+    _resolve_output_paths(args)
     kwargs = _load_kwargs(args.method_kwargs)
     kwargs["dualmap_root"] = str(args.dualmap_root)
     kwargs["map_dir"] = str(args.map_dir)
@@ -71,6 +89,20 @@ def main(args: argparse.Namespace) -> int:
     _run_scannetpp_metric(args, memory_db)
     _print_recall_summary(args.output_json)
     return 0
+
+
+def _resolve_output_paths(args: argparse.Namespace) -> None:
+    timestamp = run_timestamp()
+    if args.run_dir is None:
+        args.run_dir = timestamped_result_dir("dualmap", "object-recall", timestamp=timestamp)
+    if args.memory_dir is None:
+        args.memory_dir = timestamped_memory_dir("dualmap", "object-recall", timestamp=timestamp)
+    if args.memory_db is None:
+        args.memory_db = args.memory_dir / "memory.db"
+    if args.output_json is None:
+        args.output_json = args.run_dir / "metrics.json"
+    if args.output_md is None:
+        args.output_md = args.run_dir / "metrics.md"
 
 
 def _run_scannetpp_metric(args: argparse.Namespace, memory_db: Path) -> None:

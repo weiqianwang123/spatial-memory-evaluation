@@ -5,10 +5,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from spatial_memory_evaluation.method_loader import parse_method_kwargs
+from spatial_memory_evaluation.output_paths import method_name_from_spec, timestamped_result_dir
+
 
 DEFAULT_METHOD = "adapters.claws_spatial_rag:create_method"
 DEFAULT_KWARGS = Path(
-    "spatial-memory-evaluation/configs/claws_openeqa_scannet_method_kwargs.json"
+    "configs/claws_openeqa_scannet_method_kwargs.json"
 )
 
 
@@ -24,7 +27,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("spatial-memory-evaluation/results/openeqa-scannet-memory.json"),
+        default=None,
+        help=(
+            "prediction output. Default: "
+            "results/<method>/openeqa-scannet-memory/<timestamp>/predictions.json"
+        ),
     )
     parser.add_argument("--max-frames", type=int, default=None)
     parser.add_argument("--frame-stride", type=int, default=1)
@@ -44,6 +51,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> int:
+    if args.output is None:
+        method_kwargs = parse_method_kwargs(str(args.method_kwargs) if args.method_kwargs else None)
+        method_name = method_name_from_spec(args.method, method_kwargs)
+        args.output = (
+            timestamped_result_dir(method_name, "openeqa-scannet-memory")
+            / "predictions.json"
+        )
+
     if args.extract_rgbd:
         _run(
             [
@@ -63,7 +78,7 @@ def main(args: argparse.Namespace) -> int:
         check = subprocess.run(
             [
                 sys.executable,
-                "spatial-memory-evaluation/scripts/check_openeqa_scannet_data.py",
+                "scripts/check_openeqa_scannet_data.py",
                 "--dataset",
                 str(args.dataset),
                 "--scannet-root",

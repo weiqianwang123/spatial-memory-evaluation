@@ -11,6 +11,7 @@ except ImportError:  # pragma: no cover
     tqdm = lambda x, **_: x
 
 from .llm_match import get_llm_match_score
+from .output_paths import method_name_from_results_path, timestamped_result_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,7 +33,15 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=None,
-        help="metrics JSON; default: predictions stem + -metrics.json",
+        help=(
+            "metrics JSON. Default: "
+            "results/<method>/llm-match/<timestamp>/metrics.json when method can be inferred"
+        ),
+    )
+    parser.add_argument(
+        "--method-name",
+        default=None,
+        help="method folder name for default output path when it cannot be inferred from predictions",
     )
     parser.add_argument(
         "--strict",
@@ -56,7 +65,8 @@ def parse_args() -> argparse.Namespace:
 def main(args: argparse.Namespace) -> None:
     output = args.output
     if output is None:
-        output = args.predictions.parent / f"{args.predictions.stem}-metrics.json"
+        method_name = args.method_name or method_name_from_results_path(args.predictions) or "unknown"
+        output = timestamped_result_dir(method_name, "llm-match") / "metrics.json"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     dataset = _load_list(args.dataset)

@@ -1,6 +1,6 @@
 {
   "spatial_rag_root": "/home/robin_wang/ClawS-SpatialRAG",
-  "memory_db": "spatial-memory-evaluation/results/openeqa-scannet-dbs/{episode}.db",
+  "memory_db": "memories/claws/openeqa-scannet/{episode}.db",
   "scene_id": "auto",
   "build_from_sequence": true,
   "overwrite_memory_db": false,
