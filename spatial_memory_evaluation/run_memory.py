@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         help="only run episodes with this prefix; use '' for all episodes",
     )
     parser.add_argument(
+        "--episode-history",
+        action="append",
+        default=None,
+        help="only run this exact episode_history. Can be passed more than once.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("spatial-memory-evaluation/results/memory-predictions.json"),
@@ -90,7 +96,15 @@ def main(args: argparse.Namespace) -> None:
     question_budget = 5 if args.dry_run else None
     processed_questions = 0
 
-    episodes = list(iter_episode_histories(dataset, episode_prefix=episode_prefix))
+    if args.episode_history:
+        wanted = set(args.episode_history)
+        episodes = [
+            episode
+            for episode in iter_episode_histories(dataset, episode_prefix=None)
+            if episode in wanted
+        ]
+    else:
+        episodes = list(iter_episode_histories(dataset, episode_prefix=episode_prefix))
     print(f"found {len(episodes):,} episode histories")
     print(f"found {len(completed):,} existing memory predictions")
 

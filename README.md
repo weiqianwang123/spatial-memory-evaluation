@@ -88,8 +88,9 @@ spatial-memory-evaluation/results/claws-current-scene-object-metrics.md
 
 ## DualMap Current Scene Baseline
 
-DualMap only supports `get_object(query)` in this harness. `get_memory_text`
-intentionally raises `NotImplementedError`.
+The base DualMap adapter only supports `get_object(query)`. For OpenEQA memory
+answering, use the LLM-with-memory wrapper below; it exports the DualMap object
+map as scene-graph-like memory before answering.
 
 On this machine, run DualMap through the shared `spatial-rag` environment with
 user-site packages disabled. The default Python path otherwise picks up
@@ -103,7 +104,7 @@ conda activate spatial-rag
 PYTHONNOUSERSITE=1 \
 PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
 python spatial-memory-evaluation/scripts/build_dualmap_current_scene_map.py \
-  --max-frames 100
+  --run-stride 1
 
 PYTHONNOUSERSITE=1 \
 PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
@@ -130,8 +131,9 @@ python spatial-memory-evaluation/scripts/evaluate_dualmap_current_scene_recall.p
 
 ## HOV-SG Current Scene Baseline
 
-HOV-SG only supports `get_object(query)` in this harness. `get_memory_text`
-intentionally raises `NotImplementedError`.
+The base HOV-SG adapter only supports `get_object(query)`. For OpenEQA memory
+answering, use the LLM-with-memory wrapper below; it exports the HOV-SG object
+map as scene-graph-like memory before answering.
 
 The adapter expects a precomputed HOV-SG feature map:
 
@@ -165,7 +167,7 @@ To build that feature map from the already exported ScanNet++ RGB-D sequence:
 PYTHONNOUSERSITE=1 \
 PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
 python spatial-memory-evaluation/scripts/build_hovsg_current_scene_map.py \
-  --skip-frames 100
+  --skip-frames 1
 ```
 
 For a fast environment smoke test, use `--skip-frames 2000 --merge-type sequential`.
@@ -243,7 +245,7 @@ On this machine, the SpatialRAG dataset NAS is mounted at:
 /data/mondo-training-dataset
 ```
 
-To keep ScanNet off local disk, put the raw `.sens` and extracted RGB-D frames
+To keep ScanNet off local disk, put the raw `.sens` and converted RGB-D frames
 there instead:
 
 ```bash
@@ -251,9 +253,10 @@ python spatial-memory-evaluation/scripts/download_openeqa_scannet_sens.py \
   --out-dir /data/mondo-training-dataset/semantic_mapping/scannet \
   --agree-tos
 
-python data/scannet/extract-frames.py \
+python spatial-memory-evaluation/scripts/prepare_scannet_sens_rgbd.py \
   --scannet-root /data/mondo-training-dataset/semantic_mapping/scannet \
-  --output-directory /data/mondo-training-dataset/semantic_mapping/openeqa_frames
+  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
+  --layout-root /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd
 ```
 
 For a non-downloading preview:
@@ -264,13 +267,22 @@ python spatial-memory-evaluation/scripts/download_openeqa_scannet_sens.py \
   --dry-run
 ```
 
-If raw ScanNet exists, extract RGB-D + poses:
+If raw ScanNet exists, convert each available `.sens` into both useful views:
+
+- SpatialRAG/OpenEQA flat frames under `<frames-root>/scannet-v0/<episode>/`.
+- HOV-SG/DualMap ScanNet-style frames under
+  `<layout-root>/exported/<scene_id>/`.
 
 ```bash
-python data/scannet/extract-frames.py \
+python spatial-memory-evaluation/scripts/prepare_scannet_sens_rgbd.py \
   --scannet-root data/raw/scannet \
-  --output-directory data/frames
+  --frames-root data/frames \
+  --layout-root data/openeqa_scannet_rgbd
 ```
+
+By default this exports every frame in each `.sens` so SpatialRAG, HOV-SG, and
+DualMap see the same complete RGB-D stream. Pass `--max-frames N` only for an
+explicit debugging run.
 
 Then run ClawS SpatialRAG on the OpenEQA ScanNet split:
 
@@ -297,8 +309,7 @@ For a quick first episode smoke test:
 ```bash
 PYTHONPATH=spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
 python spatial-memory-evaluation/scripts/run_openeqa_scannet_memory.py \
-  --dry-run \
-  --max-frames 100
+  --dry-run
 ```
 
 The per-episode ClawS DBs are written under:
@@ -306,6 +317,102 @@ The per-episode ClawS DBs are written under:
 ```text
 spatial-memory-evaluation/results/openeqa-scannet-dbs/
 ```
+
+## OpenEQA Scene0709 LLM-With-Memory Run
+
+The prepared one-scene full-frame ScanNet RGB-D sequence is:
+
+```text
+/data/mondo-training-dataset/semantic_mapping/openeqa_frames/scannet-v0/002-scannet-scene0709_00
+```
+
+The matching ScanNet-style layout for HOV-SG and DualMap is:
+
+```text
+/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd/exported/scene0709_00
+```
+
+This scene has 936 RGB/depth/pose frames. Formal runs should not pass
+`--max-frames`, `--frame-stride`, `--run-stride`, or `--skip-frames` values that
+drop frames.
+
+Build or load method memory first:
+
+```bash
+# ClawS SpatialRAG builds its scene DB lazily during the LLM run below.
+
+# DualMap: build a concrete map from the full ScanNet-style RGB-D sequence.
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/build_dualmap_current_scene_map.py \
+  --skip-export \
+  --scene-id scene0709_00 \
+  --dualmap-dataset-root /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd \
+  --dataset-root /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd \
+  --output-dir /data/mondo-training-dataset/semantic_mapping/dualmap/openeqa_scannet_scene0709_00 \
+  --run-stride 1
+
+# HOV-SG: build a feature map from the same full ScanNet-style RGB-D sequence.
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+python spatial-memory-evaluation/scripts/build_hovsg_current_scene_map.py \
+  --scene-id scene0709_00 \
+  --dataset-path /data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd/exported/scene0709_00 \
+  --output-root /data/mondo-training-dataset/semantic_mapping/hovsg/openeqa_scannet_scene0709_00 \
+  --skip-frames 1
+```
+
+Run OpenEQA answer prediction with the LLM-with-memory wrapper. The wrapper
+turns each method's memory into scene-graph-like text and gives that memory to
+the LLM before answering:
+
+```bash
+export OPENAI_API_KEY=...
+
+# ClawS SpatialRAG memory -> LLM answer
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
+python -m spatial_memory_evaluation.run_memory \
+  --method adapters.llm_with_memory:create_method \
+  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_claws_kwargs.json \
+  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
+  --episode-history scannet-v0/002-scannet-scene0709_00 \
+  --output spatial-memory-evaluation/results/openeqa-scene0709-claws-llm.json
+
+# DualMap object memory -> LLM answer
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/DualMap:$PYTHONPATH \
+python -m spatial_memory_evaluation.run_memory \
+  --method adapters.llm_with_memory:create_method \
+  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_dualmap_kwargs.json \
+  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
+  --episode-history scannet-v0/002-scannet-scene0709_00 \
+  --output spatial-memory-evaluation/results/openeqa-scene0709-dualmap-llm.json
+
+# HOV-SG object memory -> LLM answer
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/robin_wang/open-eqa/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
+python -m spatial_memory_evaluation.run_memory \
+  --method adapters.llm_with_memory:create_method \
+  --method-kwargs spatial-memory-evaluation/configs/llm_openeqa_scene0709_hovsg_kwargs.json \
+  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
+  --episode-history scannet-v0/002-scannet-scene0709_00 \
+  --output spatial-memory-evaluation/results/openeqa-scene0709-hovsg-llm.json
+```
+
+Score the predictions with the internal OpenEQA-compatible LLM-Match evaluator:
+
+```bash
+PYTHONPATH=spatial-memory-evaluation:$PYTHONPATH \
+python -m spatial_memory_evaluation.evaluate_memory \
+  spatial-memory-evaluation/results/openeqa-scene0709-claws-llm.json \
+  --dataset data/open-eqa-v0.json \
+  --output spatial-memory-evaluation/results/openeqa-scene0709-claws-llm-match.json
+```
+
+For a no-API wiring check, set `answer_mode` to `context` in the relevant
+`llm_openeqa_scene0709_*_kwargs.json`; the output will be the memory context
+that would be passed to the LLM.
 
 ## Required Method Adapter
 
@@ -393,7 +500,7 @@ python3 -m spatial_memory_evaluation.run_memory \
 Useful options:
 
 - `--dry-run`: first 5 questions.
-- `--max-frames 200`: pass only the first 200 frames per episode.
+- `--max-frames 200`: debug-only cap; omit it for formal evaluation.
 - `--frame-stride 5`: pass every fifth frame.
 - `--method-kwargs '{"key": "value"}'`: pass JSON config into the factory.
 

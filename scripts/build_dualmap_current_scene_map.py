@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument("--dualmap-dataset-root", type=Path, default=DEFAULT_DUALMAP_DATASET_ROOT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--max-frames", type=int, default=100)
+    parser.add_argument("--max-frames", type=int, default=0)
     parser.add_argument("--export-stride", type=int, default=1)
     parser.add_argument("--run-stride", type=int, default=1)
     parser.add_argument("--device", default="cuda")

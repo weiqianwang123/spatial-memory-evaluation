@@ -1,0 +1,12 @@
+{
+  "base_method": "adapters.dualmap:create_method",
+  "base_method_kwargs_path": "spatial-memory-evaluation/configs/dualmap_openeqa_scene0709_method_kwargs.json",
+  "answer_mode": "openai",
+  "openai_model": "gpt-4-0613",
+  "openai_seed": 1234,
+  "openai_temperature": 0.2,
+  "openai_max_tokens": 64,
+  "memory_db": "spatial-memory-evaluation/results/openeqa-scene0709-dualmap-memory.db",
+  "memory_top_k": 80,
+  "max_context_chars": 12000
+}

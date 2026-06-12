@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sam-checkpoint", type=Path, default=DEFAULT_SAM_CHECKPOINT)
     parser.add_argument("--points-per-side", type=int, default=8)
     parser.add_argument("--points-per-batch", type=int, default=64)
-    parser.add_argument("--skip-frames", type=int, default=100)
+    parser.add_argument("--skip-frames", type=int, default=1)
     parser.add_argument(
         "--merge-type",
         choices=("hierarchical", "sequential"),
