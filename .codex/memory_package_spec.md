@@ -17,7 +17,7 @@ Validator command:
 
 ```bash
 python -m spatial_memory_evaluation.memory_package_validator <package_dir>
-python scripts/validate_memory_package.py <package_dir>
+python scripts/package/validate_memory_package.py <package_dir>
 ```
 
 ## Goals
