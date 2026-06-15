@@ -126,9 +126,9 @@ results/claws/current-scene-smoke/<timestamp>/object-metrics.md
 
 ## DualMap Current Scene Baseline
 
-The base DualMap adapter only supports `get_object(query)`. For OpenEQA memory
-answering, use the LLM-with-memory wrapper below; it exports the DualMap object
-map as scene-graph-like memory before answering.
+The current DualMap path is object-map/object-query focused. Treat OpenEQA
+memory answering as missing until we define a method-specific memory package or
+native query path from DualMap artifacts.
 
 On this machine, run DualMap through the shared `spatial-rag` environment with
 user-site packages disabled. The default Python path otherwise picks up
@@ -169,9 +169,9 @@ python scripts/evaluate_dualmap_current_scene_recall.py
 
 ## HOV-SG Current Scene Baseline
 
-The base HOV-SG adapter only supports `get_object(query)`. For OpenEQA memory
-answering, use the LLM-with-memory wrapper below; it exports the HOV-SG object
-map as scene-graph-like memory before answering.
+The current HOV-SG path is object-map/object-query focused. Treat OpenEQA
+memory answering as missing until we define a method-specific memory package or
+native query path from HOV-SG artifacts.
 
 The adapter expects a precomputed HOV-SG feature map:
 
@@ -354,7 +354,7 @@ The per-episode ClawS DBs are written under:
 memories/claws/openeqa-scannet/
 ```
 
-## OpenEQA Scene0709 LLM-With-Memory Run
+## OpenEQA Scene0709 Memory Run
 
 The prepared one-scene full-frame ScanNet RGB-D sequence is:
 
@@ -375,7 +375,8 @@ drop frames.
 Build or load method memory first:
 
 ```bash
-# ClawS SpatialRAG builds its scene DB lazily during the LLM run below.
+# ClawS SpatialRAG can build or load its SQLite spatial DB through its native
+# SpatialPipeline / SpatialRAGService path.
 
 # DualMap: build a concrete map from the full ScanNet-style RGB-D sequence.
 PYTHONNOUSERSITE=1 \
@@ -398,40 +399,9 @@ python scripts/build_hovsg_current_scene_map.py \
   --skip-frames 1
 ```
 
-Run OpenEQA answer prediction with the LLM-with-memory wrapper. The wrapper
-turns each method's memory into scene-graph-like text and gives that memory to
-the LLM before answering:
-
-```bash
-export OPENAI_API_KEY=...
-
-# ClawS SpatialRAG memory -> LLM answer
-PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/ClawS-SpatialRAG:$PYTHONPATH \
-python -m spatial_memory_evaluation.run_memory \
-  --method adapters.llm_with_memory:create_method \
-  --method-kwargs configs/llm_openeqa_scene0709_claws_kwargs.json \
-  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00
-
-# DualMap object memory -> LLM answer
-PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/DualMap:$PYTHONPATH \
-python -m spatial_memory_evaluation.run_memory \
-  --method adapters.llm_with_memory:create_method \
-  --method-kwargs configs/llm_openeqa_scene0709_dualmap_kwargs.json \
-  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00
-
-# HOV-SG object memory -> LLM answer
-PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/robin_wang/spatial-memory-evaluation:/home/robin_wang/HOV-SG:$PYTHONPATH \
-python -m spatial_memory_evaluation.run_memory \
-  --method adapters.llm_with_memory:create_method \
-  --method-kwargs configs/llm_openeqa_scene0709_hovsg_kwargs.json \
-  --frames-root /data/mondo-training-dataset/semantic_mapping/openeqa_frames \
-  --episode-history scannet-v0/002-scannet-scene0709_00
-```
+OpenEQA memory QA is only considered available for methods that expose a native
+answer/context API or a method-specific memory package. Keep DualMap and HOV-SG
+on object-map recall/query until that package is defined.
 
 Score the predictions with the internal OpenEQA-compatible LLM-Match evaluator:
 
@@ -441,10 +411,6 @@ python -m spatial_memory_evaluation.evaluate_memory \
   results/claws/memory-qa/<timestamp>/predictions.json \
   --dataset data/open-eqa-v0.json
 ```
-
-For a no-API wiring check, set `answer_mode` to `context` in the relevant
-`llm_openeqa_scene0709_*_kwargs.json`; the output will be the memory context
-that would be passed to the LLM.
 
 ## Required Method Adapter
 

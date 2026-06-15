@@ -9,6 +9,9 @@ This repository is a standalone spatial-memory evaluation harness at:
 Work from the repository root. Do not use the old nested path under
 `/home/robin_wang/open-eqa`.
 
+For the agentic spatial-memory benchmark direction, read `agentic_eval.md` for
+the research vision and `agentic_eval_plan.md` for the execution roadmap.
+
 ## Core Workflow
 
 1. An adapter in `adapters/` reads RGB-D episode data or prebuilt method output.

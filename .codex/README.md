@@ -2,6 +2,11 @@
 
 Start with `project-context.md` when working in this repository.
 
+For the agentic benchmark direction, read these in order:
+
+1. `agentic_eval.md`: research vision.
+2. `agentic_eval_plan.md`: execution roadmap and milestones.
+
 Keep generated artifacts out of Git:
 
 - `memories/`: method-generated spatial memory, exported DBs, maps, and other reusable memory artifacts.

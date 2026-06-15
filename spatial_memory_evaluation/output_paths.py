@@ -10,7 +10,6 @@ METHOD_ALIASES = {
     "claws_spatial_rag": "claws",
     "dualmap": "dualmap",
     "hovsg": "hovsg",
-    "llm_with_memory": "llm-with-memory",
 }
 
 
