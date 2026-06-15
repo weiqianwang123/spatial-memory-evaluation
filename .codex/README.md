@@ -6,6 +6,10 @@ For the agentic benchmark direction, read these in order:
 
 1. `agentic_eval.md`: research vision.
 2. `agentic_eval_plan.md`: execution roadmap and milestones.
+3. `memory_package_spec.md`: minimal package contract, capabilities, and schema.
+4. `baseline_registry.md`: baseline methods and track-level API support.
+5. `path_registry.md`: data, checkpoint, repo, output, and runtime paths.
+6. `modules.md`: shared module/checkpoint registry for fair comparisons.
 
 Keep generated artifacts out of Git:
 

@@ -9,16 +9,27 @@ This repository is a standalone spatial-memory evaluation harness at:
 Work from the repository root. Do not use the old nested path under
 `/home/robin_wang/open-eqa`.
 
-For the agentic spatial-memory benchmark direction, read `agentic_eval.md` for
-the research vision and `agentic_eval_plan.md` for the execution roadmap.
+For the agentic spatial-memory benchmark direction, read:
+
+1. `agentic_eval.md`
+2. `agentic_eval_plan.md`
+3. `memory_package_spec.md`
+4. `baseline_registry.md`
+5. `path_registry.md`
+6. `modules.md`
 
 ## Core Workflow
 
-1. An adapter in `adapters/` reads RGB-D episode data or prebuilt method output.
-2. The adapter builds or loads method-specific spatial memory.
-3. Generated memory artifacts are written under `memories/`.
-4. Evaluation scripts read the adapter or exported memory and write predictions,
-   metrics, reports, and logs under `results/<method>/<evaluation>/<timestamp>/`.
+1. A method-native repo or exporter builds the method's minimal spatial memory.
+2. The exporter writes a memory package under
+   `memories/<method>/<dataset>/<scene>/<run-id>/`.
+3. The package includes `manifest.json`, `capabilities.json`, `schema.md`, and
+   method-native artifacts.
+4. The package validator checks that declared capabilities are honest and that
+   unsupported tracks are marked invalid instead of being forced into a shared API.
+5. Fixed-API evaluation and agentic full-access evaluation both start from the
+   exported package.
+6. Evaluation outputs go under `results/<method>/<evaluation>/<timestamp>/`.
 
 The current data source is the NAS mount:
 
@@ -27,30 +38,30 @@ The current data source is the NAS mount:
 ```
 
 Local `data/` is only a cache or fallback and is ignored by Git.
+Concrete data, checkpoint, repo, runtime, intermediate, memory, and result paths
+are tracked in `path_registry.md`.
 
-## Adapter Contract
+## Memory Package Contract
 
-Each method should expose a factory such as:
+The package contract is defined in `memory_package_spec.md`. Keep package
+metadata explicit enough that another agent can understand:
 
-```text
-adapters.my_method:create_method
-```
+- where the method-native memory lives,
+- what tracks the memory can support through fixed APIs,
+- which tracks are invalid for this memory form,
+- which shared modules/checkpoints were used to build it,
+- how to reproduce or inspect the memory.
 
-The loaded object must provide:
+Track support is declared in `capabilities.json`; a method is allowed to declare
+`invalid` for a track when its memory form genuinely cannot answer that API.
 
-- `get_memory_text(question: str) -> str`
-- `get_object(query: str) -> Sequence[ObjectPrediction | Mapping]`
+## Shared Modules
 
-If a method can export reusable structured memory, prefer adding:
-
-- `export_spatial_memory_db(path: Path) -> Path`
-
-Keep adapter-specific config in `configs/`. Store generated memory in a stable
-method-first subdirectory such as:
-
-```text
-memories/<method>/<dataset-or-evaluation>/<scene-or-episode>/
-```
+Use `modules.md` whenever a method uses reusable components such as SAM, YOLO,
+OpenCLIP, GroundingDINO, VLMs, embeddings, vector stores, or LLM judges. If two
+methods use the same functional module, formal runs should use the same strongest
+common version and checkpoint. Any method-native exception must be recorded as a
+module override in package metadata.
 
 ## Path Rules
 
