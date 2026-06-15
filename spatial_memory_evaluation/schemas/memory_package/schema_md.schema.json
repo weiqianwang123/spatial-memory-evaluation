@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spatial-memory-evaluation.local/schemas/memory_package/schema_md.schema.json",
+  "title": "Spatial Memory Minimal Package schema.md Checklist",
+  "description": "Machine-readable checklist for the markdown schema.md file. The validator checks the raw markdown text for these required topics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document", "required_topics"],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "document": {
+      "const": "schema.md"
+    },
+    "required_topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "description", "match_any"],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "match_any": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "0.1",
+      "document": "schema.md",
+      "required_topics": [
+        {
+          "key": "coordinate_frame",
+          "description": "Coordinate frame and units used by positions and geometry.",
+          "match_any": ["coordinate", "坐标"]
+        },
+        {
+          "key": "limitations",
+          "description": "Known limitations and unsupported tracks.",
+          "match_any": ["limitation", "unsupported", "invalid", "限制", "不支持"]
+        }
+      ]
+    }
+  ]
+}

@@ -28,6 +28,36 @@ evaluation repo 的 `adapters/` 只属于后续接入层，不能作为 baseline
 | Multi-frame VLM | `/home/robin_wang/remembr` | present as ReMEmbR eval control | `scripts/eval.py --model vlm...` loads `VideoMemory` from sampled CODa frames | `VLMNonAgent.query` sends image frames + pose/time text to a VLM | raw sampled frames in `VideoMemory`; no explicit memory DB | GPT-4o-style VLM no-memory control over sampled frames | code path present; needs smoke/fix before claiming runnable |
 | LLM with captions | `/home/robin_wang/remembr` | present as ReMEmbR eval control | `scripts/preprocess_captions.py` creates caption JSON; `scripts/eval.py --model <llm>` loads `TextMemory` | `NonAgent.query` answers from caption context without retrieval tools | caption JSON / `TextMemory` | VILA captions + plain LLM context baseline | no-explicit-memory control present |
 
+## Track-wise Fixed API Query Support
+
+本表只判断 method repo 或导出的 memory package 是否能支持
+`capabilities.json` 里的 fixed API 查询，不判断 agent full access。Track key 以
+`.codex/memory_package_spec.md` 为准。
+
+状态含义：
+
+- `native`：方法 repo 已有可调用的原生 API/函数，薄封装后可作为 package Python
+  entrypoint。
+- `export`：原生 artifact 里有足够信息，但需要先写 package exporter 或
+  non-interactive reader。
+- `candidate`：看起来可支持，但需要 smoke test 或把交互式/agent式调用改成稳定
+  Python entrypoint；在完成前，实际 `capabilities.json` 不能写 `supported`。
+- `invalid`：第一版 fixed API 应声明 `invalid`。
+- `control-only`：no-explicit-memory ablation/control，不作为 memory-package fixed API
+  支持。
+
+| Method | Track 1: object inventory API | Track 2: object location query API | Track 3: ScanRefer referring query API | Track 4: OpenEQA QA / retrieval API | First package decision |
+|---|---|---|---|---|---|
+| ClawS SpatialRAG | `native` via `get_spatial_objects(limit)` / SQLite object rows | `native` via `query_spatial_memory`, semantic anchors, storage retrieval | `invalid`: no native ScanRefer-style referring resolver found | `candidate`: native spatial RAG/retrieval exists, but answer schema needs smoke test | Prefer `supported` for Track 1/2, `invalid` for Track 3, Track 4 after smoke |
+| DualMap | `export` from `map/*.pkl` object maps | `candidate`: interactive CLIP/object query exists; needs non-interactive package entrypoint | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 first; Track 2 only after query bridge; Track 3/4 invalid |
+| HOV-SG | `export` from graph/object point-cloud artifacts | `native` via `Graph.query_object` / `query_hierarchy` | `invalid`: open-vocab object query is not a ScanRefer resolver yet | `invalid`: no native general QA API found | Track 1/2 likely supportable; Track 3/4 invalid |
+| ConceptGraphs | `export` from `pcd_saves/*.pkl.gz` / scene graph JSON | `candidate`: interactive CLIP query exists; needs non-interactive bridge | `invalid`: no stable referring resolver found | `invalid`: no stable QA/retrieval API found | Track 1 first; Track 2 after bridge; Track 3/4 invalid |
+| DAAAM | `export` from DSG object / semantic nodes if present | `candidate`: scene graph tools can match subjects and spatial neighborhoods | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` exists; needs evaluator-safe call | Track 1/2/4 likely supportable after DSG package; Track 3 invalid |
+| Hydra standalone | `candidate`: DSG object nodes may be exportable when labels exist | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean; Track 2/3/4 invalid |
+| ReMEmbR | `invalid`: caption memory has no object inventory | `invalid`: caption retrieval has pose/time but no object-level location output | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` and retrieval tools | Track 4 supportable; Track 1/2/3 invalid for fixed object-level APIs |
+| Multi-frame VLM | `control-only` | `control-only` | `control-only` | `control-only`: query API exists but uses raw frames, not exported memory | Keep as raw-frame ablation, not fixed memory API |
+| LLM with captions | `control-only` | `control-only` | `control-only` | `control-only`: `NonAgent.query` exists but is a caption-context control | Keep as caption ablation, not fixed memory API |
+
 ## ClawS SpatialRAG
 
 - Root repo: `/home/robin_wang/ClawS-SpatialRAG`

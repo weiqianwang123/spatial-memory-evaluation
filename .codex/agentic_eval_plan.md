@@ -223,7 +223,7 @@ log path。
 
 Milestones：
 
-- M1.1：冻结 minimal package spec。
+- M1.1：冻结 minimal package spec。（done）
   - 实现 `manifest.json`、`capabilities.json`、`schema.md` 的 schema。
   - 写 package validator。
   - validator 只检查 package 是否诚实声明能力，不强迫所有方法支持所有 track。
@@ -281,6 +281,7 @@ Milestones：
 
 - M2.1：实现 fixed API loader。
   - 读取 `capabilities.json`。
+  - fixed API 统一使用 Python entrypoint。
   - resolve entrypoint 到 package 内相对路径。
   - 禁止 entrypoint 访问 package 外写入结果。
 - M2.2：Track 1 evaluator。
@@ -340,17 +341,18 @@ results/<method>/<agentic-evaluation>/<timestamp>/
 每个 query 建一个 sandbox：
 
 - sandbox 只写自己的工作目录和指定 output file。
-- memory package 以只读方式挂载或复制进 sandbox。
+- memory package 复制进 sandbox；sandbox 内只读使用，不修改原始 package。
 - query、rubric、output schema 写入 sandbox。
 - GT answers 不进入 sandbox。
-- raw frames / crops 是否可读由 `agent_access` policy 控制。
+- 默认 memory-only；raw frames / crops 作为单独 ablation，由 `agent_access`
+  policy 显式打开。
 - agent 必须输出 `answer.json`，包含 answer、evidence、trace、used_memory、
   used_raw_input、used_code、failure_mode。
 
 Docker sandbox 优先：
 
 - container 只能写 `/sandbox`；
-- memory package read-only mount；
+- memory package 复制进 container sandbox；
 - 网络默认关闭或只允许模型 API endpoint；
 - stream 写入 `stream.jsonl`；
 - run 完成后自动保存 sandbox git diff；
@@ -495,9 +497,10 @@ Definition of Done：
 
 ## 近期 Checklist
 
-1. 写 `.codex/memory_package_spec.md`，把 minimal package 和
+1. 已写 `.codex/memory_package_spec.md`，把 minimal package 和
    `capabilities.json` 固定下来。
-2. 写 `validate_package.py`，先只做 schema 和 artifact existence 检查。
+2. 已写 `spatial_memory_evaluation/memory_package_validator.py`，先只做 schema、
+   artifact existence、entrypoint 声明和 capability 诚实性检查。
 3. 为 baseline registry 中所有 present methods 创建 exporter stub。
 4. 先导出 ClawS、DualMap、HOV-SG 的 current-scene package。
 5. 实现 Track 1 fixed evaluator，要求 unsupported package 输出 invalid。
@@ -507,13 +510,12 @@ Definition of Done：
 9. 再进入 ScanRefer Track 3。
 10. 最后进入 OpenEQA Track 4。
 
-## 当前未决问题
+## 当前已定决策
 
-- fixed API 的最小函数名是否统一成 Python entrypoint，还是允许 JSON/CLI entrypoint？
-- Track 1 object inventory 是否必须所有方法导出 object table，还是 DSG/caption
-  方法可以只声明 invalid？
-- agentic sandbox 是否默认允许读取 raw frames，还是默认 memory-only、raw frames 作为
-  单独 ablation？
-- agent backend 默认用 Claude Code、OpenCode，还是抽象成 provider config？
-- Docker sandbox 需要如何挂载大型 memory package，复制还是 read-only bind mount？
-- evidence correctness 第一版由 rule-based、LLM judge、human audit 还是 hybrid？
+- fixed API 统一成 Python entrypoint；不把 JSON/CLI entrypoint 作为第一版标准。
+- Track 1 object inventory 不强迫所有方法导出 object table；DSG/caption 方法可以
+  明确声明 `invalid`。
+- agentic sandbox 默认 memory-only；raw frames / crops 作为单独 ablation。
+- agent backend 第一版默认 Claude Code。
+- memory package 复制进 sandbox，不直接挂载原 package 作为工作目录。
+- evidence correctness 第一版使用 LLM judge。

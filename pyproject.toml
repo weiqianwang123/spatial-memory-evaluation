@@ -19,3 +19,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["spatial_memory_evaluation*"]
+
+[tool.setuptools.package-data]
+spatial_memory_evaluation = ["schemas/memory_package/*.json"]

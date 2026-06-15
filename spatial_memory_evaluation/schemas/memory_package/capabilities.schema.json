@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spatial-memory-evaluation.local/schemas/memory_package/capabilities.schema.json",
+  "title": "Spatial Memory Minimal Package Capabilities",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "fixed_api", "agent_access"],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "fixed_api": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "track1_memory_construction",
+        "track2_object_location",
+        "track3_scanrefer",
+        "track4_openeqa"
+      ],
+      "properties": {
+        "track1_memory_construction": {
+          "$ref": "#/$defs/track_capability"
+        },
+        "track2_object_location": {
+          "$ref": "#/$defs/track_capability"
+        },
+        "track3_scanrefer": {
+          "$ref": "#/$defs/track_capability"
+        },
+        "track4_openeqa": {
+          "$ref": "#/$defs/track_capability"
+        }
+      }
+    },
+    "agent_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "read_manifest",
+        "read_schema",
+        "read_memory_artifacts",
+        "read_evidence",
+        "read_raw_links",
+        "read_raw_frames",
+        "read_source_keyframes_or_crops",
+        "run_package_tools",
+        "write_package"
+      ],
+      "properties": {
+        "mode": {
+          "enum": ["memory_only", "memory_plus_crops", "memory_plus_raw"]
+        },
+        "read_manifest": {
+          "type": "boolean"
+        },
+        "read_schema": {
+          "type": "boolean"
+        },
+        "read_memory_artifacts": {
+          "type": "boolean"
+        },
+        "read_evidence": {
+          "type": "boolean"
+        },
+        "read_raw_links": {
+          "type": "boolean"
+        },
+        "read_raw_frames": {
+          "type": "boolean"
+        },
+        "read_source_keyframes_or_crops": {
+          "type": "boolean"
+        },
+        "run_package_tools": {
+          "type": "boolean"
+        },
+        "write_package": {
+          "const": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "track_capability": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["supported", "invalid"]
+        },
+        "entrypoint": {
+          "type": ["string", "null"],
+          "pattern": "^[^:]+\\.py:[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "input_schema": {
+          "type": ["string", "null"]
+        },
+        "output_schema": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

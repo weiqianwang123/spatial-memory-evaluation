@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spatial-memory-evaluation.local/schemas/memory_package/manifest.schema.json",
+  "title": "Spatial Memory Minimal Package Manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "package_id",
+    "method",
+    "dataset",
+    "input",
+    "explicit_memory",
+    "memory_artifacts",
+    "evidence_artifacts",
+    "raw_links",
+    "tools",
+    "build",
+    "allowed_access"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "package_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "method": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "display_name", "family"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family": {
+          "enum": [
+            "object_map",
+            "scene_graph",
+            "caption_memory",
+            "vector_db",
+            "raw_frame_control",
+            "caption_control",
+            "other"
+          ]
+        },
+        "repo_path": {
+          "type": ["string", "null"]
+        },
+        "commit": {
+          "type": ["string", "null"]
+        },
+        "version": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "split": {
+          "type": ["string", "null"]
+        },
+        "scene_id": {
+          "type": ["string", "null"]
+        },
+        "episode_id": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["modality", "coordinate_frame"],
+      "properties": {
+        "modality": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rgbd_root": {
+          "type": ["string", "null"]
+        },
+        "poses_path": {
+          "type": ["string", "null"]
+        },
+        "intrinsics_path": {
+          "type": ["string", "null"]
+        },
+        "timestamp_path": {
+          "type": ["string", "null"]
+        },
+        "coordinate_frame": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "explicit_memory": {
+      "type": "boolean"
+    },
+    "memory_artifacts": {
+      "$ref": "#/$defs/artifact_list"
+    },
+    "evidence_artifacts": {
+      "$ref": "#/$defs/artifact_list"
+    },
+    "raw_links": {
+      "$ref": "#/$defs/artifact_list"
+    },
+    "tools": {
+      "$ref": "#/$defs/artifact_list"
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "allowed_access": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "contains_gt_annotations",
+        "contains_benchmark_answers",
+        "contains_test_labels",
+        "contains_question_specific_rules"
+      ],
+      "properties": {
+        "contains_gt_annotations": {
+          "type": "boolean"
+        },
+        "contains_benchmark_answers": {
+          "type": "boolean"
+        },
+        "contains_test_labels": {
+          "type": "boolean"
+        },
+        "contains_question_specific_rules": {
+          "type": "boolean"
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "artifact_list": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "type", "path"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "required_for": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "track1_memory_construction",
+                "track2_object_location",
+                "track3_scanrefer",
+                "track4_openeqa"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

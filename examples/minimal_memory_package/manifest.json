@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.1",
+  "package_id": "example/minimal/scene0000_00/20260615-000000",
+  "method": {
+    "name": "example_minimal",
+    "display_name": "Example Minimal Memory",
+    "family": "object_map",
+    "repo_path": null,
+    "commit": null,
+    "version": null
+  },
+  "dataset": {
+    "name": "example",
+    "split": "smoke",
+    "scene_id": "scene0000_00",
+    "episode_id": null
+  },
+  "input": {
+    "modality": ["rgb", "depth", "pose", "intrinsics", "timestamp"],
+    "frame_count": 1,
+    "rgbd_root": null,
+    "poses_path": null,
+    "intrinsics_path": null,
+    "timestamp_path": null,
+    "coordinate_frame": "example right-handed world frame; meters"
+  },
+  "explicit_memory": true,
+  "memory_artifacts": [
+    {
+      "name": "object_table",
+      "type": "jsonl",
+      "path": "memory/object_table.jsonl",
+      "description": "Canonical object inventory for smoke validation.",
+      "required_for": ["track1_memory_construction"]
+    }
+  ],
+  "evidence_artifacts": [],
+  "raw_links": [],
+  "tools": [
+    {
+      "name": "list_objects",
+      "type": "python",
+      "path": "tools/list_objects.py",
+      "description": "Track 1 fixed API entrypoint.",
+      "required_for": ["track1_memory_construction"]
+    }
+  ],
+  "build": {
+    "command": "static example fixture",
+    "config_paths": [],
+    "environment": null,
+    "started_at": "2026-06-15T00:00:00+08:00",
+    "finished_at": "2026-06-15T00:00:00+08:00",
+    "runtime_seconds": 0.0,
+    "memory_size_bytes": null
+  },
+  "allowed_access": {
+    "contains_gt_annotations": false,
+    "contains_benchmark_answers": false,
+    "contains_test_labels": false,
+    "contains_question_specific_rules": false
+  },
+  "notes": "Minimal package fixture for validator smoke tests."
+}
