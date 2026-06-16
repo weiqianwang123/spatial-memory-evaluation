@@ -26,6 +26,10 @@ from scripts.methods.hovsg.build_memory_smoke import (
     _iso_time,
     _run_timestamp,
 )
+from spatial_memory_evaluation.common.labels import (
+    DEFAULT_DETECTOR_CLASS_LIST_PATH,
+    validate_detector_class_list,
+)
 from spatial_memory_evaluation.memory_package_validator import validate_package
 
 
@@ -34,7 +38,7 @@ DEFAULT_DUALMAP_PYTHON = Path("/home/robin_wang/miniforge3/envs/spatial-rag/bin/
 DEFAULT_YOLO_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "yolov8s-world.pt"
 DEFAULT_SAM_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "sam_b.pt"
 DEFAULT_FASTSAM_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "model" / "FastSAM-s.pt"
-DEFAULT_CLASS_NAMES = DEFAULT_DUALMAP_ROOT / "config" / "class_list" / "gpt_indoor_general.txt"
+DEFAULT_CLASS_NAMES = DEFAULT_DETECTOR_CLASS_LIST_PATH
 DUALMAP_IMAGE_HEIGHT = 192
 DUALMAP_IMAGE_WIDTH = 256
 
@@ -107,15 +111,6 @@ def parse_args() -> argparse.Namespace:
         "--skip-cuda-preflight",
         action="store_true",
         help="skip a small CUDA/cuDNN test before launching DualMap",
-    )
-    parser.add_argument(
-        "--disable-cudnn",
-        action="store_true",
-        help=(
-            "disable torch.backends.cudnn in the DualMap subprocess while "
-            "keeping CUDA enabled. Useful when cuDNN fails with "
-            "CUDNN_STATUS_NOT_INITIALIZED."
-        ),
     )
     parser.add_argument("--yolo-checkpoint", type=Path, default=DEFAULT_YOLO_CHECKPOINT)
     parser.add_argument("--sam-checkpoint", type=Path, default=DEFAULT_SAM_CHECKPOINT)
@@ -260,14 +255,9 @@ def run_dualmap_native(
     native_run_root: Path,
 ) -> None:
     native_run_root.mkdir(parents=True, exist_ok=True)
-    entrypoint = (
-        str((REPO_ROOT / "scripts/methods/dualmap/run_runner_dataset_no_cudnn.py").resolve())
-        if args.disable_cudnn
-        else "applications/runner_dataset.py"
-    )
     command = [
         str(args.dualmap_python),
-        entrypoint,
+        "applications/runner_dataset.py",
         "dataset_name=scannet",
         f"scene_id={dualmap_scene_id}",
         f"dataset_path={layout_dir.resolve()}",
@@ -407,6 +397,7 @@ def _preflight_dualmap(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"SAM checkpoint not found: {args.sam_checkpoint}")
     if not args.class_names.exists():
         raise FileNotFoundError(f"class list not found: {args.class_names}")
+    validate_detector_class_list(args.class_names)
     if args.enable_fastsam and not args.fastsam_checkpoint.exists():
         raise FileNotFoundError(f"FastSAM checkpoint not found: {args.fastsam_checkpoint}")
     if args.device == "cuda" and not args.skip_cuda_preflight:
@@ -426,10 +417,6 @@ print(f"device_count={torch.cuda.device_count()}")
 if not torch.cuda.is_available():
     raise RuntimeError("torch.cuda.is_available() is False")
 
-if __DISABLE_CUDNN__:
-    torch.backends.cudnn.enabled = False
-    print("cudnn_enabled=False")
-
 device = torch.device("cuda")
 conv = torch.nn.Conv2d(3, 4, kernel_size=3, padding=1).to(device)
 x = torch.randn(1, 3, 64, 64, device=device)
@@ -437,7 +424,7 @@ with torch.no_grad():
     y = conv(x)
 torch.cuda.synchronize()
 print(f"cuda_cudnn_smoke=ok shape={tuple(y.shape)}")
-""".replace("__DISABLE_CUDNN__", "True" if args.disable_cudnn else "False")
+"""
     result = subprocess.run(
         [str(args.dualmap_python), "-c", code],
         cwd=args.dualmap_root,
@@ -457,7 +444,6 @@ print(f"cuda_cudnn_smoke=ok shape={tuple(y.shape)}")
         "CUDA/cuDNN preflight failed before launching DualMap. "
         "Run on a GPU node with a healthy NVIDIA driver, set "
         "--cuda-visible-devices to a valid GPU if needed, or pass "
-        "--disable-cudnn to keep CUDA enabled while bypassing cuDNN, or pass "
         "--skip-cuda-preflight if you intentionally want DualMap to fail inside "
         f"its own runtime instead.\n{details}"
     )
@@ -476,8 +462,6 @@ def _dualmap_subprocess_env(args: argparse.Namespace) -> dict[str, str]:
     )
     if args.cuda_visible_devices is not None:
         env["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
-    if args.disable_cudnn:
-        env["SPATIAL_MEMORY_DISABLE_CUDNN"] = "1"
     return env
 
 
@@ -993,11 +977,11 @@ def _write_build_log(
             "dualmap_runtime": {
                 "yolo_checkpoint": str(args.yolo_checkpoint),
                 "sam_checkpoint": str(args.sam_checkpoint),
+                "class_names": str(args.class_names),
                 "fastsam_enabled": args.enable_fastsam,
                 "fastsam_checkpoint": str(args.fastsam_checkpoint),
                 "clip_model": args.clip_model,
                 "clip_pretrained": args.clip_pretrained,
-                "disable_cudnn": args.disable_cudnn,
                 "frame_stride": args.frame_stride,
                 "max_frames": args.max_frames,
             },

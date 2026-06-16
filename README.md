@@ -112,6 +112,12 @@ Both tracks support `--mode fixed_api` and `--mode agentic_memory_only`. If a
 package honestly declares an unsupported fixed API, the result is `invalid` for
 that method/track rather than coerced into an approximate score.
 
+Formal fair-comparison runs should use the shared detector vocabulary in
+`spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`, which is
+checked against `spatial_memory_evaluation/common/labels.py`. Any detector,
+segmenter, CLIP model, checkpoint, or class-list override should be treated as a
+module ablation unless all compared methods use the same setting.
+
 ## Next Work
 
 1. Freeze more method packages with the minimal memory package spec.

@@ -19,4 +19,7 @@ where = ["."]
 include = ["spatial_memory_evaluation*"]
 
 [tool.setuptools.package-data]
-spatial_memory_evaluation = ["schemas/memory_package/*.json"]
+spatial_memory_evaluation = [
+  "assets/class_lists/*.txt",
+  "schemas/memory_package/*.json",
+]

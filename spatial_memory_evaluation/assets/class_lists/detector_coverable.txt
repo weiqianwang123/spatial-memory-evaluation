@@ -1,0 +1,37 @@
+bag
+basket
+blanket
+blinds
+book
+bottle
+box
+broom
+cabinet
+can
+carpet
+chair
+clock
+computer
+container
+counter
+cup
+curtain
+cushion
+foot rest
+heater
+keyboard
+lamp
+medical machine
+monitor
+mouse
+sink
+sofa
+speaker
+suitcase
+table
+tablet
+tissue box
+toilet paper dispenser
+trash can
+tripod
+whiteboard

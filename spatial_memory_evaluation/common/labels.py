@@ -97,6 +97,58 @@ DEFAULT_DETECTOR_COVERABLE_LABELS: set[str] = {
     "whiteboard",
 }
 
+DEFAULT_DETECTOR_CLASS_LIST_PATH = (
+    Path(__file__).resolve().parents[1] / "assets" / "class_lists" / "detector_coverable.txt"
+)
+
+
+def canonical_detector_labels() -> list[str]:
+    return sorted(DEFAULT_DETECTOR_COVERABLE_LABELS)
+
+
+def read_detector_class_list(path: Path | str) -> list[str]:
+    labels: list[str] = []
+    with Path(path).open("r", encoding="utf-8") as f:
+        for line in f:
+            text = normalize_text(line)
+            if text:
+                labels.append(text)
+    return labels
+
+
+def detector_class_list_mismatch(path: Path | str) -> dict[str, Any]:
+    expected = canonical_detector_labels()
+    found = read_detector_class_list(path)
+    return {
+        "expected": expected,
+        "found": found,
+        "missing": [label for label in expected if label not in found],
+        "extra": [label for label in found if label not in expected],
+        "order_matches": found == expected,
+    }
+
+
+def validate_detector_class_list(path: Path | str) -> None:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"detector class list not found: {path}")
+    mismatch = detector_class_list_mismatch(path)
+    if mismatch["missing"] or mismatch["extra"] or not mismatch["order_matches"]:
+        raise ValueError(
+            "Detector class list must exactly match "
+            "DEFAULT_DETECTOR_COVERABLE_LABELS in spatial_memory_evaluation.common.labels. "
+            f"path={path} missing={mismatch['missing']} extra={mismatch['extra']} "
+            f"order_matches={mismatch['order_matches']}"
+        )
+
+
+def write_default_detector_class_list(path: Path | str = DEFAULT_DETECTOR_CLASS_LIST_PATH) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for label in canonical_detector_labels():
+            f.write(f"{label}\n")
+
 
 def load_aliases(path: Path | str | None) -> dict[str, str]:
     aliases = dict(DEFAULT_LABEL_ALIASES)

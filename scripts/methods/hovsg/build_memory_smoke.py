@@ -18,6 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from spatial_memory_evaluation.common.labels import (
+    DEFAULT_DETECTOR_CLASS_LIST_PATH,
+    validate_detector_class_list,
+)
 from spatial_memory_evaluation.memory_package_validator import validate_package
 
 
@@ -25,7 +29,7 @@ DEFAULT_SCENE_ID = "036bce3393"
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
 DEFAULT_CLAWS_ROOT = Path("/home/robin_wang/ClawS-SpatialRAG")
 DEFAULT_HOVSG_ROOT = Path("/home/robin_wang/HOV-SG")
-DEFAULT_CLASS_NAMES = Path("/home/robin_wang/DualMap/config/class_list/gpt_indoor_general.txt")
+DEFAULT_CLASS_NAMES = DEFAULT_DETECTOR_CLASS_LIST_PATH
 DEFAULT_SPATIAL_RAG_PYTHON = Path("/home/robin_wang/miniforge3/envs/spatial-rag/bin/python")
 DEFAULT_SAM_CHECKPOINT = Path("/home/robin_wang/DualMap/sam_b.pt")
 IPHONE_RGB_SHAPE = (1440, 1920)
@@ -430,6 +434,8 @@ def _preflight_hovsg(args: argparse.Namespace) -> None:
             f"SAM checkpoint not found: {args.sam_checkpoint}. "
             "Pass --sam-checkpoint or download the checkpoint before running HOV-SG."
         )
+    if not args.no_classify_labels:
+        validate_detector_class_list(args.class_names)
     if args.device != "cuda":
         raise ValueError(
             "This HOV-SG smoke runner currently requires --device cuda because "
@@ -993,7 +999,17 @@ def _write_build_log(
             "config_paths": [],
             "source_outputs": [],
             "object_count": object_count,
-            "hovsg_wrapper": {
+            "hovsg_runtime": {
+                "class_names": str(args.class_names),
+                "clip_model": args.clip_model,
+                "clip_pretrained": args.clip_pretrained,
+                "sam_type": args.sam_type,
+                "sam_checkpoint": str(args.sam_checkpoint),
+                "sam_points_per_side": args.sam_points_per_side,
+                "sam_points_per_batch": args.sam_points_per_batch,
+                "voxel_size": args.voxel_size,
+                "merge_type": args.merge_type,
+                "no_classify_labels": args.no_classify_labels,
                 "safe_crop_patch": not args.disable_safe_crop_patch,
                 "safe_crop_patch_entrypoint": (
                     None

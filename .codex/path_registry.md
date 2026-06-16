@@ -48,7 +48,7 @@ See `modules.md` for module-level policy. Current known HOV-SG-related paths:
 | OpenCLIP smoke model | `ViT-B-32` | available through `open_clip` | current HOV-SG smoke default |
 | OpenCLIP smoke pretrained tag | `laion2b_s34b_b79k` | available through `open_clip` | current HOV-SG smoke default |
 | HOV-SG default OpenCLIP target | `ViT-H-14 / laion2b_s32b_b79k` | uncentralized | HOV-SG config default, heavier than smoke setup |
-| indoor class list for smoke labels | `/home/robin_wang/DualMap/config/class_list/gpt_indoor_general.txt` | present | 100-class label list used only to name exported HOV-SG objects |
+| canonical detector class list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | repo-controlled detector/label vocabulary; must match `DEFAULT_DETECTOR_COVERABLE_LABELS` |
 | HOV-SG native HM3D labels | `/home/robin_wang/HOV-SG/hovsg/labels/HM3D_CountsOfObjectTypes.csv` | present | HOV-SG native `HM3DSEM_LABELS`, 1624 object types plus header |
 
 ## Python And Runtime
@@ -59,7 +59,6 @@ See `modules.md` for module-level policy. Current known HOV-SG-related paths:
 | HOV-SG device | `cuda` | HOV-SG upstream has hard-coded `.cuda()` paths |
 | DualMap smoke device | `cuda` | DualMap native detection/mapping is expected to run on GPU |
 | CUDA selection flag | `--cuda-visible-devices <ids>` | passed through to HOV-SG/DualMap subprocess as `CUDA_VISIBLE_DEVICES` |
-| DualMap cuDNN bypass | `--disable-cudnn` | keeps CUDA enabled but sets `torch.backends.cudnn.enabled=False` before DualMap runner |
 | Hydra error mode | `HYDRA_FULL_ERROR=1` | set by HOV-SG build wrapper |
 | HOV-SG safe crop launcher | `scripts/methods/hovsg/run_semantic_segmentation_patched.py` | wraps HOV-SG semantic segmentation and guards empty SAM crops |
 
@@ -289,9 +288,9 @@ clip.pretrained=laion2b_s34b_b79k
 ```
 
 If PyTorch CUDA is visible but cuDNN conv initialization fails with
-`CUDNN_STATUS_NOT_INITIALIZED`, `--disable-cudnn` is available as a temporary
-debug fallback. Do not use it for normal or formal runs unless this runtime
-setting is intentionally recorded.
+`CUDNN_STATUS_NOT_INITIALIZED`, fix the GPU/cuDNN runtime or use
+`--skip-cuda-preflight` only when intentionally letting DualMap fail inside its
+own runtime. Formal runs should not disable cuDNN.
 
 ### Step 3: Eval DualMap Memory Package
 
