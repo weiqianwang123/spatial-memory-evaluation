@@ -22,7 +22,7 @@ from spatial_memory_evaluation.output_paths import timestamped_result_dir
 
 
 TRACK_KEY = "track1_memory_construction"
-SPLITS = ("all_annotated", "detector_coverable")
+SPLITS = ("detector_coverable",)
 
 
 def evaluate_track1(

@@ -49,6 +49,7 @@ def _queries_for_split(split: str, gt_objects: list[dict[str, Any]], top_k: int)
                 "scene_id": scene_id,
                 "split": split,
                 "canonical_label": label,
+                "target_label": label,
                 "query": f"where is the {label}?",
                 "top_k": top_k,
                 "target_gt_ids": [str(obj["gt_id"]) for obj in targets],

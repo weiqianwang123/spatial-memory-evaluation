@@ -685,15 +685,19 @@ def list_objects(package_dir: str, query: dict[str, Any]) -> dict[str, Any]:
         """from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 
 def query_object(package_dir: str, query: dict[str, Any]) -> dict[str, Any]:
-    query_text = str(query.get("query") or query.get("object") or "").strip().lower()
+    target_label = _normalize_label(
+        query.get("target_label") or query.get("canonical_label") or query.get("object") or ""
+    )
+    query_text = _normalize_label(query.get("query") or "")
     top_k = int(query.get("top_k") or 5)
     objects = _load_objects(Path(package_dir))
-    predictions = _rank_by_label_and_size(objects, query_text)[:top_k]
+    predictions = _rank_by_label_and_size(objects, target_label, query_text)[:top_k]
     return {"status": "ok", "predictions": predictions}
 
 
@@ -708,18 +712,34 @@ def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
     return objects
 
 
-def _rank_by_label_and_size(objects: list[dict[str, Any]], query_text: str) -> list[dict[str, Any]]:
+def _normalize_label(value: Any) -> str:
+    text = re.sub(r"[^a-z0-9]+", " ", str(value).lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _rank_by_label_and_size(
+    objects: list[dict[str, Any]],
+    target_label: str,
+    query_text: str,
+) -> list[dict[str, Any]]:
     ranked = []
+    target_tokens = set(target_label.split())
     query_tokens = set(query_text.split())
     for obj in objects:
-        label = str(obj.get("label") or "object").lower()
+        label = _normalize_label(obj.get("label") or "object")
         label_tokens = set(label.split())
-        if query_text and query_text == label:
+        if target_label and target_label == label:
             score = 1.0
-        elif query_text and query_text in label:
-            score = 0.85
-        elif query_tokens and query_tokens & label_tokens:
+        elif target_label and (target_label in label or label in target_label):
+            score = 0.9
+        elif target_tokens and target_tokens & label_tokens:
+            score = 0.75
+        elif query_text and query_text == label:
             score = 0.7
+        elif query_text and (query_text in label or label in query_text):
+            score = 0.65
+        elif query_tokens and query_tokens & label_tokens:
+            score = 0.55
         elif query_text in ("", "object", "objects"):
             score = 0.5
         else:
@@ -760,7 +780,12 @@ def _write_package_schemas(package_dir: Path) -> None:
         {
             "type": "object",
             "required": ["query"],
-            "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
+            "properties": {
+                "query": {"type": "string"},
+                "target_label": {"type": "string"},
+                "canonical_label": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
         },
     )
     _write_json(

@@ -20,7 +20,7 @@ from spatial_memory_evaluation.output_paths import timestamped_result_dir
 
 
 TRACK_KEY = "track2_object_location"
-SPLITS = ("all_annotated", "detector_coverable")
+SPLITS = ("detector_coverable",)
 K_VALUES = (1, 5, 10)
 
 
@@ -102,8 +102,17 @@ def _run_fixed_api(
     for split in SPLITS:
         for query in read_jsonl(benchmark_dir / f"queries_{split}.jsonl"):
             query_id = str(query["query_id"])
+            target_label = query.get("target_label") or query.get("canonical_label")
             started = time.perf_counter()
-            result = query_object(str(package_dir), {"query": query["query"], "top_k": int(query["top_k"])})
+            result = query_object(
+                str(package_dir),
+                {
+                    "query": query["query"],
+                    "target_label": target_label,
+                    "canonical_label": query.get("canonical_label"),
+                    "top_k": int(query["top_k"]),
+                },
+            )
             latency_seconds_by_query[query_id] = time.perf_counter() - started
             predictions = result.get("predictions") if isinstance(result, dict) else None
             predictions_by_query[query_id] = predictions if isinstance(predictions, list) else []
@@ -167,6 +176,7 @@ def _write_agent_query_files(benchmark_dir: Path, output_dir: Path) -> None:
                     "scene_id": query["scene_id"],
                     "split": query["split"],
                     "canonical_label": query["canonical_label"],
+                    "target_label": query.get("target_label") or query["canonical_label"],
                     "query": query["query"],
                     "top_k": query["top_k"],
                 }
