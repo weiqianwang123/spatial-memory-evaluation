@@ -43,5 +43,4 @@ DualMap smoke prepare writes a ScanNet-style layout under
 `data/dualmap_layouts/scannetpp_<scene-id>/<run-id>/exported/scannetpp_<scene-id>/`.
 The build step calls DualMap `applications/runner_dataset.py`, packages native
 `map/*.pkl`, and keeps fixed API eval separate from memory construction.
-`--disable-cudnn` exists only as a temporary debug fallback for machines where
-PyTorch CUDA is visible but cuDNN initialization fails.
+Formal runs should keep cuDNN enabled.

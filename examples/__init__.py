@@ -1,1 +1,1 @@
-"""Example method adapters for spatial-memory evaluation."""
+"""Example fixtures for spatial-memory evaluation."""
