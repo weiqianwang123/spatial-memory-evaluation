@@ -42,6 +42,16 @@ def apply_dualmap_shared_modules(args: argparse.Namespace) -> None:
     args.shared_modules = settings["metadata"]
 
 
+def apply_daaam_shared_modules(args: argparse.Namespace) -> None:
+    settings = get_shared_module_registry().method_settings("daaam", args.shared_module_profile)
+    _set_path(args, "class_names", settings["class_names"], "OV prompt/evaluation label list")
+    _set_path(args, "sam_checkpoint", settings["sam_checkpoint"], "SAM checkpoint")
+    _set_value(args, "sam_type", settings["sam_type"], "SAM type")
+    _set_value(args, "clip_model", settings["clip_model"], "OpenCLIP model")
+    _set_value(args, "clip_pretrained", settings["clip_pretrained"], "OpenCLIP pretrained tag")
+    args.shared_modules = settings["metadata"]
+
+
 def shared_modules_metadata(args: argparse.Namespace) -> dict[str, Any]:
     return dict(getattr(args, "shared_modules", {}) or {})
 

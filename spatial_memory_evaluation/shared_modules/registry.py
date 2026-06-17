@@ -225,6 +225,44 @@ class SharedModuleRegistry:
                 pretrained="laion2b_s32b_b79k",
                 notes="Resolved through open_clip; confirm all methods can run before formal use.",
             ),
+            "daaam.dam_3b": ModuleSpec(
+                key="daaam.dam_3b",
+                kind="dam",
+                name="Describe Anything Model",
+                role="DAAAM-native object grounding / free-text description model",
+                version="nvidia/DAM-3B",
+                status="package_resolved",
+                model_name="nvidia/DAM-3B",
+                notes="Loaded by DAAAM grounding workers through the DAM package.",
+            ),
+            "daaam.sentence_t5_large": ModuleSpec(
+                key="daaam.sentence_t5_large",
+                kind="sentence_embedding",
+                name="SentenceTransformers",
+                role="DAAAM-native text embedding for scene-understanding tools",
+                version="sentence-transformers/sentence-t5-large",
+                status="package_resolved",
+                model_name="sentence-transformers/sentence-t5-large",
+                notes="Used for DAAAM deterministic scene-graph semantic tools.",
+            ),
+            "daaam.hydra_spark_dsg": ModuleSpec(
+                key="daaam.hydra_spark_dsg",
+                kind="scene_graph",
+                name="Hydra / Spark-DSG",
+                role="DAAAM-native dynamic scene graph construction and storage",
+                version="method_native",
+                status="repo_present",
+                notes="Uses the DAAAM/Hydra Python bindings available in the DAAAM runtime env.",
+            ),
+            "daaam.botsort_reid": ModuleSpec(
+                key="daaam.botsort_reid",
+                kind="tracker",
+                name="BotSort / ReID",
+                role="DAAAM-native object track association",
+                version="method_native",
+                status="package_resolved",
+                notes="DAAAM uses boxmot/BotSort plus ReID weights; exact runtime path is recorded per build.",
+            ),
         }
 
 
@@ -248,6 +286,15 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("sam.vit_b", True),
             ("openclip.vit_b_32", True),
         ],
+        "daaam": [
+            ("detector_class_list.canonical", True),
+            ("sam.vit_b", True),
+            ("openclip.vit_b_32", True),
+            ("daaam.dam_3b", True),
+            ("daaam.sentence_t5_large", True),
+            ("daaam.hydra_spark_dsg", True),
+            ("daaam.botsort_reid", True),
+        ],
     },
     "formal": {
         "hovsg": [
@@ -267,6 +314,15 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("yolo_world.v8l", True),
             ("sam.vit_h", True),
             ("openclip.vit_h_14", True),
+        ],
+        "daaam": [
+            ("detector_class_list.canonical", True),
+            ("sam.vit_h", True),
+            ("openclip.vit_h_14", True),
+            ("daaam.dam_3b", True),
+            ("daaam.sentence_t5_large", True),
+            ("daaam.hydra_spark_dsg", True),
+            ("daaam.botsort_reid", True),
         ],
     },
 }

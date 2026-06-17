@@ -26,6 +26,11 @@ translate it into that method's native CLI/Hydra/config overrides.
 - Track 1/2 formal eval 必须使用 shared strongest open-vocabulary detector setup。DualMap、ConceptGraphs 等 detector-backed 方法默认使用同一个 shared OV detector；HOV-SG 这类无 detector 的方法记录 shared SAM/CLIP open-vocabulary prompt route。closed-detector、method-native detector/checkpoint 或不同 prompt list 只能作为 `module_ablation`。
 - checkpoint 统一存到一个共享目录，不放在各方法 repo 内部。建议路径：
   `/data/mondo-training-dataset/semantic_mapping/modules/<module>/<version>/`。
+- Python/C++ runtime dependencies are not checkpoints. For DAAAM in particular,
+  `spark_dsg`, `daaam`, Hydra bindings, `open_clip`, `sentence_transformers`,
+  `ultralytics`, and `segment_anything` belong in the conda/runtime env selected
+  by `--daaam-python`; SAM/YOLO/FastSAM/ReID weights and engine files belong in
+  NAS/shared modules.
 - exporter/package 必须在 `manifest.json` 或 `build_log.json` 记录实际使用的模块
   名称、版本、checkpoint 路径和关键参数。
 - exporter 必须记录 OV detector prompt/evaluation list path；如果 prompt list、label normalization 或 detector checkpoint 与 shared module registry 不一致，默认不允许作为 formal fair-comparison run。
@@ -113,8 +118,17 @@ before formal runs.
 - `scripts/methods/shared_modules.py` is the current internal adapter layer.
   It injects registry values into HOV-SG and DualMap runners without editing
   those external repos.
-- HOV-SG, DualMap, and ConceptGraphs smoke/formal routes now share the same OV prompt/evaluation label list:
+- HOV-SG, DualMap, ConceptGraphs, and DAAAM smoke/formal routes now share the same OV prompt/evaluation label list:
   `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`.
+- DAAAM adapter route lives in `scripts/methods/daaam/`: shared modules are
+  translated into DAAAM `run_pipeline.py` arguments/config overrides without
+  modifying `/home/robin_wang/DAAAM`. Track 2 fixed API uses only the exported
+  deterministic DAAAM semantic index when available; DAAAM's LLM
+  `SceneUnderstandingAgent` is not a Track 2 fixed API.
+- DAAAM preflight intentionally separates env issues from artifact issues:
+  missing `spark_dsg` / `daaam` means install or select a proper DAAAM conda/env,
+  while missing SAM/YOLO/FastSAM/ReID files means centralize or symlink the model
+  artifact under shared modules/NAS.
 - Track 1/2 formal runs are shared open-vocabulary detector runs. Detector-backed methods must use the shared strongest OV detector route and declare `vocabulary_mode=open_vocabulary`; closed-detector or method-native detector/checkpoint variants are recorded only as `module_ablation`.
 - HOV-SG smoke defaults to `SAM vit_b` with
   `/home/robin_wang/DualMap/sam_b.pt`, because this exact config appears in

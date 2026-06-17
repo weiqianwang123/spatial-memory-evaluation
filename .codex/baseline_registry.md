@@ -78,7 +78,7 @@ shared OV detector route；non-shared detector/method-native detector variants �
 | DualMap | `export` from concrete map `map/<uid>.pkl` object pickles; formal shared-OV route has native precedent in `evaluation/sem_seg_eval.py:381` (`calc_clip_labels` projects each `clip_ft` onto the fixed ScanNet200 list `utils/eval/scannet200_constants.py` via cosine + argsort, reassigning `obj.class_id`) | `candidate`: only interactive open3d CLIP query (`applications/offline_local_map_query.py:171`) and nav-embedded inquiry (`utils/global_map_manager.py:656`); no native non-interactive bridge, so not `supported` yet | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 shared OV first; Track 2 only after a native non-interactive query bridge; method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
 | HOV-SG | `export` (shared OV): per-mask PLY centroid + `mask_feats.pt` → shared OV label via `evaluate_sem_seg.py` argmax over `SCANNET_LABELS_20`; needs thin exporter, no native object-table writer | `candidate` (shared OV): `query_object` is CLIP sim, but global-search path is broken (`graph.py:1125` NameError) and `self.objects` is empty on ScanNet path; shared OV needs a label-constrained reader over `mask_feats.pt`, not the native REPL | `invalid`: open-vocab CLIP object query is not a ScanRefer relation/attribute resolver | `invalid`: no native general QA API; `query_hierarchy` needs `OPENAI_KEY` and is not QA | Track 1 shared-OV export supportable; Track 2 only after a non-interactive shared OV reader (native query path is HM3DSem-only + buggy); method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
 | ConceptGraphs | `export` from `pcd_saves/full_pcd_*.pkl.gz` serialized `MapObjectList` (labels + 3D pcd/bbox); formal result requires shared OV detector route | `candidate`: only interactive CLIP recolor + interactive LLaVA exist; `eval_replica_semseg.py:133-140` proves shared OV `clip_ft @ class_feats.T → argmax` primitive but it is Replica-specific, not a query entrypoint; needs non-interactive shared OV bridge | `invalid`: no referring-expression resolver found | `invalid`: no native non-interactive QA/retrieval API (LLaVA path is interactive point-pick only) | Track 1 shared OV first; Track 2 stays candidate until native bridge; method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
-| DAAAM | `export` via `retrieve_objects_from_scene_graph` over DSG OBJECTS layer (labels + 3D positions confirmed); formal shared OV route needs label-space constraint | `candidate`: native non-LLM scene-graph tools (`get_matching_subjects`, `get_objects_in_radius`) return objects+positions, but shipped `answer_query` is LLM-orchestrated; needs non-LLM entrypoint | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 after shared OV label-normalized DSG export; Track 2 only after non-LLM query entrypoint; Track 4 after evaluator-safe call; Track 3 invalid. Stays `candidate`/`export` pending human review |
+| DAAAM | `export`: adapter exports `object_table.jsonl` from DSG OBJECTS + BACKGROUND_OBJECTS via root-repo object readers | `candidate/supported-per-package`: adapter exports a deterministic native semantic index from DAAAM scene-understanding embeddings; package declares Track 2 `supported` only if that index builds, otherwise `invalid` | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 package exporter implemented in `scripts/methods/daaam/build_memory_smoke.py`; Track 2 fixed API uses only non-LLM native semantic index, never `SceneUnderstandingAgent`; Track 3 invalid; Track 4 deferred |
 | Hydra standalone | `candidate`: DSG OBJECTS nodes carry `semantic_label` + centroid and are enumerable (`graph.getLayer(DsgLayers::OBJECTS)`), but labels are external input, not Hydra-generated; needs smoke test | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean AND label-space fairness is decided; Track 2/3/4 invalid |
 | ReMEmbR | `invalid`: caption memory (`MemoryItem` caption/time/position/theta) has no object inventory | `invalid`: caption retrieval returns caption+pose+time strings, no object-level location output | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` LangGraph agent + retrieval tools | Track 4 supportable; Track 1/2/3 invalid for fixed object-level APIs |
 | Multi-frame VLM | `control-only` | `control-only` | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Keep as raw-frame ablation, `explicit_memory=false`; not a fixed memory API |
@@ -583,17 +583,26 @@ shared OV detector route；non-shared detector/method-native detector variants �
   - Method code is present and has a native scene-graph QA agent. Integration is
     heavier than static object-map baselines because we must standardize dataset
     input, DSG output paths, and evaluator-safe query calls.
+- Adapter status:
+  - `scripts/methods/daaam/build_memory_smoke.py` implements both package-from-output
+    and ScanNet++ raw-build preparation routes without modifying the DAAAM repo.
+  - Track 1 package fixed API is `tools/list_objects.py:list_objects` over the
+    exported DSG/background object table.
+  - Track 2 package fixed API is `tools/query_object.py:query_object` only when
+    the builder can export a deterministic DAAAM semantic index from native
+    scene-understanding embeddings (`GetMatchingSubjects` /
+    `precompute_unified_embeddings` route). If embeddings/features are missing,
+    the package writes Track 2 as `invalid`.
 - Human-review notes (ambiguous, do not auto-promote):
   - Track 1 vocabulary: DAAAM object/background labels come from DAM/VLM
     grounding (open-vocabulary free-text `description`), not a non-shared detector.
-    A formal shared OV Track 1 variant needs label-space constraint per
-    the vocabulary policy; method-native/free-text labels stay `module_ablation`. Human owns
-    the shared OV label-normalization decision before Track 1 is marked `supported`.
-  - Track 2 stays `candidate`: the native tools query objects deterministically,
-    but the shipped entrypoint (`answer_query`) is LLM-orchestrated. Marking
-    Track 2 `supported` requires a non-LLM entrypoint that calls the native
-    scene-graph tools directly (`target_label` → object + location), not a
-    benchmark LLM wrapper.
+    The adapter preserves `raw_label` and writes canonical `label` by exact/alias
+    mapping first, then shared-class semantic projection when native DAAAM
+    embeddings are available. Method-native/free-text-only labels should still
+    be treated as module/vocabulary ablation when comparing formal runs.
+  - Track 2 fixed API decision is now explicit: deterministic native semantic
+    index only. The shipped LLM `answer_query` entrypoint remains excluded from
+    Track 2 fixed API support.
   - Track 4 stays `candidate`: `answer_query` is a method-native QA agent, but it
     needs an evaluator-safe, non-interactive call path and judge/LLM isolation
     before it can be `supported`.
@@ -725,7 +734,7 @@ separately; controls are never object-memory fixed APIs. All four-track statuses
 above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted to
 `supported`, which requires human sign-off plus a smoke test.
 
-### DAAAM — object-memory fixed-API candidate (deferred to human)
+### DAAAM — object-memory fixed-API adapter implemented, smoke pending
 
 - Native DSG object/background nodes carry labels and 3D positions and are
   enumerable (`scene_understanding/utils.py:23-43`,
@@ -781,14 +790,15 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 
 ### Summary classification
 
-- Object-memory fixed-API candidates (pending human + smoke): DAAAM (Track
-  1/2/4), Hydra (Track 1 only).
+- Object-memory fixed-API candidates / adapters: DAAAM Track 1 adapter is
+  implemented and Track 2 is supported per package only when the deterministic
+  native semantic index builds; Hydra remains Track 1 only.
 - Agentic-only / Track-4-native: ReMEmbR.
 - Control-only (`explicit_memory=false`, never fixed API): Multi-frame VLM,
   LLM-with-captions.
-- Deferred decisions for the human: DAAAM shared OV label mapping + Track 2 entrypoint
-  choice; Hydra external-label fairness + evaluation surface; promotion of any
-  `candidate` to `supported` after smoke tests.
+- Deferred decisions for the human: DAAAM formal shared-OV label projection
+  quality after smoke; Hydra external-label fairness + evaluation surface;
+  promotion of any remaining `candidate` to `supported` after smoke tests.
 
 ## Next Checks Before Full Evaluate Plan
 

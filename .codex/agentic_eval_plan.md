@@ -371,7 +371,8 @@ Track 2 fixed API：
 - HOV-SG：SAM+CLIP shared open-vocabulary prompt route 后 Track 1/2。
 - DualMap：shared OV detector route 后 Track 1；Track 2 只有 native query bridge 成立才支持。
 - ConceptGraphs：shared OV detector route 后 Track 1；Track 2 只有 native query bridge 成立才支持。
-- DAAAM / Hydra：先探索 DSG object export；不清楚前不写 supported。
+- DAAAM：Track 1 DSG/background object export adapter 已实现；Track 2 仅在 deterministic native semantic index 成功导出时 supported，否则 package 写 invalid。
+- Hydra：先探索 DSG object export；不清楚前不写 supported。
 - ReMEmbR / controls：Track 1/2 fixed API 默认 invalid/control-only。
 
 Definition of Done：
