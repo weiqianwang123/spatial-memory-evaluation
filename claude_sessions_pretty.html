@@ -1,0 +1,329 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="5">
+  <title>Claude Session Dashboard</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #686b73;
+      --panel: rgba(255, 255, 255, 0.86);
+      --line: rgba(42, 45, 52, 0.11);
+      --shadow: 0 18px 50px rgba(30, 33, 40, 0.10);
+      --green: #3aa76d;
+      --yellow: #c78a13;
+      --red: #d15b52;
+      --blue: #4b84d8;
+      --gray: #7c818c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 10%, rgba(255, 220, 175, 0.58), transparent 24rem),
+        radial-gradient(circle at 90% 8%, rgba(185, 216, 255, 0.48), transparent 22rem),
+        linear-gradient(135deg, #fbfaf6 0%, #f3f6fb 48%, #fbf8f2 100%);
+    }
+    .shell { max-width: 1280px; margin: 0 auto; padding: 28px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: 0; }
+    .subtitle { margin: 8px 0 0; color: var(--muted); line-height: 1.45; }
+    .refresh {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+      min-width: 230px;
+    }
+    .refresh strong { display: block; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+    .refresh span { display: block; margin-top: 4px; font-weight: 700; }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      margin: 0 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.76);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+    }
+    .search {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font: inherit;
+      background: rgba(255, 255, 255, 0.9);
+      outline: none;
+    }
+    .search:focus { border-color: rgba(75, 132, 216, 0.55); box-shadow: 0 0 0 3px rgba(75, 132, 216, 0.12); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 11px;
+      background: white;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .chip:hover, .chip.active { transform: translateY(-1px); border-color: rgba(75, 132, 216, 0.55); }
+    .chip span { margin-left: 6px; color: var(--muted); font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; }
+    .card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 22px 58px rgba(30, 33, 40, 0.14); border-color: rgba(75, 132, 216, 0.28); }
+    .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--gray); }
+    .card.running::before { background: var(--green); }
+    .card.stopped::before { background: var(--yellow); }
+    .card.failed::before { background: var(--red); }
+    .card.interrupted::before { background: #8c5fd4; }
+    .card.complete::before { background: var(--blue); }
+    .card-inner { padding: 16px 16px 15px 20px; }
+    .card-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .branch { font-weight: 800; line-height: 1.25; word-break: break-word; }
+    .badge {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      background: #eceff3;
+      color: var(--gray);
+    }
+    .badge.running { background: #def7e8; color: #166c42; }
+    .badge.stopped { background: #fff1ce; color: #8a5d00; }
+    .badge.failed { background: #ffe0dd; color: #9a2d25; }
+    .badge.interrupted { background: #f0e4ff; color: #6f3bb2; }
+    .badge.complete { background: #dfeeff; color: #245d99; }
+    .task { margin-top: 10px; color: var(--muted); line-height: 1.35; }
+    .summary {
+      margin: 14px 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(247, 248, 250, 0.88);
+      border: 1px solid var(--line);
+      line-height: 1.42;
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+    .stat { border: 1px solid var(--line); border-radius: 8px; padding: 9px; background: rgba(255,255,255,0.62); }
+    .stat label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .stat strong { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button.copy {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #202124;
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+    details { margin-top: 12px; }
+    summary { cursor: pointer; color: var(--muted); font-weight: 700; }
+    .detail-grid { display: grid; gap: 9px; margin-top: 10px; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      word-break: break-all;
+      background: rgba(244, 245, 247, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+    }
+    .logs {
+      white-space: pre-wrap;
+      max-height: 180px;
+      overflow: auto;
+      line-height: 1.4;
+    }
+    .empty {
+      grid-column: 1 / -1;
+      padding: 24px;
+      border: 1px dashed rgba(42,45,52,0.22);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.66);
+      text-align: center;
+      color: var(--muted);
+    }
+    .hidden { display: none; }
+    @media (max-width: 760px) {
+      .shell { padding: 18px; }
+      .hero, .toolbar { grid-template-columns: 1fr; }
+      .chips { justify-content: flex-start; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <h1>Claude Sessions</h1>
+        <p class="subtitle">A local dashboard for worktree agents: branch, task, logs, changes, and quick inspection commands.</p>
+      </div>
+      <div class="refresh">
+        <strong>Updated</strong>
+        <span>2026-06-17 16:19:54</span>
+        <strong style="margin-top: 8px;">Auto refresh</strong>
+        <span>5s</span>
+      </div>
+    </section>
+    <section class="toolbar">
+      <input id="search" class="search" placeholder="Search branch, task, worktree, summary..." />
+      <div class="chips">
+        <button class="chip active" data-filter="all">all <span>2</span></button>
+        <button class="chip" data-filter="running">running <span>1</span></button>
+<button class="chip" data-filter="stopped">stopped <span>0</span></button>
+<button class="chip" data-filter="idle">idle <span>1</span></button>
+      </div>
+    </section>
+    <section class="grid"><article class="card running" data-status="running" data-search="claude/task-01-baseline-capability-audit running task 01: baseline audit - claws spatialrag /home/robin_wang/spatial-memory-evaluation-task01 tool read: {} / tool read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md / message: tool_use / tool result: 1 # baseline registry 2 3 last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; each track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7... / model response complete | 16.1s | output_tokens=293 / status: requesting 56a26cc (head -&gt; claude/task-01-baseline-capability-audit) change structure">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-01-baseline-capability-audit</div>
+      <span class="badge running">RUNNING</span>
+    </div>
+    <div class="task">Task 01: Baseline Audit - ClawS SpatialRAG</div>
+    <div class="summary">tool Read: {} / tool Read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md / message: tool_use / tool result: 1 # Baseline Registry 2 3 Last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; Each Track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7... / model response complete | 16.1s | output_tokens=293 / status: requesting</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>789924</strong></div>
+      <div class="stat"><label>changed</label><strong>2</strong></div>
+      <div class="stat"><label>elapsed</label><strong>3:36</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task01 &amp;&amp; tail -f .claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task01">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task01</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_01_baseline_audit_claws.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>56a26cc (HEAD -&gt; claude/task-01-baseline-capability-audit) change structure</div>
+        <div class="mono logs"><strong>recent log</strong><br>event: stream:content_block_delta
+assistant: Let me read the key
+assistant: context files and the current regist
+assistant: ry state
+assistant: .
+assistant: Let me read the key context files and the current registry state.
+tool Read: {}
+tool Read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md
+message: tool_use
+tool result: 1 # Baseline Registry 2 3 Last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; Each Track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7...
+model response complete | 16.1s | output_tokens=293
+status: requesting</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card idle" data-status="idle" data-search="main idle  /home/robin_wang/spatial-memory-evaluation no active task summary yet. 628b3ba (head -&gt; main, origin/main) add claude agent">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">main</div>
+      <span class="badge idle">IDLE</span>
+    </div>
+    <div class="task">No task detected yet</div>
+    <div class="summary">No active task summary yet.</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>-</strong></div>
+      <div class="stat"><label>changed</label><strong>33</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation &amp;&amp; git status">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation</div>
+        <div class="mono"><strong>task</strong><br>-</div>
+        <div class="mono"><strong>session</strong><br>-</div>
+        <div class="mono"><strong>stdout</strong><br>-</div>
+        <div class="mono"><strong>stderr</strong><br>-</div>
+        <div class="mono"><strong>stream json</strong><br>-</div>
+        <div class="mono"><strong>last commit</strong><br>628b3ba (HEAD -&gt; main, origin/main) add claude agent</div>
+        <div class="mono logs"><strong>recent log</strong><br>No recent log lines.</div>
+      </div>
+    </details>
+  </div>
+</article></section>
+  </main>
+  <script>
+    const buttons = Array.from(document.querySelectorAll('[data-filter]'));
+    const cards = Array.from(document.querySelectorAll('.card'));
+    const search = document.querySelector('#search');
+    let active = localStorage.getItem('claude-dashboard-filter') || 'all';
+    search.value = localStorage.getItem('claude-dashboard-search') || '';
+
+    function applyFilters() {
+      const q = (search.value || '').toLowerCase().trim();
+      for (const card of cards) {
+        const statusMatch = active === 'all' || card.dataset.status === active;
+        const textMatch = !q || card.dataset.search.includes(q);
+        card.classList.toggle('hidden', !(statusMatch && textMatch));
+      }
+    }
+
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        active = button.dataset.filter;
+        localStorage.setItem('claude-dashboard-filter', active);
+        buttons.forEach(b => b.classList.toggle('active', b === button));
+        applyFilters();
+      });
+    }
+    buttons.forEach(b => b.classList.toggle('active', b.dataset.filter === active));
+    search.addEventListener('input', () => {
+      localStorage.setItem('claude-dashboard-search', search.value || '');
+      applyFilters();
+    });
+    applyFilters();
+
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const text = button.dataset.copy;
+        try {
+          await navigator.clipboard.writeText(text);
+          const old = button.textContent;
+          button.textContent = 'Copied';
+          setTimeout(() => button.textContent = old, 900);
+        } catch {
+          window.prompt('Copy command', text);
+        }
+      });
+    });
+    </script>
+</body>
+</html>
