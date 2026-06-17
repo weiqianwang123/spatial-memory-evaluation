@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": [
+    "status",
+    "objects"
+  ],
+  "properties": {
+    "status": {
+      "const": "ok"
+    },
+    "objects": {
+      "type": "array"
+    }
+  }
+}

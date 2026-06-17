@@ -1,0 +1,113 @@
+{
+  "schema_version": "0.1",
+  "package_id": "hovsg/scannetpp/036bce3393/hovsg-stride10-20260616-124403",
+  "method": {
+    "name": "hovsg",
+    "display_name": "HOV-SG",
+    "family": "object_map",
+    "repo_path": "/home/robin_wang/HOV-SG",
+    "commit": null,
+    "version": null
+  },
+  "dataset": {
+    "name": "scannetpp",
+    "split": "smoke",
+    "scene_id": "036bce3393",
+    "episode_id": null
+  },
+  "input": {
+    "modality": [
+      "rgb",
+      "depth",
+      "pose",
+      "intrinsics"
+    ],
+    "frame_count": 414,
+    "rgbd_root": "data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403",
+    "poses_path": "data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403/pose",
+    "intrinsics_path": "data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403/intrinsic",
+    "timestamp_path": null,
+    "coordinate_frame": "HOV-SG world frame from ScanNet++ aligned poses; meters"
+  },
+  "explicit_memory": true,
+  "memory_artifacts": [
+    {
+      "name": "object_table",
+      "type": "jsonl",
+      "path": "memory/object_table.jsonl",
+      "description": "HOV-SG object inventory with 891 objects.",
+      "required_for": [
+        "track1_memory_construction",
+        "track2_object_location"
+      ]
+    },
+    {
+      "name": "object_features",
+      "type": "npy",
+      "path": "memory/object_features.npy",
+      "description": "Normalized HOV-SG mask features exported from mask_feats.pt.",
+      "required_for": []
+    }
+  ],
+  "evidence_artifacts": [
+    {
+      "name": "native_object_paths",
+      "type": "jsonl",
+      "path": "evidence/object_native_paths.jsonl",
+      "description": "Mapping from package object ids to native HOV-SG object PLY paths.",
+      "required_for": []
+    }
+  ],
+  "raw_links": [
+    {
+      "name": "native_hovsg_result",
+      "type": "directory",
+      "path": "data/hovsg_native/scannetpp_036bce3393/hovsg-stride10-20260616-124403/scannet",
+      "description": "Native HOV-SG output directory.",
+      "required_for": []
+    },
+    {
+      "name": "prepared_hovsg_layout",
+      "type": "directory",
+      "path": "data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403",
+      "description": "Sampled ScanNet-style RGB-D layout used by HOV-SG.",
+      "required_for": []
+    }
+  ],
+  "tools": [
+    {
+      "name": "list_objects",
+      "type": "python",
+      "path": "tools/list_objects.py",
+      "description": "Return the exported object table.",
+      "required_for": [
+        "track1_memory_construction"
+      ]
+    },
+    {
+      "name": "query_object",
+      "type": "python",
+      "path": "tools/query_object.py",
+      "description": "Smoke object query over exported labels and object sizes.",
+      "required_for": [
+        "track2_object_location"
+      ]
+    }
+  ],
+  "build": {
+    "command": "scripts/methods/hovsg/build_memory_smoke.py --scene-id 036bce3393 --run-id hovsg-stride10-20260616-124403 --layout-dir data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403 --cuda-visible-devices 0",
+    "config_paths": [],
+    "environment": "/home/robin_wang/miniforge3/envs/spatial-rag/bin/python",
+    "started_at": null,
+    "finished_at": null,
+    "runtime_seconds": null,
+    "memory_size_bytes": null
+  },
+  "allowed_access": {
+    "contains_gt_annotations": false,
+    "contains_benchmark_answers": false,
+    "contains_test_labels": false,
+    "contains_question_specific_rules": false
+  },
+  "notes": "Smoke package built from HOV-SG native semantic segmentation output."
+}

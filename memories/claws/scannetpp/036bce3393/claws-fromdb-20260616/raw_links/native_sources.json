@@ -1,0 +1,7 @@
+{
+  "claws_root": "/home/robin_wang/ClawS-SpatialRAG",
+  "native_db_path": "/home/robin_wang/ClawS-SpatialRAG/outputs/scannetpp_memory_036bce3393_ollama_vlm.db",
+  "scannetpp_root": "/data/mondo-training-dataset/semantic_mapping/scannetpp",
+  "source_scene": "036bce3393",
+  "embedding_dim": 1024
+}

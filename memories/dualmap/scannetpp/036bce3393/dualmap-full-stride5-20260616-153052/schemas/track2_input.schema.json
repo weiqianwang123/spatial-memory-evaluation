@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": [
+    "query"
+  ],
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "top_k": {
+      "type": "integer"
+    }
+  }
+}

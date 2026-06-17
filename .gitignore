@@ -16,7 +16,7 @@ benchmarks/
 results/
 outputs/
 data/
-memories/
+*.html 
 
 *.db
 *.sqlite

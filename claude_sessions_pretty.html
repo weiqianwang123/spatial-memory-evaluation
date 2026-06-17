@@ -190,7 +190,7 @@
       </div>
       <div class="refresh">
         <strong>Updated</strong>
-        <span>2026-06-17 16:19:54</span>
+        <span>2026-06-17 17:55:04</span>
         <strong style="margin-top: 8px;">Auto refresh</strong>
         <span>5s</span>
       </div>
@@ -198,24 +198,24 @@
     <section class="toolbar">
       <input id="search" class="search" placeholder="Search branch, task, worktree, summary..." />
       <div class="chips">
-        <button class="chip active" data-filter="all">all <span>2</span></button>
-        <button class="chip" data-filter="running">running <span>1</span></button>
-<button class="chip" data-filter="stopped">stopped <span>0</span></button>
+        <button class="chip active" data-filter="all">all <span>6</span></button>
+        <button class="chip" data-filter="running">running <span>0</span></button>
+<button class="chip" data-filter="stopped">stopped <span>5</span></button>
 <button class="chip" data-filter="idle">idle <span>1</span></button>
       </div>
     </section>
-    <section class="grid"><article class="card running" data-status="running" data-search="claude/task-01-baseline-capability-audit running task 01: baseline audit - claws spatialrag /home/robin_wang/spatial-memory-evaluation-task01 tool read: {} / tool read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md / message: tool_use / tool result: 1 # baseline registry 2 3 last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; each track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7... / model response complete | 16.1s | output_tokens=293 / status: requesting 56a26cc (head -&gt; claude/task-01-baseline-capability-audit) change structure">
+    <section class="grid"><article class="card stopped" data-status="stopped" data-search="claude/task-01-baseline-audit-claws stopped task 01: baseline audit - claws spatialrag /home/robin_wang/spatial-memory-evaluation-task01 assistant: f / assistant: ixed-api task. / assistant: done. the audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md` changed; `.claude/session_logs/` is a harness artifact left untracked to keep the pr focused). ## summary ... / message: end_turn / model response complete | 34.9s | output_tokens=1007 / result: success | 2406.9s | $3.9833 | done. the audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md` 6457640 (head -&gt; claude/task-01-baseline-audit-claws, origin/claude/task-01-baseline-audit-claws) docs: audit claws baseline capabilities">
   <div class="card-inner">
     <div class="card-top">
-      <div class="branch">claude/task-01-baseline-capability-audit</div>
-      <span class="badge running">RUNNING</span>
+      <div class="branch">claude/task-01-baseline-audit-claws</div>
+      <span class="badge stopped">STOPPED</span>
     </div>
     <div class="task">Task 01: Baseline Audit - ClawS SpatialRAG</div>
-    <div class="summary">tool Read: {} / tool Read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md / message: tool_use / tool result: 1 # Baseline Registry 2 3 Last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; Each Track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7... / model response complete | 16.1s | output_tokens=293 / status: requesting</div>
+    <div class="summary">assistant: f / assistant: ixed-API task. / assistant: Done. The audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md` changed; `.claude/session_logs/` is a harness artifact left untracked to keep the PR focused). ## Summary ... / message: end_turn / model response complete | 34.9s | output_tokens=1007 / result: success | 2406.9s | $3.9833 | Done. The audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md`</div>
     <div class="stats">
       <div class="stat"><label>pid</label><strong>789924</strong></div>
-      <div class="stat"><label>changed</label><strong>2</strong></div>
-      <div class="stat"><label>elapsed</label><strong>3:36</strong></div>
+      <div class="stat"><label>changed</label><strong>1</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
     </div>
     <div class="actions">
       <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task01 &amp;&amp; tail -f .claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stream.jsonl">Copy inspect</button>
@@ -230,24 +230,196 @@
         <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stdout.log</div>
         <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stderr.log</div>
         <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task01/.claude/session_logs/20260617-161617_claude-task-01-baseline-capability-audit_task_01_baseline_audit_claws.stream.jsonl</div>
-        <div class="mono"><strong>last commit</strong><br>56a26cc (HEAD -&gt; claude/task-01-baseline-capability-audit) change structure</div>
-        <div class="mono logs"><strong>recent log</strong><br>event: stream:content_block_delta
-assistant: Let me read the key
-assistant: context files and the current regist
-assistant: ry state
-assistant: .
-assistant: Let me read the key context files and the current registry state.
-tool Read: {}
-tool Read: file_path=/home/robin_wang/spatial-memory-evaluation-task01/.codex/baseline_registry.md
-message: tool_use
-tool result: 1 # Baseline Registry 2 3 Last checked: 2026-06-17 4 5 &gt; 2026-06-17 audit: every method below was re-verified against its root repo. 6 &gt; Each Track 1/2 decision now carries a `root-repo path:line` evidence anchor or 7...
-model response complete | 16.1s | output_tokens=293
-status: requesting</div>
+        <div class="mono"><strong>last commit</strong><br>6457640 (HEAD -&gt; claude/task-01-baseline-audit-claws, origin/claude/task-01-baseline-audit-claws) docs: audit claws baseline capabilities</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: Python but present in the `spat
+assistant: ial-rag` env
+assistant: — rel
+assistant: evant for
+assistant: wh
+assistant: oever runs the later
+assistant: f
+assistant: ixed-API task.
+assistant: Done. The audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md` changed; `.claude/session_logs/` is a harness artifact left untracked to keep the PR focused). ## Summary ...
+message: end_turn
+model response complete | 34.9s | output_tokens=1007
+result: success | 2406.9s | $3.9833 | Done. The audit is committed on `claude/task-01-baseline-capability-audit` (only `.codex/baseline_registry.md` changed; `.claude/session_logs/` is a harness artifact left untracked to keep the PR focused). ## Summary ...</div>
       </div>
     </details>
   </div>
 </article>
-<article class="card idle" data-status="idle" data-search="main idle  /home/robin_wang/spatial-memory-evaluation no active task summary yet. 628b3ba (head -&gt; main, origin/main) add claude agent">
+<article class="card stopped" data-status="stopped" data-search="claude/task-02-baseline-audit-hovsg stopped task 02: baseline audit - hov-sg /home/robin_wang/spatial-memory-evaluation-task02 assistant: committed as `59b / assistant: b799`. / assistant: committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. task complete. ## summary i audited `/home/robin_wang/hov-sg` against root-repo evidence and updated `.codex/baseline_registry.md` (metho... / message: end_turn / model response complete | 95.0s | output_tokens=1200 / result: success | 3828.4s | $6.3369 | committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. task complete. ## summ 59bb799 (head -&gt; claude/task-02-baseline-audit-hovsg, origin/claude/task-02-baseline-audit-hovsg) docs: audit hovsg baseline capabilities">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-02-baseline-audit-hovsg</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 02: Baseline Audit - HOV-SG</div>
+    <div class="summary">assistant: Committed as `59b / assistant: b799`. / assistant: Committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. Task complete. ## Summary I audited `/home/robin_wang/HOV-SG` against root-repo evidence and updated `.codex/baseline_registry.md` (metho... / message: end_turn / model response complete | 95.0s | output_tokens=1200 / result: success | 3828.4s | $6.3369 | Committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. Task complete. ## Summ</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>796751</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task02 &amp;&amp; tail -f .claude/session_logs/20260617-162647_claude-task-02-baseline-audit-hovsg_task_02_baseline_audit_hovsg.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task02">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task02</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_02_baseline_audit_hovsg.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task02/.claude/session_logs/20260617-162647_claude-task-02-baseline-audit-hovsg_task_02_baseline_audit_hovsg.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task02/.claude/session_logs/20260617-162647_claude-task-02-baseline-audit-hovsg_task_02_baseline_audit_hovsg.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task02/.claude/session_logs/20260617-162647_claude-task-02-baseline-audit-hovsg_task_02_baseline_audit_hovsg.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task02/.claude/session_logs/20260617-162647_claude-task-02-baseline-audit-hovsg_task_02_baseline_audit_hovsg.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>59bb799 (HEAD -&gt; claude/task-02-baseline-audit-hovsg, origin/claude/task-02-baseline-audit-hovsg) docs: audit hovsg baseline capabilities</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: REPL-only re
+assistant: asons). 3.
+assistant: ✅ OV beh
+assistant: avior kept separ
+assistant: ate from formal Track 1
+assistant: /2.
+assistant: Committed as `59b
+assistant: b799`.
+assistant: Committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. Task complete. ## Summary I audited `/home/robin_wang/HOV-SG` against root-repo evidence and updated `.codex/baseline_registry.md` (metho...
+message: end_turn
+model response complete | 95.0s | output_tokens=1200
+result: success | 3828.4s | $6.3369 | Committed cleanly on `claude/task-02-baseline-audit-hovsg`, working tree clean. Task complete. ## Summary I audited `/home/robin_wang/HOV-SG` against root-repo evidence and updated `.codex/baseline_registry.md` (metho...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-03-baseline-audit-dualmap stopped task 03: baseline audit - dualmap /home/robin_wang/spatial-memory-evaluation-task03 assistant: on the task / assistant: branch. / assistant: task 03 is complete. the change is committed on `claude/task-03-baseline-audit-dualmap` with a clean working tree; the main repo&#x27;s registry is untouched (the only dirty file there, `claude_sessions_pretty.html`, was a... / message: end_turn / model response complete | 13.3s | output_tokens=1110 / result: success | 3262.5s | $9.2275 | task 03 is complete. the change is committed on `claude/task-03-baseline-audit-dualmap` with a clean workin 69f63ff (head -&gt; claude/task-03-baseline-audit-dualmap, origin/claude/task-03-baseline-audit-dualmap) docs: audit dualmap baseline capabilities">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-03-baseline-audit-dualmap</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 03: Baseline Audit - DualMap</div>
+    <div class="summary">assistant: on the task / assistant: branch. / assistant: Task 03 is complete. The change is committed on `claude/task-03-baseline-audit-dualmap` with a clean working tree; the main repo&#x27;s registry is untouched (the only dirty file there, `claude_sessions_pretty.html`, was a... / message: end_turn / model response complete | 13.3s | output_tokens=1110 / result: success | 3262.5s | $9.2275 | Task 03 is complete. The change is committed on `claude/task-03-baseline-audit-dualmap` with a clean workin</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>796762</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task03 &amp;&amp; tail -f .claude/session_logs/20260617-162647_claude-task-03-baseline-audit-dualmap_task_03_baseline_audit_dualmap.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task03">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task03</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_03_baseline_audit_dualmap.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task03/.claude/session_logs/20260617-162647_claude-task-03-baseline-audit-dualmap_task_03_baseline_audit_dualmap.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task03/.claude/session_logs/20260617-162647_claude-task-03-baseline-audit-dualmap_task_03_baseline_audit_dualmap.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task03/.claude/session_logs/20260617-162647_claude-task-03-baseline-audit-dualmap_task_03_baseline_audit_dualmap.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task03/.claude/session_logs/20260617-162647_claude-task-03-baseline-audit-dualmap_task_03_baseline_audit_dualmap.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>69f63ff (HEAD -&gt; claude/task-03-baseline-audit-dualmap, origin/claude/task-03-baseline-audit-dualmap) docs: audit dualmap baseline capabilities</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: then mo
+assistant: ved the
+assistant: change into this
+assistant: worktree and restored the main
+assistant: repo — final
+assistant: state is correct and committed only
+assistant: on the task
+assistant: branch.
+assistant: Task 03 is complete. The change is committed on `claude/task-03-baseline-audit-dualmap` with a clean working tree; the main repo&#x27;s registry is untouched (the only dirty file there, `claude_sessions_pretty.html`, was a...
+message: end_turn
+model response complete | 13.3s | output_tokens=1110
+result: success | 3262.5s | $9.2275 | Task 03 is complete. The change is committed on `claude/task-03-baseline-audit-dualmap` with a clean working tree; the main repo&#x27;s registry is untouched (the only dirty file there, `claude_sessions_pretty.html`, was a...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-04-baseline-audit-conceptgraphs stopped task 04: baseline audit - conceptgraphs /home/robin_wang/spatial-memory-evaluation-task04 assistant: serialized `mapobj / assistant: ectlist` / assistant: ; each object carries a / assistant: label (`class_id`/ / assistant: committed cleanly. task complete. ## summary completed **task 04: baseline audit — conceptgraphs**. this was an audit-only pr; the only change is to `.codex/baseline_registry.md`, committed on `claude/task-04-baseline... / result: success | 2872.7s | $5.3672 | committed cleanly. task complete. ## summary completed **task 04: baseline audit — conceptgraphs**. this  eca5f3f (head -&gt; claude/task-04-baseline-audit-conceptgraphs, origin/claude/task-04-baseline-audit-conceptgraphs) docs: audit conceptgraphs baseline capabilities">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-04-baseline-audit-conceptgraphs</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 04: Baseline Audit - ConceptGraphs</div>
+    <div class="summary">assistant: serialized `MapObj / assistant: ectList` / assistant: ; each object carries a / assistant: label (`class_id`/ / assistant: Committed cleanly. Task complete. ## Summary Completed **Task 04: Baseline Audit — ConceptGraphs**. This was an audit-only PR; the only change is to `.codex/baseline_registry.md`, committed on `claude/task-04-baseline... / result: success | 2872.7s | $5.3672 | Committed cleanly. Task complete. ## Summary Completed **Task 04: Baseline Audit — ConceptGraphs**. This </div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>796773</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task04 &amp;&amp; tail -f .claude/session_logs/20260617-162647_claude-task-04-baseline-audit-conceptgraphs_task_04_baseline_audit_conceptgraphs.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task04">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task04</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_04_baseline_audit_conceptgraphs.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task04/.claude/session_logs/20260617-162647_claude-task-04-baseline-audit-conceptgraphs_task_04_baseline_audit_conceptgraphs.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task04/.claude/session_logs/20260617-162647_claude-task-04-baseline-audit-conceptgraphs_task_04_baseline_audit_conceptgraphs.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task04/.claude/session_logs/20260617-162647_claude-task-04-baseline-audit-conceptgraphs_task_04_baseline_audit_conceptgraphs.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task04/.claude/session_logs/20260617-162647_claude-task-04-baseline-audit-conceptgraphs_task_04_baseline_audit_conceptgraphs.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>eca5f3f (HEAD -&gt; claude/task-04-baseline-audit-conceptgraphs, origin/claude/task-04-baseline-audit-conceptgraphs) docs: audit conceptgraphs baseline capabilities</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: ene graph. - **
+assistant: Artifact/
+assistant: schema** — g
+assistant: zip
+assistant: -pickled d
+assistant: ict with a
+assistant: serialized `MapObj
+assistant: ectList`
+assistant: ; each object carries a
+assistant: label (`class_id`/
+assistant: Committed cleanly. Task complete. ## Summary Completed **Task 04: Baseline Audit — ConceptGraphs**. This was an audit-only PR; the only change is to `.codex/baseline_registry.md`, committed on `claude/task-04-baseline...
+result: success | 2872.7s | $5.3672 | Committed cleanly. Task complete. ## Summary Completed **Task 04: Baseline Audit — ConceptGraphs**. This was an audit-only PR; the only change is to `.codex/baseline_registry.md`, committed on `claude/task-04-baseline...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-05-baseline-audit-dsg-caption-controls stopped task 05: baseline audit - dsg, caption, and controls /home/robin_wang/spatial-memory-evaluation-task05 assistant: ls` as `054b37f / assistant: `. / assistant: committed cleanly. task complete. ## summary completed task 05 — an audit/design pr updating `.codex/baseline_registry.md` for daaam, hydra, remembr, and the two controls against the track 1/2 fixed-api gate. all clai... / message: end_turn / model response complete | 17.1s | output_tokens=1024 / result: success | 3587.0s | $3.6401 | committed cleanly. task complete. ## summary completed task 05 — an audit/design pr updating `.codex/baselin 054b37f (head -&gt; claude/task-05-baseline-audit-dsg-caption-controls, origin/claude/task-05-baseline-audit-dsg-caption-controls) docs: audit dsg caption control baselines">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-05-baseline-audit-dsg-caption-controls</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 05: Baseline Audit - DSG, Caption, And Controls</div>
+    <div class="summary">assistant: ls` as `054b37f / assistant: `. / assistant: Committed cleanly. Task complete. ## Summary Completed Task 05 — an audit/design PR updating `.codex/baseline_registry.md` for DAAAM, Hydra, ReMEmbR, and the two controls against the Track 1/2 fixed-API gate. All clai... / message: end_turn / model response complete | 17.1s | output_tokens=1024 / result: success | 3587.0s | $3.6401 | Committed cleanly. Task complete. ## Summary Completed Task 05 — an audit/design PR updating `.codex/baselin</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>796784</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task05 &amp;&amp; tail -f .claude/session_logs/20260617-162647_claude-task-05-baseline-audit-dsg-caption-controls_task_05_baseline_audit_dsg_caption_controls.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task05">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task05</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_05_baseline_audit_dsg_caption_controls.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task05/.claude/session_logs/20260617-162647_claude-task-05-baseline-audit-dsg-caption-controls_task_05_baseline_audit_dsg_caption_controls.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task05/.claude/session_logs/20260617-162647_claude-task-05-baseline-audit-dsg-caption-controls_task_05_baseline_audit_dsg_caption_controls.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task05/.claude/session_logs/20260617-162647_claude-task-05-baseline-audit-dsg-caption-controls_task_05_baseline_audit_dsg_caption_controls.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task05/.claude/session_logs/20260617-162647_claude-task-05-baseline-audit-dsg-caption-controls_task_05_baseline_audit_dsg_caption_controls.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>054b37f (HEAD -&gt; claude/task-05-baseline-audit-dsg-caption-controls, origin/claude/task-05-baseline-audit-dsg-caption-controls) docs: audit dsg caption control baselines</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: focused diff (`+
+assistant: 214/-33
+assistant: `), committed on `cla
+assistant: ude/task-05-base
+assistant: line-audit-dsg
+assistant: -caption-contro
+assistant: ls` as `054b37f
+assistant: `.
+assistant: Committed cleanly. Task complete. ## Summary Completed Task 05 — an audit/design PR updating `.codex/baseline_registry.md` for DAAAM, Hydra, ReMEmbR, and the two controls against the Track 1/2 fixed-API gate. All clai...
+message: end_turn
+model response complete | 17.1s | output_tokens=1024
+result: success | 3587.0s | $3.6401 | Committed cleanly. Task complete. ## Summary Completed Task 05 — an audit/design PR updating `.codex/baseline_registry.md` for DAAAM, Hydra, ReMEmbR, and the two controls against the Track 1/2 fixed-API gate. All clai...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card idle" data-status="idle" data-search="main idle  /home/robin_wang/spatial-memory-evaluation no active task summary yet. 9be8806 (head -&gt; main, origin/main) merge pull request #1 from weiqianwang123/codex/merge-baseline-audits-01-05">
   <div class="card-inner">
     <div class="card-top">
       <div class="branch">main</div>
@@ -257,7 +429,7 @@ status: requesting</div>
     <div class="summary">No active task summary yet.</div>
     <div class="stats">
       <div class="stat"><label>pid</label><strong>-</strong></div>
-      <div class="stat"><label>changed</label><strong>33</strong></div>
+      <div class="stat"><label>changed</label><strong>5</strong></div>
       <div class="stat"><label>elapsed</label><strong>-</strong></div>
     </div>
     <div class="actions">
@@ -273,7 +445,7 @@ status: requesting</div>
         <div class="mono"><strong>stdout</strong><br>-</div>
         <div class="mono"><strong>stderr</strong><br>-</div>
         <div class="mono"><strong>stream json</strong><br>-</div>
-        <div class="mono"><strong>last commit</strong><br>628b3ba (HEAD -&gt; main, origin/main) add claude agent</div>
+        <div class="mono"><strong>last commit</strong><br>9be8806 (HEAD -&gt; main, origin/main) Merge pull request #1 from weiqianwang123/codex/merge-baseline-audits-01-05</div>
         <div class="mono logs"><strong>recent log</strong><br>No recent log lines.</div>
       </div>
     </details>

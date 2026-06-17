@@ -1,0 +1,9 @@
+{
+  "scannetpp_root": "/data/mondo-training-dataset/semantic_mapping/scannetpp",
+  "dualmap_root": "/home/robin_wang/DualMap",
+  "layout_dir": "data/dualmap_layouts/scannetpp_036bce3393/dualmap-full-stride5-20260616-153052",
+  "dataset_config_path": "data/dualmap_layouts/scannetpp_036bce3393/dualmap-full-stride5-20260616-153052/scannetpp_036bce3393_dataset.yaml",
+  "native_map_dir": "data/dualmap_native/scannetpp_036bce3393/dualmap-full-stride5-20260616-153052/scannet_scannetpp_036bce3393/map",
+  "source_scene": "036bce3393",
+  "dualmap_scene_id": "scannetpp_036bce3393"
+}

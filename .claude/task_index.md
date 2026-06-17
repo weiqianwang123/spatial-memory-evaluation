@@ -11,6 +11,10 @@ Track 3/4 design.
 - Read `.codex/agentic_eval_plan.md` before starting.
 - Do not edit external method repos under `/home/robin_wang`; inspect them and
   adapt from this repo only.
+- Do not run shell write operations inside external method repos, including
+  `sed -i`, Python file writes, `apply_patch`, formatter commands, `git checkout`,
+  `git reset`, or `git commit`. If an external repo is dirty, report it instead
+  of modifying or reverting it.
 - Do not use evaluation adapters as proof that a baseline supports a fixed API.
   Fixed API evidence must come from the method root repo or native artifacts.
 - Do not invent LLM wrappers for fixed API support. Unsupported methods must be

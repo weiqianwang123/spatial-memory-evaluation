@@ -416,6 +416,11 @@ def build_prompt(task_path: Path, *, commit_request: bool, extra: str) -> str:
         f"Read {task_path} and complete exactly that task in this worktree. "
         "Keep the PR focused, run the task's acceptance checks where feasible, "
         "and leave a concise summary in your final response. "
+        "External method repositories under /home/robin_wang are read-only evidence sources: "
+        "inspect them, but do not edit, create, delete, format, patch, checkout, reset, or commit files there. "
+        "All file changes must stay inside the current worktree. "
+        "Before your final response, run git status --short in every external method repo you inspected; "
+        "if any external repo is dirty, stop and report it instead of continuing. "
         f"{commit_text}{extra_text}"
     )
 

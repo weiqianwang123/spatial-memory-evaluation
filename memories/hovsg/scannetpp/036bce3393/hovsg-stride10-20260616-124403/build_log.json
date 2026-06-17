@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "started_at": "2026-06-16T12:50:09.663422+08:00",
+  "finished_at": "2026-06-16T14:16:42.483046+08:00",
+  "runtime_seconds": 5192.819623947144,
+  "command": "scripts/methods/hovsg/build_memory_smoke.py --scene-id 036bce3393 --run-id hovsg-stride10-20260616-124403 --layout-dir data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403 --cuda-visible-devices 0",
+  "config_paths": [],
+  "source_outputs": [],
+  "object_count": 891,
+  "hovsg_wrapper": {
+    "safe_crop_patch": true,
+    "safe_crop_patch_entrypoint": "scripts/methods/hovsg/run_semantic_segmentation_patched.py"
+  },
+  "warnings": []
+}

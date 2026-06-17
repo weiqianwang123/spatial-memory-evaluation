@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "started_at": "2026-06-15T19:27:56.934836+08:00",
+  "finished_at": "2026-06-15T19:36:00.463249+08:00",
+  "runtime_seconds": 483.52841329574585,
+  "command": "scripts/methods/dualmap/build_memory_smoke.py --scene-id 036bce3393 --run-id dualmap-smoke-20260615-191702 --skip-layout-export --cuda-visible-devices 0",
+  "config_paths": [],
+  "source_outputs": [
+    "data/dualmap_native/scannetpp_036bce3393/dualmap-smoke-20260615-191702/scannet_scannetpp_036bce3393/map"
+  ],
+  "object_count": 13,
+  "dualmap_runtime": {
+    "yolo_checkpoint": "/home/robin_wang/DualMap/yolov8s-world.pt",
+    "sam_checkpoint": "/home/robin_wang/DualMap/sam_b.pt",
+    "fastsam_enabled": false,
+    "fastsam_checkpoint": "/home/robin_wang/DualMap/model/FastSAM-s.pt",
+    "clip_model": "ViT-B-32",
+    "clip_pretrained": "laion2b_s34b_b79k",
+    "disable_cudnn": false,
+    "frame_stride": 5,
+    "max_frames": 200
+  },
+  "warnings": []
+}

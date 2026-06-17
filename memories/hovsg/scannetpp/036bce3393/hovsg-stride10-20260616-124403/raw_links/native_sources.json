@@ -1,0 +1,7 @@
+{
+  "scannetpp_root": "/data/mondo-training-dataset/semantic_mapping/scannetpp",
+  "hovsg_root": "/home/robin_wang/HOV-SG",
+  "layout_dir": "data/hovsg_layouts/scannetpp_036bce3393/hovsg-stride10-20260616-124403",
+  "native_result_path": "data/hovsg_native/scannetpp_036bce3393/hovsg-stride10-20260616-124403/scannet",
+  "source_scene": "036bce3393"
+}
