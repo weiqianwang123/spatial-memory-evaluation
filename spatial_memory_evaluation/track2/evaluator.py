@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from spatial_memory_evaluation.common.package_io import (
 from spatial_memory_evaluation.output_paths import timestamped_result_dir
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACK_KEY = "track2_object_location"
 SPLITS = ("detector_coverable",)
 K_VALUES = (1, 5, 10)
@@ -34,6 +36,8 @@ def evaluate_track2(
     agent_command: str | None = None,
     agent_output: Path | None = None,
     sandbox_root: Path | None = None,
+    agent_extra_paths: list[Path] | None = None,
+    agent_include_build_code: bool = False,
 ) -> dict[str, Any]:
     manifest, capabilities = load_package(package_dir)
     method = str(manifest["method"]["name"])
@@ -51,6 +55,11 @@ def evaluate_track2(
             agent_command=agent_command,
             agent_output=agent_output,
             sandbox_root=sandbox_root,
+            extra_paths=_agent_extra_paths(
+                method=method,
+                explicit_paths=agent_extra_paths or [],
+                include_build_code=agent_include_build_code,
+            ),
         )
     else:
         raise ValueError(f"unknown Track 2 mode: {mode}")
@@ -131,6 +140,7 @@ def _run_agentic(
     agent_command: str | None,
     agent_output: Path | None,
     sandbox_root: Path | None,
+    extra_paths: list[Path],
 ) -> dict[str, Any]:
     if agent_output is not None:
         return _load_agent_predictions(agent_output)
@@ -144,9 +154,10 @@ def _run_agentic(
     sandbox_package = copy_package_to_sandbox(package_dir, sandbox_root)
     sandbox_queries = sandbox_root / "queries"
     _write_agent_query_files(benchmark_dir, sandbox_queries)
+    copied_extra_paths = _copy_agent_extra_paths(extra_paths, sandbox_root / "extra_context")
     prompt_path = sandbox_root / "track2_prompt.md"
     agent_output_path = sandbox_root / "track2_agent_output.json"
-    prompt_path.write_text(_track2_prompt(sandbox_package, sandbox_queries), encoding="utf-8")
+    prompt_path.write_text(_track2_prompt(sandbox_package, sandbox_queries, copied_extra_paths), encoding="utf-8")
     run_agent_command(
         agent_command=agent_command,
         prompt_path=prompt_path,
@@ -157,12 +168,59 @@ def _run_agentic(
 
 
 def _load_agent_predictions(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
-        value = json.load(f)
+    text = path.read_text(encoding="utf-8")
+    value = _load_agent_json_value(text, path)
+    if isinstance(value, dict) and "predictions_by_query" not in value and isinstance(value.get("result"), str):
+        value = _load_agent_json_value(value["result"], path)
     predictions = value.get("predictions_by_query") if isinstance(value, dict) else None
     if not isinstance(predictions, dict):
         return {"status": "error", "message": f"agent output missing predictions_by_query: {path}"}
     return {"status": "ok", "predictions_by_query": predictions, "latency_seconds_by_query": {}}
+
+
+def _load_agent_json_value(text: str, path: Path) -> Any:
+    stripped = text.strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+    for candidate in _json_object_candidates(stripped):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    preview = stripped[:300].replace("\n", "\\n")
+    raise ValueError(f"could not parse agent JSON output from {path}; preview={preview!r}")
+
+
+def _json_object_candidates(text: str) -> list[str]:
+    candidates = []
+    start = None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                candidates.append(text[start : index + 1])
+                start = None
+    return candidates
 
 
 def _write_agent_query_files(benchmark_dir: Path, output_dir: Path) -> None:
@@ -182,6 +240,59 @@ def _write_agent_query_files(benchmark_dir: Path, output_dir: Path) -> None:
                 }
             )
         write_jsonl(output_dir / f"queries_{split}.jsonl", rows)
+
+
+def _agent_extra_paths(
+    *,
+    method: str,
+    explicit_paths: list[Path],
+    include_build_code: bool,
+) -> list[Path]:
+    paths = [path for path in explicit_paths]
+    if include_build_code:
+        method_code = REPO_ROOT / "scripts" / "methods" / method
+        if method_code.exists():
+            paths.append(method_code)
+    return paths
+
+
+def _copy_agent_extra_paths(paths: list[Path], output_dir: Path) -> list[Path]:
+    copied = []
+    if not paths:
+        return copied
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for index, source in enumerate(paths):
+        source = source.resolve()
+        if not source.exists():
+            raise FileNotFoundError(f"agent extra path not found: {source}")
+        destination = output_dir / f"{index:02d}_{_safe_name(source)}"
+        if destination.exists():
+            if destination.is_dir():
+                shutil.rmtree(destination)
+            else:
+                destination.unlink()
+        if source.is_dir():
+            shutil.copytree(
+                source,
+                destination,
+                ignore=shutil.ignore_patterns(
+                    "__pycache__",
+                    ".git",
+                    ".pytest_cache",
+                    "data",
+                    "memories",
+                    "results",
+                ),
+            )
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        copied.append(destination)
+    return copied
+
+
+def _safe_name(path: Path) -> str:
+    return "_".join(part for part in path.parts if part not in ("", "/"))[-96:]
 
 
 def _score_split(
@@ -276,14 +387,23 @@ def percentile(values: list[float], percentile_value: float) -> float:
     return values[lower] * (1.0 - fraction) + values[upper] * fraction
 
 
-def _track2_prompt(package_dir: Path, query_dir: Path) -> str:
+def _track2_prompt(package_dir: Path, query_dir: Path, extra_paths: list[Path]) -> str:
+    extra_text = "\n".join(f"- {path}" for path in extra_paths) if extra_paths else "- none"
     return f"""You are evaluating a spatial memory package in memory-only mode.
 
 Package directory: {package_dir}
 Query files are in: {query_dir}
+Optional source-code/context files copied into the sandbox:
+{extra_text}
 
-Read only the package and the query files. Do not use raw_links or external
-source data. Return JSON with this exact shape:
+Read only the package, query files, and optional source-code/context files.
+Do not use raw_links, ground-truth benchmark answers, raw scene data, or external
+source data. The query files contain target_label/canonical_label fields; use
+them to identify the requested object category. Return up to top_k predictions
+for every query_id. Use object ids, labels, positions, and bboxes from the
+memory package. Return only raw JSON with this exact shape. The first character
+of your response must be `{{` and the last character must be `}}`. Do not
+include explanations, headings, Markdown, or code fences:
 
 {{
   "predictions_by_query": {{

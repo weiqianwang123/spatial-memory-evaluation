@@ -39,6 +39,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agent-command", default=None)
     parser.add_argument("--agent-output", type=Path, default=None)
     parser.add_argument("--sandbox-root", type=Path, default=None)
+    parser.add_argument(
+        "--agent-extra-path",
+        action="append",
+        type=Path,
+        default=None,
+        help="optional file/directory to copy into the agent sandbox; repeatable",
+    )
+    parser.add_argument(
+        "--agent-include-build-code",
+        action="store_true",
+        help="copy scripts/methods/<method> into the agent sandbox as optional context",
+    )
     return parser.parse_args()
 
 
@@ -55,6 +67,8 @@ def main() -> int:
         agent_command=args.agent_command,
         agent_output=args.agent_output,
         sandbox_root=args.sandbox_root,
+        agent_extra_paths=args.agent_extra_path or [],
+        agent_include_build_code=args.agent_include_build_code,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

@@ -105,11 +105,13 @@ def run_agent_command(
     sandbox_dir: Path,
     output_path: Path,
 ) -> None:
-    command = agent_command.format(
-        prompt_path=str(prompt_path),
-        sandbox_dir=str(sandbox_dir),
-        output_path=str(output_path),
-    )
+    command = agent_command
+    for key, value in {
+        "prompt_path": prompt_path,
+        "sandbox_dir": sandbox_dir,
+        "output_path": output_path,
+    }.items():
+        command = command.replace("{" + key + "}", str(value))
     subprocess.run(command, shell=True, cwd=sandbox_dir, check=True)
 
 
