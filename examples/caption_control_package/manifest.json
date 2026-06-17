@@ -1,0 +1,88 @@
+{
+  "allowed_access": {
+    "contains_benchmark_answers": false,
+    "contains_gt_annotations": false,
+    "contains_question_specific_rules": false,
+    "contains_test_labels": false
+  },
+  "build": {
+    "build_runtime_seconds": 0.0,
+    "command": "scripts/methods/remembr/build_caption_control_package.py --synthetic --output-dir examples/caption_control_package --method remembr_captions --dataset example --episode-id seq0 --started-at 2026-06-17T00:00:00+08:00 --finished-at 2026-06-17T00:00:00+08:00",
+    "config_paths": [],
+    "environment": null,
+    "finished_at": "2026-06-17T00:00:00+08:00",
+    "frame_count": 3,
+    "memory_artifact_size_bytes": 647,
+    "native_memory_artifacts": [
+      {
+        "path": "examples/caption_control_package/memory/captions.jsonl",
+        "exists": true,
+        "size_bytes": 647
+      }
+    ],
+    "native_memory_size_bytes": 647,
+    "package_size_bytes": 10988,
+    "peak_ram_bytes": null,
+    "peak_ram_unavailable_reason": "not measured by this package builder; use an external profiler for reliable peak RSS",
+    "peak_vram_bytes": null,
+    "peak_vram_unavailable_reason": "not measured by this package builder; GPU memory sampling is not reliable in this wrapper",
+    "runtime_seconds": 0.0,
+    "started_at": "2026-06-17T00:00:00+08:00",
+    "time_per_frame_seconds": 0.0,
+    "accounting_version": "0.1"
+  },
+  "dataset": {
+    "episode_id": "seq0",
+    "name": "example",
+    "scene_id": null,
+    "split": "control"
+  },
+  "evidence_artifacts": [],
+  "explicit_memory": false,
+  "input": {
+    "coordinate_frame": "native ReMEmbR/dataset world frame; meters; theta is a constant yaw placeholder",
+    "frame_count": 3,
+    "intrinsics_path": null,
+    "modality": [
+      "rgb",
+      "pose",
+      "timestamp"
+    ],
+    "poses_path": null,
+    "rgbd_root": null,
+    "timestamp_path": null
+  },
+  "memory_artifacts": [
+    {
+      "description": "Caption memory: 3 caption window(s) with text, pose, and time.",
+      "name": "captions",
+      "path": "memory/captions.jsonl",
+      "required_for": [],
+      "type": "jsonl"
+    }
+  ],
+  "method": {
+    "commit": null,
+    "display_name": "LLM-with-captions (ReMEmbR caption control)",
+    "family": "caption_control",
+    "name": "remembr_captions",
+    "repo_path": "/home/robin_wang/remembr",
+    "version": null
+  },
+  "modules": {
+    "answerer": "remembr.agents.non_agent.NonAgent (LLM caption-context; not a fixed API)",
+    "captioner": "Llama-3-VILA1.5-8b",
+    "native_memory": "remembr.memory.MemoryItem (caption/time/position/theta)"
+  },
+  "notes": "LLM-with-captions Track 1/2 control. Caption-only memory packaged as captions/provenance; not an object-memory fixed API. The external ReMEmbR repo was read-only and was not modified.",
+  "package_id": "remembr_captions/example/seq0/remembr_captions-seq0",
+  "raw_links": [],
+  "schema_version": "0.1",
+  "tools": [],
+  "vocabulary": {
+    "captioner": "Llama-3-VILA1.5-8b",
+    "class_list_path": null,
+    "source": "free-text VILA captions; no detector vocabulary",
+    "vocabulary_mode": "module_ablation"
+  }
+}

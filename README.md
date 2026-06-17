@@ -36,7 +36,12 @@ The package contract is defined in
 - `examples/minimal_memory_package/`: small valid package fixture for smoke
   tests.
 - `examples/multiframe_vlm_control/`: no-explicit-memory raw-frame control
-  fixture (`explicit_memory=false`, all fixed APIs `invalid`).
+  fixture (`raw_frame_control` family, `explicit_memory=false`, all fixed APIs
+  `invalid`).
+- `examples/caption_control_package/`: LLM-with-captions Track 1/2 control
+  fixture (`caption_control` family, `explicit_memory=false`, all fixed APIs
+  `invalid`). Rebuilt by
+  `scripts/methods/remembr/build_caption_control_package.py`.
 - `benchmarks/`: generated Track 1 and Track 2 benchmark files.
 - `scripts/package/`: package-level utilities.
 - `scripts/methods/`: future method-specific scripts, grouped by method.

@@ -1,0 +1,3 @@
+{"caption": "The robot is in a corridor with a closed wooden door ahead and a window on the right.", "caption_id": "000000.000", "file_end": null, "file_start": null, "position": [0.0, 0.0, 0.0], "theta": 3.14, "time": 0.0}
+{"caption": "A small office with a desk, a monitor, and an office chair near the wall.", "caption_id": "000003.000", "file_end": null, "file_start": null, "position": [1.2, 0.4, 0.0], "theta": 3.14, "time": 3.0}
+{"caption": "An open kitchen area; a refrigerator and a sink are visible on the left.", "caption_id": "000006.000", "file_end": null, "file_start": null, "position": [2.5, 1.1, 0.0], "theta": 3.14, "time": 6.0}
