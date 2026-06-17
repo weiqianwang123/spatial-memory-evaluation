@@ -30,3 +30,5 @@ memories/
 .env
 .env.*
 !.env.example
+
+.claude/session_logs/
