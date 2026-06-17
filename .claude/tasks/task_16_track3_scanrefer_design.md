@@ -24,7 +24,7 @@ human-owned.
   equivalent native object query API.
 - Methods without such capability should be invalid for fixed API and still
   eligible for agentic eval.
-- Keep closed-vocabulary Track 1/2 policy separate from referring-expression
+- Keep shared OV-detector Track 1/2 policy separate from referring-expression
   evaluation details.
 
 ## Deliverables

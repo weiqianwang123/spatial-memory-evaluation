@@ -26,7 +26,7 @@ memory construction and query support.
 - Use ClawS native APIs/artifacts; do not invent evaluator-side behavior.
 - Track 1 should export/read native stored objects or a thin object table view.
 - Track 2 should call a native or thin non-interactive ClawS query/read path.
-- Use canonical closed-vocabulary labels for formal Track 1/2.
+- Use canonical shared OV-detector labels for formal Track 1/2.
 - Record modules, build command, runtime, memory sizes, and capability
   declarations.
 

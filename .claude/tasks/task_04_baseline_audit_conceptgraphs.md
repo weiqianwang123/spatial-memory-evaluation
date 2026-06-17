@@ -9,7 +9,7 @@ evidence-backed Track 1/2 fixed API eligibility for ConceptGraphs.
 
 This is an audit-only PR. Focus on native object map artifacts, graph/object
 fields, query/read scripts, perception modules, and the formal
-closed-vocabulary variant.
+shared OV-detector variant.
 
 ## Context Files
 
@@ -26,7 +26,7 @@ closed-vocabulary variant.
   geometry or a thin deterministic export.
 - Track 2 support requires a stable native query/read path. Do not add generic
   CLIP/LLM querying and count it as fixed API.
-- Formal Track 1/2 must be closed-vocabulary; unrestricted OV is `ov_ablation`.
+- Formal Track 1/2 must be shared OV-detector; method-native detector/OV override is `module_ablation`.
 - Do not implement exporter changes in this audit task.
 
 ## Deliverables
@@ -41,7 +41,7 @@ closed-vocabulary variant.
 - ConceptGraphs Track 1/2 status is evidence-backed.
 - Track 2 remains candidate/invalid unless a native non-interactive bridge is
   identified.
-- CV vs OV behavior is documented clearly.
+- shared OV vs OV behavior is documented clearly.
 
 ## PR Title
 

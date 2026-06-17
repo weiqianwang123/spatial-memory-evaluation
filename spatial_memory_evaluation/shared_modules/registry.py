@@ -95,7 +95,7 @@ class SharedModuleRegistry:
             "profile": profile,
             "method": method,
             "root": str(self.root),
-            "vocabulary_mode": "closed",
+            "vocabulary_mode": "open_vocabulary",
             "modules": [module.to_json() for module in modules],
         }
 
@@ -136,12 +136,15 @@ class SharedModuleRegistry:
             "detector_class_list.canonical": ModuleSpec(
                 key="detector_class_list.canonical",
                 kind="class_list",
-                name="canonical detector-coverable class list",
-                role="closed-vocabulary object labels for formal Track 1/2",
+                name="shared OV detector prompt/evaluation label list",
+                role="shared prompt list and detector-coverable evaluation label set for Track 1/2",
                 version="detector_coverable",
                 status="present",
                 class_list=DEFAULT_DETECTOR_CLASS_LIST_PATH,
-                notes="Generated from DEFAULT_DETECTOR_COVERABLE_LABELS.",
+                notes=(
+                    "Generated from DEFAULT_DETECTOR_COVERABLE_LABELS. It is used as the "
+                    "shared OV detector prompt/evaluation list, not as a closed-detector policy."
+                ),
             ),
             "sam.vit_h": ModuleSpec(
                 key="sam.vit_h",
@@ -167,11 +170,28 @@ class SharedModuleRegistry:
                 key="yolo_world.v8s",
                 kind="yolo_world",
                 name="YOLO-World",
-                role="closed-vocabulary detector backend constrained by canonical class list",
+                role="smoke open-vocabulary detector fallback",
                 version="yolov8s-world",
                 status="present_local",
                 checkpoint=Path("/home/robin_wang/DualMap/yolov8s-world.pt"),
-                notes="Local smoke checkpoint; centralize or replace for formal runs.",
+                notes=(
+                    "Only YOLO-World checkpoint currently found locally. Use for smoke runs until "
+                    "the stronger shared formal checkpoint is centralized."
+                ),
+            ),
+            "yolo_world.v8l": ModuleSpec(
+                key="yolo_world.v8l",
+                kind="yolo_world",
+                name="YOLO-World",
+                role="formal strongest shared open-vocabulary detector target",
+                version="yolov8l-world",
+                status="missing_local",
+                checkpoint=self.root / "yolo" / "yolo_world" / "yolov8l-world.pt",
+                notes=(
+                    "Formal target: DualMap's native config and ConceptGraphs streamlined path both "
+                    "reference yolov8l-world.pt. It was not found locally during the 2026-06-17 audit; "
+                    "download or symlink it before formal runs."
+                ),
             ),
             "fastsam.s": ModuleSpec(
                 key="fastsam.s",
@@ -222,6 +242,12 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("openclip.vit_b_32", True),
             ("fastsam.s", False),
         ],
+        "conceptgraphs": [
+            ("detector_class_list.canonical", True),
+            ("yolo_world.v8s", True),
+            ("sam.vit_b", True),
+            ("openclip.vit_b_32", True),
+        ],
     },
     "formal": {
         "hovsg": [
@@ -231,10 +257,16 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
         ],
         "dualmap": [
             ("detector_class_list.canonical", True),
-            ("yolo_world.v8s", True),
+            ("yolo_world.v8l", True),
             ("sam.vit_h", True),
             ("openclip.vit_h_14", True),
             ("fastsam.s", False),
+        ],
+        "conceptgraphs": [
+            ("detector_class_list.canonical", True),
+            ("yolo_world.v8l", True),
+            ("sam.vit_h", True),
+            ("openclip.vit_h_14", True),
         ],
     },
 }

@@ -23,7 +23,7 @@ def add_shared_module_args(parser: argparse.ArgumentParser, *, default_profile: 
 
 def apply_hovsg_shared_modules(args: argparse.Namespace) -> None:
     settings = get_shared_module_registry().method_settings("hovsg", args.shared_module_profile)
-    _set_path(args, "class_names", settings["class_names"], "class list")
+    _set_path(args, "class_names", settings["class_names"], "OV prompt/evaluation label list")
     _set_value(args, "clip_model", settings["clip_model"], "OpenCLIP model")
     _set_value(args, "clip_pretrained", settings["clip_pretrained"], "OpenCLIP pretrained tag")
     _set_value(args, "sam_type", settings["sam_type"], "SAM type")
@@ -33,7 +33,7 @@ def apply_hovsg_shared_modules(args: argparse.Namespace) -> None:
 
 def apply_dualmap_shared_modules(args: argparse.Namespace) -> None:
     settings = get_shared_module_registry().method_settings("dualmap", args.shared_module_profile)
-    _set_path(args, "class_names", settings["class_names"], "class list")
+    _set_path(args, "class_names", settings["class_names"], "OV prompt/evaluation label list")
     _set_path(args, "yolo_checkpoint", settings["yolo_checkpoint"], "YOLO checkpoint")
     _set_path(args, "sam_checkpoint", settings["sam_checkpoint"], "SAM checkpoint")
     _set_path(args, "fastsam_checkpoint", settings["fastsam_checkpoint"], "FastSAM checkpoint")

@@ -1,6 +1,6 @@
 # Shared Modules Registry
 
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 
 本文件记录各 baseline 方法会用到的 detector、segmenter、vision-language
 encoder、captioner、LLM 和 vector store。目标是让不同方法在可比实验中共享相同
@@ -15,26 +15,21 @@ translate it into that method's native CLI/Hydra/config overrides.
 ## Rules
 
 - 相同功能模块必须统一版本、checkpoint、预处理和 device policy。
-- 外部方法需要 detector、SAM、CLIP、class list 等模块时，必须通过
+- 外部方法需要 detector、SAM、CLIP、OV prompt/evaluation label list 等模块时，必须通过
   `spatial_memory_evaluation/shared_modules/` 读取配置。
 - `scripts/methods/<method>/` 可以有内部 adapter，把 shared module registry
   转换成外部 repo 的参数；不要修改外部 repo 源码。
-- 同一 scene 内用于检测/命名 object 的 label vocabulary 必须统一。默认使用
+- 同一 scene 内用于检测/命名 object 的 OV detector、prompt/evaluation label list、label normalization 必须统一。默认 prompt/evaluation list 使用
   `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`，它由
   `spatial_memory_evaluation/common/labels.py` 的
   `DEFAULT_DETECTOR_COVERABLE_LABELS` 生成并校验。
-- Track 1/2 formal eval 必须是 closed-vocabulary setup。DualMap、HOV-SG、
-  ConceptGraphs 等 open-vocabulary 方法必须提供 CV eval variant；unrestricted
-  OV 结果只能作为 `ov_ablation`。
+- Track 1/2 formal eval 必须使用 shared strongest open-vocabulary detector setup。DualMap、ConceptGraphs 等 detector-backed 方法默认使用同一个 shared OV detector；HOV-SG 这类无 detector 的方法记录 shared SAM/CLIP open-vocabulary prompt route。closed-detector、method-native detector/checkpoint 或不同 prompt list 只能作为 `module_ablation`。
 - checkpoint 统一存到一个共享目录，不放在各方法 repo 内部。建议路径：
   `/data/mondo-training-dataset/semantic_mapping/modules/<module>/<version>/`。
 - exporter/package 必须在 `manifest.json` 或 `build_log.json` 记录实际使用的模块
   名称、版本、checkpoint 路径和关键参数。
-- exporter 必须记录 detector class list path；如果 class list 与 canonical list
-  不一致，默认不允许作为 formal fair-comparison run。
-- 如果方法内部使用 open-vocabulary detector/query model，formal run 仍必须把
-  query/label space 约束到 canonical closed vocabulary，并在 manifest/build log
-  记录 `vocabulary_mode=closed`。
+- exporter 必须记录 OV detector prompt/evaluation list path；如果 prompt list、label normalization 或 detector checkpoint 与 shared module registry 不一致，默认不允许作为 formal fair-comparison run。
+- formal run 不再把 query/label space 强行 closed；必须在 manifest/build log 记录 `vocabulary_mode=open_vocabulary`、shared OV detector/checkpoint、prompt/evaluation list、raw label 和 normalized label。
 - 如果某方法原生只能用较弱版本，需要在该方法 package 中声明 override reason。
 - 如果 checkpoint 不存在，模块状态为 `missing`，不能默默换成别的模型。
 - 对 shared module 的升级要整体重跑受影响方法，不能只更新单个方法。
@@ -79,9 +74,9 @@ before formal runs.
 | SAM | segmentation / mask proposal | HOV-SG, DualMap, ConceptGraphs, DAAAM | fallback common version: `vit_b` | `/home/robin_wang/DualMap/sam_b.pt` | present | Historical HOV-SG run used `models.sam.type=vit_b` with this checkpoint. Use this as smoke fallback until `vit_h` is centralized. |
 | FastSAM | fast segmentation | DualMap optional, DAAAM optional | TBD | not centralized | unverified | Only use if SAM is too slow or method-native path requires it; record override. |
 | SAM2 | video/image segmentation | DAAAM optional | TBD | not centralized | unverified | Do not mix with SAM results unless explicitly running an ablation. |
-| Detector class list | detection vocabulary / label naming | HOV-SG, DualMap, future detector-backed methods | canonical detector-coverable list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | Must stay exactly synchronized with `DEFAULT_DETECTOR_COVERABLE_LABELS`; check with `python scripts/package/sync_detector_class_list.py --check`. |
+| OV prompt/evaluation label list | detector prompts / label normalization / evaluator split | HOV-SG, DualMap, ConceptGraphs, future detector-backed methods | shared detector-coverable prompt/eval list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | Used as the shared OV detector prompt/evaluation list and Track 1/2 detector-coverable split; check with `python scripts/package/sync_detector_class_list.py --check`. |
 | YOLO / Ultralytics | object detection | ClawS SpatialRAG, DualMap | YOLO11 if both can run | not centralized | unverified | ClawS references YOLO11/Ultralytics; DualMap uses YOLO/YOLO-World variants. Need exact checkpoint discovery. |
-| YOLO-World | open-vocabulary detection | DualMap, ConceptGraphs streamlined path | strongest common YOLO-World checkpoint | `/home/robin_wang/DualMap/yolov8s-world.pt` for current smoke | present local, not centralized | If used as detector in multiple methods, share exact checkpoint and the canonical detector class list. |
+| YOLO-World | open-vocabulary detection | DualMap, ConceptGraphs streamlined path | formal: `yolov8l-world.pt`; smoke fallback: `yolov8s-world.pt` | formal target: `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt`; smoke fallback: `/home/robin_wang/DualMap/yolov8s-world.pt` | formal missing, smoke present local | Strongest shared OV detector target is YOLO-World-L because DualMap config and ConceptGraphs streamlined path reference `yolov8l-world.pt`. Only YOLO-World-S was found locally on 2026-06-17, so S is smoke-only. |
 | GroundingDINO | open-vocabulary grounding | ConceptGraphs legacy path | strongest common checkpoint | not centralized | unverified | Should be fixed before ConceptGraphs exporter is claimed reproducible. |
 | OpenCLIP | vision-language feature encoder | HOV-SG, DualMap, ConceptGraphs, DAAAM | `ViT-H-14` if all methods can run | HOV-SG default: `laion2b_s32b_b79k`; smoke fallback: `ViT-B-32/laion2b_s34b_b79k` | partial | For fair CLIP-based object query, model type, pretrained tag, templates, and normalization must match. |
 | MobileCLIP | lightweight vision-language encoder | DualMap optional | TBD | not centralized | unverified | Treat as method override unless all methods adopt it. |
@@ -118,12 +113,9 @@ before formal runs.
 - `scripts/methods/shared_modules.py` is the current internal adapter layer.
   It injects registry values into HOV-SG and DualMap runners without editing
   those external repos.
-- HOV-SG and DualMap smoke now default to the same detector/label vocabulary:
+- HOV-SG, DualMap, and ConceptGraphs smoke/formal routes now share the same OV prompt/evaluation label list:
   `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`.
-- Track 1/2 formal runs are closed-vocabulary runs. OV methods such as DualMap,
-  HOV-SG, and ConceptGraphs must declare `vocabulary_mode=closed` for main
-  results; unrestricted open-vocabulary results are recorded only as
-  `ov_ablation`.
+- Track 1/2 formal runs are shared open-vocabulary detector runs. Detector-backed methods must use the shared strongest OV detector route and declare `vocabulary_mode=open_vocabulary`; closed-detector or method-native detector/checkpoint variants are recorded only as `module_ablation`.
 - HOV-SG smoke defaults to `SAM vit_b` with
   `/home/robin_wang/DualMap/sam_b.pt`, because this exact config appears in
   prior successful HOV-SG Hydra runs.
@@ -132,15 +124,13 @@ before formal runs.
 - Do not compare methods using different SAM/CLIP/YOLO checkpoints as if they
   were pure memory-method differences; mark those as module ablations or rerun
   with shared modules.
-- Do not compare methods using different detector class lists as fair object
-  memory methods. Different vocabularies are a detector-vocabulary ablation.
+- Do not compare methods using different OV detector checkpoints, prompt lists, or label normalization as fair object memory methods. Different detector/prompt settings are module ablations.
 
 ## Open Checks
 
 1. Locate or download `sam_vit_h_4b8939.pth` and place it under the canonical
    shared module directory.
-2. Centralize `/home/robin_wang/DualMap/yolov8s-world.pt` under the canonical
-   modules directory or replace it with a stronger shared YOLO-World checkpoint.
+2. Download or symlink `yolov8l-world.pt` into `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/`; keep `/home/robin_wang/DualMap/yolov8s-world.pt` as smoke fallback only.
 3. Discover exact OpenCLIP checkpoints and prompt templates used by HOV-SG,
    DualMap, ConceptGraphs, and DAAAM.
 4. Decide whether smoke runs use weaker shared modules (`SAM vit_b`,

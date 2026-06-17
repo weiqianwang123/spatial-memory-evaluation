@@ -234,7 +234,7 @@ Output requirements:
   must be `}}`.
 - Do not include Markdown, code fences, headings, or explanations outside JSON.
 - `objects` should contain every object you believe the memory represents for
-  the detector-coverable closed-vocabulary object inventory.
+  the detector-coverable shared-OV object inventory.
 - Prefer object ids, labels, positions, bboxes, and evidence directly from the
   memory package. Use the original method code only to parse or understand the
   memory, not to reconstruct memory from raw inputs.

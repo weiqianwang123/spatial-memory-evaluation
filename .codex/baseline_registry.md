@@ -28,27 +28,25 @@ evaluation repo 的 `adapters/` 只属于后续接入层，不能作为 baseline
 - `missing`：root 路径下没有对应方法 repo，或没有找到需要的原生能力。
 - no-memory controls 单独列出；它们不是 spatial-memory 方法 repo。
 
-## Formal Track 1/2 Vocabulary Policy
+## Formal Track 1/2 Detector Policy
 
-Track 1/2 的正式主评测只使用 closed-vocabulary detector-coverable setup。
-所有 detector-backed 或 open-vocabulary object-memory 方法都必须提供 CV eval
-variant，使用同一个 canonical class list、detector/module/checkpoint/preprocess。
+Track 1/2 的正式主评测只使用 shared strongest open-vocabulary detector setup，并继续只报告 detector-coverable split。
+所有 detector-backed object-memory 方法都必须使用同一个 shared OV detector、prompt/evaluation label list、checkpoint 和 preprocess。
 
-- DualMap、HOV-SG、ConceptGraphs 等 OV 方法不能把 unrestricted OV 结果放进主表。
-- 如果 OV 方法内部继续使用 open-vocabulary model，formal eval 也必须把 query/label
-  space 约束到 canonical closed vocabulary。
-- unrestricted OV 结果只能标记为 `ov_ablation`。
-- fixed API support 判断必须来自 root repo 或 native artifact，不能来自 evaluation
-  adapter 或临时 LLM wrapper。
+- 当前 formal target 是 YOLO-World-L (`yolov8l-world.pt`)；它在 DualMap config 和 ConceptGraphs streamlined path 中都有 native 证据。
+- 本机 2026-06-17 只找到 `/home/robin_wang/DualMap/yolov8s-world.pt`，因此 YOLO-World-S 只能作为 smoke fallback。
+- HOV-SG 这类没有 detector 的方法必须记录其 shared SAM/CLIP open-vocabulary prompt/label route。
+- non-shared detector、method-native detector/checkpoint 或不同 prompt list 结果只能标记为 `module_ablation`，不能混入 Track 1/2 主表。
+- fixed API support 判断必须来自 root repo 或 native artifact，不能来自 evaluation adapter 或临时 LLM wrapper。
 
 ## 方法总表
 
 | Method | Root path | Local code | Native build / ingest interface | Native query / read interface | Main memory artifact | Perception / model stack | Status |
 |---|---|---:|---|---|---|---|---|
 | ClawS SpatialRAG | `/home/robin_wang/ClawS-SpatialRAG` | present | `SpatialPipeline.process_frame(...)` `spatial_rag/pipeline.py:159`; build script `scripts/build_scannetpp_spatial_rag_memory.py:1`; ScanNet++/MCAP replay scripts | native non-interactive reader `load_memory_records(...)` `spatial_rag/eval/memory_loader.py:32` (labels+3D, GT-free, vec0-aux fallback `:148`); `SpatialRAGService.tools` `spatial_rag/clawspine_adapter.py:147` (`query_spatial_memory`/`get_semantic_anchor`/`remember_spatial_observation`); `get_spatial_objects` `:151`; `SpatialStorage.retrieve_memory`/`retrieve_by_location`/`get_entity_anchor` `spatial_rag/storage.py:702`,`:716`,`:733` | sqlite-vec `vec0` table `spatial_memories` (`spatial_rag/config.py:28`, schema `spatial_rag/storage.py:101`) + `crop_images` `:114`; built artifact `outputs/scannetpp_memory_036bce3393_ollama_vlm.db` (183 records) | YOLO/Ultralytics + ByteTrack `spatial_rag/visual_trigger.py:111`,`:105`; depth/pose projection `spatial_rag/depth_utils.py:139`; optional VLM describe/verify `spatial_rag/pipeline.py:372`; embedding providers `spatial_rag/embedding.py:51`,`:82`,`:176`; sqlite-vec fusion/search `spatial_rag/storage.py:296` | native memory + query + non-interactive read path present |
-| DualMap | `/home/robin_wang/DualMap` (commit `157235e`) | present | `applications/runner_dataset.py:17` Hydra runner；`dualmap/core.py:37` `Dualmap` wires `Detector`+`LocalMapManager`+`GlobalMapManager` (`core.py:48-51`)；concrete (local) map saved by default (`config/system_config.yaml:183`,`193`) | `applications/offline_local_map_query.py:171` interactive CLIP top-k over concrete-map feats (open3d keypress + `input()`)；nav-embedded inquiry `utils/global_map_manager.py:656`,`utils/local_map_manager.py:1096`; no non-interactive QA API | concrete map `map/<uid>.pkl` per-object `class_id`+`clip_ft`+`pcd` (`utils/object.py:64-74`); global/abstract map adds `pcd_2d`+`related_objs` anchors (`utils/object.py:739-762`) | YOLO-World + SAM/MobileSAM, optional FastSAM, OpenCLIP/MobileCLIP, low/high-mobility CLIP classifier (`utils/object_detector.py:176-227`) | concrete object-memory baseline present; formal eval needs CV variant; non-interactive query path partial |
-| HOV-SG | `/home/robin_wang/HOV-SG` | present | `application/semantic_segmentation.py:13-25` → `Graph.create_feature_map()` + `save_masked_pcds`/`save_full_pcd`/`save_full_pcd_feats` (`graph.py:141,1225,1252,1327`)；`application/create_graph.py:9-37` adds `build_graph` but **skips it for `scannet`/`replica`** (`create_graph.py:34-37`) | `application/visualize_query_graph.py:31-45` interactive REPL → `Graph.query_hierarchy` (`graph.py:1178`)；`Graph.query_floor`/`query_room`/`query_object` (`graph.py:965,1005,1082`) operate on `self.objects`, populated only by `build_graph` (HM3DSem path) | `mask_feats.pt`, `full_feats.pt`, `objects/pcd_*.ply`, `full_pcd.ply`, `masked_pcd.ply` (`graph.py:1252-1271,1327-1362`); graph dir (`floors/`,`rooms/`,`objects/*.json+.ply`) only on HM3DSem | SAM automatic masks (`vit_h` default, `graph.py:114-127`), OpenCLIP `ViT-H-14`/`laion2b_s32b_b79k` (`graph.py:90-103`, `config/*.yaml`), 3D mask merge + per-mask CLIP feats | open-vocab object/feature-map baseline present; CV variant via `evaluate_sem_seg.py`; hierarchy graph is HM3DSem-only |
-| ConceptGraphs | `/home/robin_wang/concept-graphs` | present | `conceptgraph/scripts/generate_gsa_results.py` or `conceptgraph/scripts/streamlined_detections.py`; `conceptgraph/slam/cfslam_pipeline_batch.py`; `conceptgraph/scenegraph/build_scenegraph_cfslam.py` | `conceptgraph/scripts/visualize_cfslam_results.py:269-310` interactive CLIP recolor (no machine output); `conceptgraph/scripts/visualize_cfslam_interact_llava.py` interactive LLaVA; `conceptgraph/scripts/eval_replica_semseg.py:133-140` non-interactive CV class assignment (Replica-only); no stable non-interactive query API | `pcd_saves/full_pcd_*.pkl.gz` serialized `MapObjectList` with labels + 3D pcd/bbox, CLIP/text features; optional scene graph JSON | SAM `vit_h` segment-all or RAM/Tag2Text + GroundingDINO + SAM; streamlined path uses YOLO-World `yolov8l-world.pt` + MobileSAM; OpenCLIP `ViT-H-14/laion2b_s32b_b79k`; optional LLaVA captions + GPT-4 scene graph | object-memory baseline present; Track 1 export-able, Track 2 candidate; no ScanNet++ loader |
+| DualMap | `/home/robin_wang/DualMap` (commit `157235e`) | present | `applications/runner_dataset.py:17` Hydra runner；`dualmap/core.py:37` `Dualmap` wires `Detector`+`LocalMapManager`+`GlobalMapManager` (`core.py:48-51`)；concrete (local) map saved by default (`config/system_config.yaml:183`,`193`) | `applications/offline_local_map_query.py:171` interactive CLIP top-k over concrete-map feats (open3d keypress + `input()`)；nav-embedded inquiry `utils/global_map_manager.py:656`,`utils/local_map_manager.py:1096`; no non-interactive QA API | concrete map `map/<uid>.pkl` per-object `class_id`+`clip_ft`+`pcd` (`utils/object.py:64-74`); global/abstract map adds `pcd_2d`+`related_objs` anchors (`utils/object.py:739-762`) | YOLO-World + SAM/MobileSAM, optional FastSAM, OpenCLIP/MobileCLIP, low/high-mobility CLIP classifier (`utils/object_detector.py:176-227`) | concrete object-memory baseline present; formal eval needs shared OV route; non-interactive query path partial |
+| HOV-SG | `/home/robin_wang/HOV-SG` | present | `application/semantic_segmentation.py:13-25` → `Graph.create_feature_map()` + `save_masked_pcds`/`save_full_pcd`/`save_full_pcd_feats` (`graph.py:141,1225,1252,1327`)；`application/create_graph.py:9-37` adds `build_graph` but **skips it for `scannet`/`replica`** (`create_graph.py:34-37`) | `application/visualize_query_graph.py:31-45` interactive REPL → `Graph.query_hierarchy` (`graph.py:1178`)；`Graph.query_floor`/`query_room`/`query_object` (`graph.py:965,1005,1082`) operate on `self.objects`, populated only by `build_graph` (HM3DSem path) | `mask_feats.pt`, `full_feats.pt`, `objects/pcd_*.ply`, `full_pcd.ply`, `masked_pcd.ply` (`graph.py:1252-1271,1327-1362`); graph dir (`floors/`,`rooms/`,`objects/*.json+.ply`) only on HM3DSem | SAM automatic masks (`vit_h` default, `graph.py:114-127`), OpenCLIP `ViT-H-14`/`laion2b_s32b_b79k` (`graph.py:90-103`, `config/*.yaml`), 3D mask merge + per-mask CLIP feats | open-vocab object/feature-map baseline present; shared OV route via `evaluate_sem_seg.py`; hierarchy graph is HM3DSem-only |
+| ConceptGraphs | `/home/robin_wang/concept-graphs` | present | `conceptgraph/scripts/generate_gsa_results.py` or `conceptgraph/scripts/streamlined_detections.py`; `conceptgraph/slam/cfslam_pipeline_batch.py`; `conceptgraph/scenegraph/build_scenegraph_cfslam.py` | `conceptgraph/scripts/visualize_cfslam_results.py:269-310` interactive CLIP recolor (no machine output); `conceptgraph/scripts/visualize_cfslam_interact_llava.py` interactive LLaVA; `conceptgraph/scripts/eval_replica_semseg.py:133-140` non-interactive fixed-list class assignment (Replica-only); no stable non-interactive query API | `pcd_saves/full_pcd_*.pkl.gz` serialized `MapObjectList` with labels + 3D pcd/bbox, CLIP/text features; optional scene graph JSON | SAM `vit_h` segment-all or RAM/Tag2Text + GroundingDINO + SAM; streamlined path uses YOLO-World `yolov8l-world.pt` + MobileSAM; OpenCLIP `ViT-H-14/laion2b_s32b_b79k`; optional LLaVA captions + GPT-4 scene graph | object-memory baseline present; Track 1 export-able, Track 2 candidate; no ScanNet++ loader |
 | DAAAM | `/home/robin_wang/DAAAM` | present | `scripts/run_pipeline.py`; `daaam.hydra.runner.HydraPipelineRunner`; `HydraIntegration.process_frame` | `scripts/demo_query.py`; `SceneUnderstandingAgent.answer_query`; scene graph tools such as matching subjects, radius lookup, region info, trajectory info | Hydra / Dynamic Scene Graph outputs plus semantic/background-object data | FastSAM/SAM/SAM2 via `UniversalSegmenter`, BotSort tracking, DAM/VLM grounding, CLIP ReID/features, Hydra scene graph | candidate baseline present; heavy integration needed |
 | Hydra standalone | `/home/robin_wang/Hydra` | present | `hydra run mp3d <scene_path>` via Python bindings; ROS2/colcon build path; RGB-D + labels + poses dataset layout | `hydra-eval` timing/analysis; DSG artifacts readable through Hydra/Spark-DSG tooling; no NL QA API found | 3D Dynamic Scene Graph / Hydra result directory | real-time spatial perception stack for hierarchical 3D scene graph construction; semantic labels can come from dataset/model outputs | standalone DSG baseline present; evaluator integration needed |
 | ReMEmbR | `/home/robin_wang/remembr` | present | `scripts/preprocess_captions.py`; `MemoryItem`; `MilvusMemory.insert`; CODa/NaVQA preprocessing scripts | `ReMEmbRAgent.query`; retrieval tools `retrieve_from_text`, `retrieve_from_position`, `retrieve_from_time`; `scripts/eval.py --model remembr+...` | captions JSON + Milvus collection with caption, pose, time, text embedding | VILA captioning, Milvus vector DB, mixedbread text embeddings, LLM agent/tool loop | caption/spatio-temporal memory baseline present |
@@ -60,7 +58,7 @@ variant，使用同一个 canonical class list、detector/module/checkpoint/prep
 本表只判断 method repo 或导出的 memory package 是否能支持
 `capabilities.json` 里的 fixed API 查询，不判断 agent full access。Track key 以
 `.codex/memory_package_spec.md` 为准。Track 1/2 的 `supported` 默认指 formal
-closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed API 状态。
+shared OV detector route；non-shared detector/method-native detector variants 只作为 module ablation，不提升 fixed API 状态。
 
 状态含义：
 
@@ -77,10 +75,10 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
 | Method | Track 1: object inventory API | Track 2: object location query API | Track 3: ScanRefer referring query API | Track 4: OpenEQA QA / retrieval API | First package decision |
 |---|---|---|---|---|---|
 | ClawS SpatialRAG | `native`: GT-free reader `spatial_rag/eval/memory_loader.py:32` returns label+3D per record (smoke: 183 records, 183 normalized labels); also `get_spatial_objects` `spatial_rag/clawspine_adapter.py:151` | `native`: embedding-free `get_entity_anchor` `spatial_rag/storage.py:733` + `retrieve_by_location` `:716` (name→3D / radius); semantic `query_spatial_memory` `spatial_rag/clawspine_adapter.py:328` needs embedding service | `invalid`: no ScanRefer/referring resolver in root repo (no `scanrefer`/`referring` symbol) | `candidate`: native retrieval `retrieve_memory` `spatial_rag/storage.py:702` exists, but no native answer-synthesis QA API; in-repo eval retrieval/QA path is `not_implemented_first_version` `scripts/evaluate_scannetpp_spatial_rag.py:468` (status `:476`) | Track 1 `supported` (native reader); Track 2 `supported` (anchor/location native, semantic needs embedder); Track 3 `invalid`; Track 4 stays `candidate` pending retrieval→answer bridge |
-| DualMap | `export` from concrete map `map/<uid>.pkl` object pickles; formal CV variant has native precedent in `evaluation/sem_seg_eval.py:381` (`calc_clip_labels` projects each `clip_ft` onto the fixed ScanNet200 list `utils/eval/scannet200_constants.py` via cosine + argsort, reassigning `obj.class_id`) | `candidate`: only interactive open3d CLIP query (`applications/offline_local_map_query.py:171`) and nav-embedded inquiry (`utils/global_map_manager.py:656`); no native non-interactive bridge, so not `supported` yet | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 CV first; Track 2 only after a native non-interactive query bridge; unrestricted OV is `ov_ablation`; Track 3/4 invalid |
-| HOV-SG | `export` (CV): per-mask PLY centroid + `mask_feats.pt` → CV label via `evaluate_sem_seg.py` argmax over `SCANNET_LABELS_20`; needs thin exporter, no native object-table writer | `candidate` (CV): `query_object` is CLIP sim, but global-search path is broken (`graph.py:1125` NameError) and `self.objects` is empty on ScanNet path; CV needs a label-constrained reader over `mask_feats.pt`, not the native REPL | `invalid`: open-vocab CLIP object query is not a ScanRefer relation/attribute resolver | `invalid`: no native general QA API; `query_hierarchy` needs `OPENAI_KEY` and is not QA | Track 1 CV-export supportable; Track 2 only after a non-interactive CV reader (native query path is HM3DSem-only + buggy); unrestricted OV is `ov_ablation`; Track 3/4 invalid |
-| ConceptGraphs | `export` from `pcd_saves/full_pcd_*.pkl.gz` serialized `MapObjectList` (labels + 3D pcd/bbox); formal result requires CV eval variant | `candidate`: only interactive CLIP recolor + interactive LLaVA exist; `eval_replica_semseg.py:133-140` proves CV `clip_ft @ class_feats.T → argmax` primitive but it is Replica-specific, not a query entrypoint; needs non-interactive CV bridge | `invalid`: no referring-expression resolver found | `invalid`: no native non-interactive QA/retrieval API (LLaVA path is interactive point-pick only) | Track 1 CV first; Track 2 stays candidate until native bridge; unrestricted OV is `ov_ablation`; Track 3/4 invalid |
-| DAAAM | `export` via `retrieve_objects_from_scene_graph` over DSG OBJECTS layer (labels + 3D positions confirmed); formal CV variant needs label-space constraint | `candidate`: native non-LLM scene-graph tools (`get_matching_subjects`, `get_objects_in_radius`) return objects+positions, but shipped `answer_query` is LLM-orchestrated; needs non-LLM entrypoint | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 after CV-constrained DSG export; Track 2 only after non-LLM query entrypoint; Track 4 after evaluator-safe call; Track 3 invalid. Stays `candidate`/`export` pending human review |
+| DualMap | `export` from concrete map `map/<uid>.pkl` object pickles; formal shared-OV route has native precedent in `evaluation/sem_seg_eval.py:381` (`calc_clip_labels` projects each `clip_ft` onto the fixed ScanNet200 list `utils/eval/scannet200_constants.py` via cosine + argsort, reassigning `obj.class_id`) | `candidate`: only interactive open3d CLIP query (`applications/offline_local_map_query.py:171`) and nav-embedded inquiry (`utils/global_map_manager.py:656`); no native non-interactive bridge, so not `supported` yet | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 shared OV first; Track 2 only after a native non-interactive query bridge; method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
+| HOV-SG | `export` (shared OV): per-mask PLY centroid + `mask_feats.pt` → shared OV label via `evaluate_sem_seg.py` argmax over `SCANNET_LABELS_20`; needs thin exporter, no native object-table writer | `candidate` (shared OV): `query_object` is CLIP sim, but global-search path is broken (`graph.py:1125` NameError) and `self.objects` is empty on ScanNet path; shared OV needs a label-constrained reader over `mask_feats.pt`, not the native REPL | `invalid`: open-vocab CLIP object query is not a ScanRefer relation/attribute resolver | `invalid`: no native general QA API; `query_hierarchy` needs `OPENAI_KEY` and is not QA | Track 1 shared-OV export supportable; Track 2 only after a non-interactive shared OV reader (native query path is HM3DSem-only + buggy); method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
+| ConceptGraphs | `export` from `pcd_saves/full_pcd_*.pkl.gz` serialized `MapObjectList` (labels + 3D pcd/bbox); formal result requires shared OV detector route | `candidate`: only interactive CLIP recolor + interactive LLaVA exist; `eval_replica_semseg.py:133-140` proves shared OV `clip_ft @ class_feats.T → argmax` primitive but it is Replica-specific, not a query entrypoint; needs non-interactive shared OV bridge | `invalid`: no referring-expression resolver found | `invalid`: no native non-interactive QA/retrieval API (LLaVA path is interactive point-pick only) | Track 1 shared OV first; Track 2 stays candidate until native bridge; method-native detector/OV override is `module_ablation`; Track 3/4 invalid |
+| DAAAM | `export` via `retrieve_objects_from_scene_graph` over DSG OBJECTS layer (labels + 3D positions confirmed); formal shared OV route needs label-space constraint | `candidate`: native non-LLM scene-graph tools (`get_matching_subjects`, `get_objects_in_radius`) return objects+positions, but shipped `answer_query` is LLM-orchestrated; needs non-LLM entrypoint | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 after shared OV label-normalized DSG export; Track 2 only after non-LLM query entrypoint; Track 4 after evaluator-safe call; Track 3 invalid. Stays `candidate`/`export` pending human review |
 | Hydra standalone | `candidate`: DSG OBJECTS nodes carry `semantic_label` + centroid and are enumerable (`graph.getLayer(DsgLayers::OBJECTS)`), but labels are external input, not Hydra-generated; needs smoke test | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean AND label-space fairness is decided; Track 2/3/4 invalid |
 | ReMEmbR | `invalid`: caption memory (`MemoryItem` caption/time/position/theta) has no object inventory | `invalid`: caption retrieval returns caption+pose+time strings, no object-level location output | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` LangGraph agent + retrieval tools | Track 4 supportable; Track 1/2/3 invalid for fixed object-level APIs |
 | Multi-frame VLM | `control-only` | `control-only` | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Keep as raw-frame ablation, `explicit_memory=false`; not a fixed memory API |
@@ -196,9 +194,9 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
      embedder model/dim must be pinned before a fair formal Track 2 run; the
      embedding-free anchor/location reads are unaffected.
   3. ClawS uses a COCO-style YOLO vocabulary, not the canonical
-     `detector_coverable.txt`; a closed-vocabulary mapping
+     `detector_coverable.txt`; a shared OV label normalization
      (`configs/scannetpp_label_mapping.yaml`, `LabelMapper`) is applied at read
-     time, but the formal CV variant's class-list parity still needs sign-off.
+     time, but the formal shared OV route's class-list parity still needs sign-off.
 
 ## DualMap
 
@@ -253,7 +251,7 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     `mask`/`xyxy`/`conf`/`distance`/`is_low_mobility`; `GlobalObservation` adds
     `uid`/`pcd_2d`/`bbox_2d`/`related_objs`).
   - A Track 1 export is a thin object-table read of this pickle dir (no new
-    capability); label resolution still needs the CV step below.
+    capability); label resolution still needs the shared OV label-normalization step below.
 - Native query/read:
   - `applications/offline_local_map_query.py:171` (`query_callback`) encodes a
     text query with CLIP and returns top-k concrete-map objects by cosine
@@ -276,15 +274,15 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
   - Features: OpenCLIP/MobileCLIP (default `MobileCLIP-S2`/`datacompdr`,
     `system_config.yaml:50-57`), used for object CLIP features and a low/high
     mobility prototype classifier (`object_detector.py:203-227,1420-1449`).
-  - Detector class list defaults to `config/class_list/gpt_indoor_general.txt`
+  - Detector prompt list defaults to `config/class_list/gpt_indoor_general.txt`
     (open-vocabulary GPT class list, `system_config.yaml:25`); fair-comparison
-    runs must override `yolo.given_classes_path` to the shared canonical CV list
-    (see `.codex/modules.md`).
-- Formal closed-vocabulary (CV) status — explicit:
+    runs must set `yolo.given_classes_path` to the shared OV prompt/evaluation list
+    from `.codex/modules.md`.
+- Formal shared OV detector status — explicit:
   - DualMap is open-vocabulary by default (CLIP-feature objects, YOLO-World +
-    FastSAM `unknown` masks), so unrestricted output is `ov_ablation` only.
-  - A native CV precedent exists: `evaluation/sem_seg_eval.py:381`
-    (`calc_clip_labels`) text-encodes a **fixed GT class list** and reassigns
+    FastSAM `unknown` masks), so unrestricted output is `module_ablation` only.
+  - A native fixed-list projection precedent exists: `evaluation/sem_seg_eval.py:381`
+    (`calc_clip_labels`) text-encodes a **fixed evaluation class list** and reassigns
     each object's `class_id` to the top-1 match of its `clip_ft` against that
     list (`sem_seg_eval.py:387-419`). For ScanNet this list is the canonical
     ScanNet200 vocabulary (`VALID_CLASS_IDS_200`/`CLASS_LABELS_200` from
@@ -292,16 +290,15 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     `sem_seg_eval.py:19,163-181`; `config/class_list/scannet200_classes.txt` =
     200 labels + `unknown`). `scripts/dualmap_scannet.sh:10,17` runs the dataset
     runner then `evaluation.sem_seg_eval`.
-  - This is exactly the required CV pattern: keep the native OV CLIP model but
-    constrain the label/query space to a canonical closed vocabulary. The
-    formal Track 1/2 CV variant should reuse this `clip_ft`→fixed-list
-    projection with the shared canonical class list, not the OV GPT list.
+  - This is the required shared OV pattern: keep the native OV model path, use the shared OV prompt/evaluation list, and record raw plus normalized labels. The
+    formal Track 1/2 shared OV route should reuse this `clip_ft`→fixed-list
+    projection with the shared OV prompt/evaluation list, not the OV GPT list.
 - Track 1 / Track 2 fixed API decision:
   - Track 1 (object inventory): `export` — the concrete-map pickle dir already
     contains `class_id`, `clip_ft`, and `pcd` per object; a thin object-table
-    reader plus the CV label projection above yields canonical labels +
-    3D positions. Formal result requires the CV variant; unrestricted OV stays
-    `ov_ablation`.
+    reader plus the shared OV label projection above yields canonical labels +
+    3D positions. Formal result requires the shared OV route; method-native detector/OV override stays
+    `module_ablation`.
   - Track 2 (object location query): `candidate`, not `supported`. CLIP-cosine
     object retrieval exists natively, but only as an interactive open3d loop and
     a nav-flag inquiry; there is no native non-interactive query bridge, so per
@@ -310,8 +307,8 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
   - Track 3/4: `invalid` — no referring-expression resolver and no native
     QA/retrieval API.
 - Current conclusion:
-  - Strong concrete object-memory baseline with a native CV-projection
-    precedent for formal closed-vocabulary Track 1. Track 2 stays `candidate`
+  - Strong concrete object-memory baseline with a native shared OV projection
+    precedent for formal shared OV Track 1. Track 2 stays `candidate`
     pending a native non-interactive query bridge; do not export in this audit.
 
 ## HOV-SG
@@ -356,24 +353,24 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     - `query_hierarchy` → `parse_hier_query` (`llm_utils.py:169-216`) requires
       `os.environ["OPENAI_KEY"]` and calls GPT-3.5; query parsing is not
       self-contained.
-- Closed-vocabulary (CV) formal route — present and is the recommended path:
+- Shared OV detector (shared OV) formal route — present and is the recommended path:
   - `application/eval/evaluate_sem_seg.py:62-75` loads the native feature map
     (`load_feature_map`, `eval_utils.py:125` → `mask_feats.pt` + `objects/pcd_*.ply`),
     constrains the label space to a fixed list (`SCANNET_LABELS_20`,
     `label_constants.py:3-25`, 20 classes + background; ScanNet path
     `eval_sem_seg.py:61-64`), computes CLIP text-vs-mask similarity
     (`text_prompt`, `eval_utils.py:79`) and assigns each mask its argmax label
-    (`sim_2_label`, `eval_utils.py:268`). This is exactly the CV constraint the
+    (`sim_2_label`, `eval_utils.py:268`). This is exactly the shared OV prompt/list constraint the
     formal policy requires: native OV CLIP features, but query/label space
-    pinned to a canonical closed class list.
+    pinned to a shared OV prompt/evaluation class list.
   - Class list is swappable via `obj_labels` (`label_feats.py:26-59`:
     `COCO_STUFF_CLASSES`, `MATTERPORT_LABELS_160/40`, `HM3DSEM_LABELS`, etc.), so
     the evaluation repo's canonical `detector_coverable.txt` can be injected as
-    the CV label set without editing HOV-SG.
-- CV eval variant feasibility: **feasible (no hard blocker).** A thin reader can
+    the shared OV label set without editing HOV-SG.
+- shared OV detector route feasibility: **feasible (no hard blocker).** A thin reader can
   load `mask_feats.pt` + `objects/pcd_*.ply`, run CLIP argmax over the canonical
-  closed list (reusing `eval_utils.text_prompt`/`sim_2_label` logic), and emit an
-  object table with `object_id`, CV `label`, centroid `position_3d`, and the
+  shared OV prompt/evaluation list (reusing `eval_utils.text_prompt`/`sim_2_label` logic), and emit an
+  object table with `object_id`, shared OV `label`, centroid `position_3d`, and the
   native PLY as evidence. This is a format/non-interactivity wrapper, not a
   capability change, so it satisfies the fixed-API eligibility gate.
 - Modules / checkpoints (`config/semantic_segmentation.yaml`,
@@ -394,11 +391,11 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     embedding) + `graph/nav_graph/`.
 - Track decisions (root-repo evidence):
   - Track 1 (object inventory): `export`. Object-level geometry exists as native
-    per-mask PLYs; CV labels are derivable via the `evaluate_sem_seg.py` argmax
+    per-mask PLYs; shared OV labels are derivable via the `evaluate_sem_seg.py` argmax
     over a fixed class list. Needs a thin exporter (no native JSONL writer).
   - Track 2 (object location): `candidate`, not native-ready. The native
     `query_object` is OV CLIP similarity, is HM3DSem-graph-only, and the
-    global-search branch is broken (`graph.py:1125`). A non-interactive CV
+    global-search branch is broken (`graph.py:1125`). A non-interactive shared OV
     reader over `mask_feats.pt` is required before this can be `supported`.
   - Track 3 (ScanRefer): `invalid`. No referring-expression / relation /
     attribute resolver; CLIP object similarity is not a grounding resolver.
@@ -406,14 +403,14 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     is an OV object locator that depends on `OPENAI_KEY` for parsing, not a QA
     interface.
 - OV vs formal: native default is open-vocabulary (`HM3DSEM_LABELS`, free-text
-  CLIP queries). Per the formal policy these unrestricted-OV results are
-  `ov_ablation` only. The formal Track 1/2 entry must use the CV variant
-  (canonical closed list + same CLIP/SAM checkpoints), recorded as
-  `vocabulary_mode=closed` in manifest/build log.
+  CLIP queries). Per the formal policy these method-native detector/OV override results are
+  `module_ablation` only. The formal Track 1/2 entry must use the shared OV route
+  (shared OV prompt/evaluation list + same CLIP/SAM checkpoints), recorded as
+  `vocabulary_mode=open_vocabulary` in manifest/build log.
 - Current conclusion:
-  - Present open-vocabulary 3D object/feature-map baseline with a clean CV route
+  - Present open-vocabulary 3D object/feature-map baseline with a clean shared OV route
     through `evaluate_sem_seg.py`'s fixed-class-list CLIP argmax. The remaining
-    work is a non-interactive CV exporter/reader over the native feature-map
+    work is a non-interactive shared OV exporter/reader over the native feature-map
     artifacts (object table for Track 1, label-constrained query for Track 2);
     the native interactive `query_*` REPL is not usable as-is on the ScanNet
     path and is not a fixed API.
@@ -482,8 +479,8 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
       point-pick + LLaVA chat REPL (`:93-201`); interactive only.
   - The closest native non-interactive primitive is
     `conceptgraph/scripts/eval_replica_semseg.py:133-140`:
-    `object_feats @ class_feats.T → argmax` against a fixed closed class-text
-    feature matrix. This proves the CV label-assignment mechanism exists, but it
+    `object_feats @ class_feats.T → argmax` against a shared OV prompted class-text
+    feature matrix. This proves the shared OV label-assignment mechanism exists, but it
     is hardwired to Replica GT point clouds / `REPLICA_CLASSES`
     (`:19-26, 255-302`) and is a semseg scorer, not a reusable object-location
     query entrypoint.
@@ -491,18 +488,18 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     anywhere (`grep` for `def .*query|answer|locate|retrieve` returns only the
     LLaVA `__call__` and `eval_replica`).
 
-- Vocabulary (CV vs OV):
+- Vocabulary (shared OV route vs method-native OV):
   - Default builds are open-vocabulary: segment-all uses class `"item"`
     (`generate_gsa_results.py:397-398`), RAM/Tag2Text generate open tags
     (`:362-396, 441-478`), GroundingDINO grounds arbitrary phrases.
-  - A closed-vocabulary route exists natively: YOLO-World
+  - A shared OV route exists natively: YOLO-World
     `set_classes(cfg.classes_file)` in the streamlined path constrains detection
     to a fixed class list (`streamlined_detections.py:56-58`), and CLIP→class
-    argmax against a canonical class-text matrix is the eval-time CV mechanism
+    argmax against a canonical class-text matrix is the eval-time shared OV mechanism
     (`eval_replica_semseg.py:133-140`).
-  - Formal Track 1/2 must use the closed-vocabulary detector-coverable list and
-    set `vocabulary_mode=closed`. Unrestricted segment-all / RAM / Tag2Text /
-    open GroundingDINO results are `ov_ablation` only.
+  - Formal Track 1/2 must use the shared-OV-detector-coverable list and
+    set `vocabulary_mode=open_vocabulary`. Unrestricted segment-all / RAM / Tag2Text /
+    open GroundingDINO results are `module_ablation` only.
 
 - Module stack: SAM `vit_h` (`sam_vit_h_4b8939.pth`) or MobileSAM; GroundingDINO
   `groundingdino_swint_ogc.pth`; RAM/Tag2Text checkpoints; YOLO-World
@@ -513,11 +510,11 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
 
 - Track status:
   - Track 1: `export` — serialized object map has labels + 3D geometry; a thin
-    deterministic reader can emit the object table. Formal run requires the CV
+    deterministic reader can emit the object table. Formal run requires the shared OV
     variant.
   - Track 2: `candidate` — no native non-interactive object-location query path;
-    a CV query bridge (reusing the CLIP-text-vs-`clip_ft` argmax primitive
-    constrained to the canonical class list) must be written and smoke-tested
+    a shared OV query bridge (reusing the CLIP-text-vs-`clip_ft` argmax primitive
+    constrained to the shared OV prompt/evaluation list) must be written and smoke-tested
     before this can be `supported`.
   - Track 3: `invalid` — no referring-expression resolver.
   - Track 4: `invalid` — no native non-interactive QA/retrieval API (the only QA
@@ -532,7 +529,7 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     evaluation repo's method adapter, not the external repo) before a build can
     run.
   - No standalone query/exporter contract yet; Track 2 needs a non-interactive
-    CV bridge and at least one scene smoke test before claiming `supported`.
+    shared OV bridge and at least one scene smoke test before claiming `supported`.
   - Scene graph stage depends on external OpenAI GPT-4 + LLaVA checkpoint; not
     needed for Track 1/2 but blocks any relation-based capability.
 
@@ -588,10 +585,10 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
     input, DSG output paths, and evaluator-safe query calls.
 - Human-review notes (ambiguous, do not auto-promote):
   - Track 1 vocabulary: DAAAM object/background labels come from DAM/VLM
-    grounding (open-vocabulary free-text `description`), not a closed detector.
-    A formal closed-vocabulary Track 1 variant needs label-space constraint per
-    the vocabulary policy; unrestricted labels stay `ov_ablation`. Human owns
-    the CV-mapping decision before Track 1 is marked `supported`.
+    grounding (open-vocabulary free-text `description`), not a non-shared detector.
+    A formal shared OV Track 1 variant needs label-space constraint per
+    the vocabulary policy; method-native/free-text labels stay `module_ablation`. Human owns
+    the shared OV label-normalization decision before Track 1 is marked `supported`.
   - Track 2 stays `candidate`: the native tools query objects deterministically,
     but the shipped entrypoint (`answer_query`) is LLM-orchestrated. Marking
     Track 2 `supported` requires a non-LLM entrypoint that calls the native
@@ -649,7 +646,7 @@ closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed
 - Human-review notes (ambiguous, do not auto-promote):
   - Track 1 stays `candidate`. Object nodes with labels + 3D positions are
     exportable, so a clean DSG object export is plausible, but: (a) labels are
-    supplied externally, so the formal closed-vocabulary fairness gate depends on
+    supplied externally, so the formal shared OV label/module fairness gate depends on
     which segmenter/label-space we feed Hydra, not on Hydra itself; (b) the run
     path needs a smoke test on one scene before Track 1 is `supported`. Human
     owns whether externally-labeled DSG object nodes count as a native object
@@ -739,7 +736,7 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
   (write a non-interactive object-table reader), Track 2 = `candidate` (needs a
   non-LLM entrypoint over the native tools), Track 4 = `candidate` (needs
   evaluator-safe call + LLM-judge isolation), Track 3 = `invalid`. Human owns:
-  (a) the closed-vocabulary label mapping for DAM/VLM free-text labels, and
+  (a) the shared OV label mapping for DAM/VLM free-text labels, and
   (b) whether Track 2 uses the deterministic tools rather than the LLM loop.
 
 ### Hydra standalone — Track 1 DSG candidate, kept separate from DAAAM
@@ -750,7 +747,7 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 - Recommendation: **Track 1 object-memory candidate only.** Track 1 =
   `candidate` (clean DSG object export + one-scene smoke test), Track 2/3/4 =
   `invalid` (no NL query, no referring resolver, no QA API). Human owns whether
-  externally-labeled DSG object nodes satisfy the closed-vocabulary fairness
+  externally-labeled DSG object nodes satisfy the shared OV label/module fairness
   gate, and whether Hydra is evaluated on raw DSG vs through a downstream QA
   layer.
 
@@ -789,7 +786,7 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 - Agentic-only / Track-4-native: ReMEmbR.
 - Control-only (`explicit_memory=false`, never fixed API): Multi-frame VLM,
   LLM-with-captions.
-- Deferred decisions for the human: DAAAM CV label mapping + Track 2 entrypoint
+- Deferred decisions for the human: DAAAM shared OV label mapping + Track 2 entrypoint
   choice; Hydra external-label fairness + evaluation surface; promotion of any
   `candidate` to `supported` after smoke tests.
 

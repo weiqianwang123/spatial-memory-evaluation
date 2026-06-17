@@ -879,7 +879,7 @@ def _write_manifest(
                 "coordinate_frame": "HOV-SG world frame from ScanNet++ aligned poses; meters",
             },
             "vocabulary": {
-                "vocabulary_mode": "closed",
+                "vocabulary_mode": "open_vocabulary",
                 "class_list_path": str(args.class_names),
                 "source": "shared_modules",
                 "profile": args.shared_module_profile,

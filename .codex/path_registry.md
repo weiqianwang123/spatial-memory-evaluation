@@ -14,7 +14,7 @@ checkpoint、prepared intermediate、memory package、result output 和工具环
 | old nested repo path | `/home/robin_wang/open-eqa/spatial-memory-evaluation` | 已迁移旧路径 | do not use |
 | HOV-SG repo | `/home/robin_wang/HOV-SG` | HOV-SG method-native code | external method repo |
 | ClawS repo | `/home/robin_wang/ClawS-SpatialRAG` | ScanNet++ depth/layout reader currently reused by HOV-SG prepare | external method repo |
-| DualMap repo | `/home/robin_wang/DualMap` | source of current SAM smoke checkpoint and indoor class list | external method repo |
+| DualMap repo | `/home/robin_wang/DualMap` | source of current SAM smoke checkpoint and YOLO-World-S smoke checkpoint | external method repo |
 
 ## Data Roots
 
@@ -42,13 +42,14 @@ See `modules.md` for module-level policy. Current known HOV-SG-related paths:
 |---|---|---|---|
 | SAM smoke checkpoint | `/home/robin_wang/DualMap/sam_b.pt` | present | current HOV-SG smoke default, `models.sam.type=vit_b` |
 | SAM formal target | `/data/mondo-training-dataset/semantic_mapping/modules/sam/vit_h/sam_vit_h_4b8939.pth` | missing | target shared formal checkpoint |
-| YOLO-World smoke checkpoint | `/home/robin_wang/DualMap/yolov8s-world.pt` | present | current DualMap smoke default |
+| YOLO-World smoke checkpoint | `/home/robin_wang/DualMap/yolov8s-world.pt` | present | smoke fallback only |
+| YOLO-World formal target | `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt` | missing | formal strongest shared OV detector target; referenced by DualMap and ConceptGraphs native configs |
 | DualMap default YOLO target | `/home/robin_wang/DualMap/model/yolov8l-world.pt` | missing | upstream config default; smoke overrides to `yolov8s-world.pt` |
 | DualMap default FastSAM target | `/home/robin_wang/DualMap/model/FastSAM-s.pt` | missing | smoke disables FastSAM unless explicitly enabled |
 | OpenCLIP smoke model | `ViT-B-32` | available through `open_clip` | current HOV-SG smoke default |
 | OpenCLIP smoke pretrained tag | `laion2b_s34b_b79k` | available through `open_clip` | current HOV-SG smoke default |
 | HOV-SG default OpenCLIP target | `ViT-H-14 / laion2b_s32b_b79k` | uncentralized | HOV-SG config default, heavier than smoke setup |
-| canonical detector class list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | repo-controlled detector/label vocabulary; must match `DEFAULT_DETECTOR_COVERABLE_LABELS` |
+| shared OV prompt/evaluation label list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | repo-controlled prompt/eval labels for shared OV detector and detector-coverable split; must match `DEFAULT_DETECTOR_COVERABLE_LABELS` |
 | HOV-SG native HM3D labels | `/home/robin_wang/HOV-SG/hovsg/labels/HM3D_CountsOfObjectTypes.csv` | present | HOV-SG native `HM3DSEM_LABELS`, 1624 object types plus header |
 
 ## Python And Runtime

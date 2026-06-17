@@ -423,7 +423,7 @@ How to solve:
 - Read the memory artifacts directly, or use/package/adapt method code to parse
   native maps, scene graphs, databases, feature files, or object tables.
 - You may create a temporary query interface that exact-matches or otherwise
-  searches `target_label` against memory object labels. Prefer closed-vocabulary
+  searches `target_label` against memory object labels. Prefer exact target-label / normalized-label
   target_label/canonical_label over brittle natural-language parsing.
 - Return up to `top_k` predictions for every query_id.
 - Use object ids, labels, positions, bboxes, scores, and evidence grounded in

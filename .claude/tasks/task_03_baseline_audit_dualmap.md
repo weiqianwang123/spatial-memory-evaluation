@@ -9,7 +9,7 @@ Track 1/2 fixed API eligibility for DualMap.
 
 This is an audit-only PR. Focus on DualMap native concrete/global maps, object
 artifacts, query/read paths, detector/SAM/CLIP stack, and the formal
-closed-vocabulary eval variant.
+shared OV-detector eval variant.
 
 ## Context Files
 
@@ -26,8 +26,8 @@ closed-vocabulary eval variant.
   table export.
 - Track 2 support is allowed only if DualMap has a native or thin
   non-interactive object/query bridge.
-- Formal Track 1/2 must use canonical closed-vocabulary labels. Unrestricted
-  OV output remains `ov_ablation`.
+- Formal Track 1/2 must use canonical shared OV-detector labels. Unrestricted
+  OV output remains `module_ablation`.
 - Do not implement exporter changes in this audit task.
 
 ## Deliverables
@@ -35,11 +35,11 @@ closed-vocabulary eval variant.
 - Update `.codex/baseline_registry.md` DualMap row/section.
 - Record evidence for concrete map/global map artifacts, native build path,
   object fields, query/read capability, and perception modules.
-- Record clear Track 1/2 fixed API status and CV/OV distinction.
+- Record clear Track 1/2 fixed API status and shared-OV/module-ablation distinction.
 
 ## Acceptance Checks
 
-- DualMap formal CV status is explicit.
+- DualMap formal shared OV status is explicit.
 - Track 2 is not marked supported unless a native bridge is identified.
 - The registry explains concrete map vs global map relevance for evaluation.
 

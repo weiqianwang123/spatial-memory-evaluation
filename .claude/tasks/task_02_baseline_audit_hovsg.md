@@ -9,7 +9,7 @@ Track 1/2 fixed API eligibility for HOV-SG.
 
 This is an audit-only PR. Focus on HOV-SG native graph construction, native
 artifacts, query/read tools, detector/SAM/CLIP stack, and whether a formal
-closed-vocabulary eval variant is feasible.
+shared OV-detector eval variant is feasible.
 
 ## Context Files
 
@@ -26,8 +26,7 @@ closed-vocabulary eval variant is feasible.
   positions or a thin export from native graph artifacts.
 - Track 2 support requires a native query/read path that can answer object
   location queries without benchmark-specific logic.
-- Formal Track 1/2 must be closed-vocabulary; unrestricted open-vocabulary
-  behavior is `ov_ablation`.
+- Formal Track 1/2 must be shared OV-detector; method-native detector/OV override behavior is `module_ablation`.
 - Do not edit HOV-SG itself.
 
 ## Deliverables
@@ -39,7 +38,7 @@ closed-vocabulary eval variant is feasible.
 
 ## Acceptance Checks
 
-- HOV-SG has a documented CV formal route or a clear blocker.
+- HOV-SG has a documented shared OV formal route or a clear blocker.
 - Any Track 2 decision has root repo evidence or an explicit missing reason.
 - OV behavior is not mixed into formal Track 1/2 support.
 

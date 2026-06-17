@@ -29,7 +29,7 @@ CODE_USE_BEDROCK=1 CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude -p "$(c
   parsers, or query scripts inside the sandbox.
 - Agent gets memory package, adapter code, shared module code, and method root
   source code.
-- GT answers, unrestricted raw frames, and external paths remain unavailable
+- GT answers, raw frames, and external paths remain unavailable
   unless an explicit ablation enables them.
 - Agent output parser should tolerate text wrapping but must extract a valid
   JSON payload.
