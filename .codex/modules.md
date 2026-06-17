@@ -139,6 +139,11 @@ before formal runs.
   were pure memory-method differences; mark those as module ablations or rerun
   with shared modules.
 - Do not compare methods using different OV detector checkpoints, prompt lists, or label normalization as fair object memory methods. Different detector/prompt settings are module ablations.
+- Multi-frame VLM and LLM-with-captions are no-explicit-memory controls, not
+  object-memory methods: no detector, no segmenter, no object-level storage. They
+  are control-only / agentic-only for Track 1/2, `explicit_memory=false`
+  (`raw_frame_control` / `caption_control`). Their raw frames / caption context
+  are ablation inputs and never enter the Track 1/2 fixed object-memory API table.
 
 ## Open Checks
 

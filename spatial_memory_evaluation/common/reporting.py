@@ -71,7 +71,7 @@ def render_evaluation_report(
 
 def report_metadata(summary: Mapping[str, Any]) -> dict[str, Any]:
     dataset = summary.get("dataset") if isinstance(summary.get("dataset"), Mapping) else {}
-    return {
+    metadata: dict[str, Any] = {
         "status": summary.get("status"),
         "track": summary.get("track"),
         "method": summary.get("method"),
@@ -79,6 +79,9 @@ def report_metadata(summary: Mapping[str, Any]) -> dict[str, Any]:
         "scene_id": dataset.get("scene_id") if isinstance(dataset, Mapping) else None,
         "package_dir": summary.get("package_dir"),
     }
+    if "explicit_memory" in summary:
+        metadata["explicit_memory"] = summary.get("explicit_memory")
+    return metadata
 
 
 def report_title(summary: Mapping[str, Any]) -> str:
@@ -98,8 +101,18 @@ def _result_rows(status: str, result: Mapping[str, Any] | None) -> dict[str, Any
     rows: dict[str, Any] = {"status": status}
     if not result:
         return rows
-    for key in ("reason_code", "message", "reason", "required_api", "package_path"):
-        if key in result:
+    if result.get("control") is True:
+        rows["control"] = "true (no-explicit-memory control, not an object-memory baseline)"
+    for key in (
+        "reason_code",
+        "message",
+        "reason",
+        "required_api",
+        "explicit_memory",
+        "method_family",
+        "package_path",
+    ):
+        if key in result and result[key] is not None:
             rows[key] = result[key]
     return rows
 

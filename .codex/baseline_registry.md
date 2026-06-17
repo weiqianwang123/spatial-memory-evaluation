@@ -81,7 +81,7 @@ shared OV detector route；non-shared detector/method-native detector variants �
 | DAAAM | `export`: adapter exports `object_table.jsonl` from DSG OBJECTS + BACKGROUND_OBJECTS via root-repo object readers | `candidate/supported-per-package`: adapter exports a deterministic native semantic index from DAAAM scene-understanding embeddings; package declares Track 2 `supported` only if that index builds, otherwise `invalid` | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 package exporter implemented in `scripts/methods/daaam/build_memory_smoke.py`; Track 2 fixed API uses only non-LLM native semantic index, never `SceneUnderstandingAgent`; Track 3 invalid; Track 4 deferred |
 | Hydra standalone | `candidate`: DSG OBJECTS nodes carry `semantic_label` + centroid and are enumerable (`graph.getLayer(DsgLayers::OBJECTS)`), but labels are external input, not Hydra-generated; needs smoke test | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean AND label-space fairness is decided; Track 2/3/4 invalid |
 | ReMEmbR | `invalid`: caption memory (`MemoryItem` caption/time/position/theta) has no object inventory | `invalid`: caption retrieval returns caption+pose+time strings, no object-level location output | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` LangGraph agent + retrieval tools | Track 4 supportable; Track 1/2/3 invalid for fixed object-level APIs |
-| Multi-frame VLM | `control-only` | `control-only` | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Keep as raw-frame ablation, `explicit_memory=false`; not a fixed memory API |
+| Multi-frame VLM | `control-only`: no explicit object inventory built at build time | `control-only`: no native object-location query API over memory | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Raw-frame ablation, `family=raw_frame_control`, `explicit_memory=false`; never a fixed memory API. Track 1/2 fixed-API eval emits `reason_code=control_no_explicit_memory`. Fixture: `examples/multiframe_vlm_control/` |
 | LLM with captions | `control-only` | `control-only` | `control-only` | `control-only`: `NonAgent.query` exists but is a no-retrieval caption-context control | Keep as caption ablation, `explicit_memory=false`; not a fixed memory API |
 
 ## ClawS SpatialRAG
@@ -773,8 +773,25 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 ### Multi-frame VLM control — control-only
 
 - `VLMNonAgent` over raw sampled frames (`VideoMemory`), no exported memory.
-- Recommendation: **control-only on all tracks, `explicit_memory=false`.** Not a
-  spatial-memory fixed-API baseline. Also blocked by a real constructor bug
+- Recommendation: **control-only / agentic-only on all tracks,
+  `explicit_memory=false`.** It is a no-explicit-memory control, never a Track
+  1/2 object-memory fixed-API baseline:
+  - Track 1 fixed API is invalid because there is no explicit object inventory
+    with labels and 3D positions generated at build time.
+  - Track 2 fixed API is invalid because there is no deterministic native
+    object-location query API over memory artifacts.
+  - Raw sampled frames may only be stored as a separate ablation/control package
+    with `manifest.explicit_memory = false`; raw-frame access must never enter
+    the main Track 1/2 fixed API table.
+- Package/evaluator semantics: a multi-frame VLM package uses
+  `method.family = raw_frame_control`. The validator already forces
+  `explicit_memory = false` and rejects any `supported` fixed API for control
+  families. The Track 1/2 fixed-API evaluators emit a distinct invalid result
+  for it — `reason_code = control_no_explicit_memory`, `control = true`,
+  `method_family = raw_frame_control` — so its outcome can never be read as an
+  object-memory baseline that merely failed a track. A minimal declaration
+  fixture lives at `examples/multiframe_vlm_control/`.
+- Also blocked by a real constructor bug
   (`if 'gpt-4' in 'llm_type':` in `agents/vlm_non_agent.py:77` tests a string
   literal, so it always raises `NotImplementedError`); fix + smoke test before
   claiming the control is runnable. Tracking only — do not edit the external repo

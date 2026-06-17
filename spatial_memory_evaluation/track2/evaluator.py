@@ -53,9 +53,8 @@ def evaluate_track2(
     if output is None:
         output = timestamped_result_dir(method, f"track2-{mode}") / "eval_summary.json"
 
-    aliases = load_aliases(benchmark_dir / "label_aliases.json")
     if mode == "fixed_api":
-        result = _run_fixed_api(package_dir, capabilities, benchmark_dir, method)
+        result = _run_fixed_api(package_dir, manifest, capabilities, benchmark_dir, method)
     elif mode in ("agentic_memory_only", "agentic_full_access"):
         result = _run_agentic(
             package_dir=package_dir,
@@ -85,8 +84,10 @@ def evaluate_track2(
         "package_dir": str(package_dir),
         "method": method,
         "dataset": manifest.get("dataset"),
+        "explicit_memory": manifest.get("explicit_memory"),
     }
     if result["status"] == "ok":
+        aliases = load_aliases(benchmark_dir / "label_aliases.json")
         predictions_by_query = result["predictions_by_query"]
         latencies = result.get("latency_seconds_by_query", {})
         full_splits = {
@@ -140,17 +141,21 @@ def _track2_summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
 
 def _run_fixed_api(
     package_dir: Path,
+    manifest: dict[str, Any],
     capabilities: dict[str, Any],
     benchmark_dir: Path,
     method: str,
 ) -> dict[str, Any]:
     cap = fixed_api_capability(capabilities, TRACK_KEY)
     if cap.get("status") != "supported":
+        method_meta = manifest.get("method") if isinstance(manifest.get("method"), dict) else {}
         return invalid_result(
             method=method,
             package_dir=package_dir,
             track_key=TRACK_KEY,
             reason=str(cap.get("reason") or ""),
+            explicit_memory=manifest.get("explicit_memory"),
+            method_family=method_meta.get("family"),
         )
     query_object = load_entrypoint(package_dir, str(cap["entrypoint"]))
     predictions_by_query: dict[str, list[dict[str, Any]]] = {}
