@@ -129,6 +129,35 @@ before formal runs.
   missing `spark_dsg` / `daaam` means install or select a proper DAAAM conda/env,
   while missing SAM/YOLO/FastSAM/ReID files means centralize or symlink the model
   artifact under shared modules/NAS.
+- DAAAM native-build runbook (Task 13, smoke). The adapter translates shared
+  modules into DAAAM `run_pipeline.py` args and applies these native config
+  overrides without editing the DAAAM repo:
+  - `segmentation.imgsz=` (cleared): DAAAM ships `imgsz: [480,640]` for a FastSAM
+    TensorRT engine, but the shared route uses a `sam_vit` checkpoint;
+    `UniversalSegmenter` would otherwise inject an unsupported `fastsam_imgsz`
+    kwarg into `SamAutomaticMaskGenerator`. Use `--keep-segmenter-imgsz` only for
+    a genuine FastSAM engine run.
+  - `tracking.with_reid=false` (default): the native ReID weights
+    `checkpoints/reid_weights/clip_general.engine` are a machine-specific
+    TensorRT artifact and are usually absent. Pass `--with-reid` with a real
+    `--reid-weights` to re-enable; preflight then checks the weights file.
+  - Required local env for a DAAAM smoke build:
+    - `--daaam-python /home/robin_wang/miniforge3/envs/daaam/bin/python`
+      (or `DAAAM_PYTHON=...`). This env must import `spark_dsg`, `daaam`,
+      `open_clip`, `sentence_transformers`, `torch`, `ultralytics`,
+      `segment_anything`, `boxmot`, and
+      `daaam.grounding.workers.dam_grounding`. The adapter sets
+      `PYTHONPATH=$DAAAM/src` for the subprocess automatically.
+    - `--hydra-config-path` defaults to
+      `/home/robin_wang/daaam_colcon_ws/src/daaam_ros/config/hydra_config/clio_dataset_khronos.yaml`
+      when present.
+    - CUDA must be healthy (preflight runs a cuDNN conv smoke); use
+      `--cuda-visible-devices` / `--skip-cuda-preflight` as needed.
+  - Known native blocker as of 2026-06-17: the DAM grounding worker needs
+    `fastapi` (missing in the `daaam` env) and the multi-GB `nvidia/DAM-3B`
+    model (not cached). These are conda/runtime + model-artifact issues, not
+    eval-repo bugs, so no DSG / Track 1/2 memory can be produced until they are
+    resolved in the DAAAM env.
 - Track 1/2 formal runs are shared open-vocabulary detector runs. Detector-backed methods must use the shared strongest OV detector route and declare `vocabulary_mode=open_vocabulary`; closed-detector or method-native detector/checkpoint variants are recorded only as `module_ablation`.
 - HOV-SG smoke defaults to `SAM vit_b` with
   `/home/robin_wang/DualMap/sam_b.pt`, because this exact config appears in

@@ -593,6 +593,39 @@ shared OV detector route；non-shared detector/method-native detector variants �
     scene-understanding embeddings (`GetMatchingSubjects` /
     `precompute_unified_embeddings` route). If embeddings/features are missing,
     the package writes Track 2 as `invalid`.
+
+- Smoke finish status (2026-06-17, Task 13):
+  - `--help`, `--prepare-only` (export and read existing layout), and the
+    package-from-output no-DSG error path all pass. ScanNet++ iPhone layout for
+    `036bce3393` exports cleanly (rgb/depth/pose/intrinsic/camera_info).
+  - Adapter hardening landed in this repo only: native config overrides now
+    clear `segmentation.imgsz` (was `[480,640]` for a FastSAM TRT engine, which
+    DAAAM injects as an unsupported `fastsam_imgsz` kwarg into
+    `SamAutomaticMaskGenerator` when the shared SAM-ViT checkpoint is used) and
+    disable BotSort ReID by default (the native `clip_general.engine` is a
+    machine-specific artifact and is absent). Both fixes verified against the
+    DAAAM env: with `imgsz` set the SAM-ViT mask generator raises the exact
+    `fastsam_imgsz` TypeError; with `imgsz` cleared `SegmentationService`
+    initializes the `vit_b` mask generator on CUDA without error.
+  - Native build BLOCKER (cannot complete in this runtime, conda/runtime +
+    artifact, not fixable in the eval repo): the DAM grounding worker
+    `daaam.grounding.workers.dam_grounding` imports `gradio`→`fastapi` (missing
+    in `/home/robin_wang/miniforge3/envs/daaam`) and loads the multi-GB
+    `nvidia/DAM-3B` (not cached). The adapter's native-run preflight now imports
+    this worker and stops with an actionable message before launching. Exact
+    repro: `python scripts/methods/daaam/build_memory_smoke.py
+    --daaam-python /home/robin_wang/miniforge3/envs/daaam/bin/python
+    --layout-dir <prepared layout> --max-frames 5` →
+    `ModuleNotFoundError: No module named 'fastapi'` for
+    `daaam.grounding.workers.dam_grounding`. Next action: install the grounding
+    deps and cache DAM-3B in the DAAAM env, then re-run; or package an existing
+    native `--native-output-dir` once a DSG exists.
+  - Because no DSG can be produced (and none exists anywhere on this machine),
+    there is no object inventory yet, so the smoke package is not built and both
+    Track 1 and Track 2 are reported as unavailable/`invalid` honestly by
+    `eval_memory_smoke.py`. Track 1 stays `export` and Track 2 stays
+    `candidate/supported-per-package` pending a runtime that can complete the
+    native build.
 - Human-review notes (ambiguous, do not auto-promote):
   - Track 1 vocabulary: DAAAM object/background labels come from DAM/VLM
     grounding (open-vocabulary free-text `description`), not a non-shared detector.

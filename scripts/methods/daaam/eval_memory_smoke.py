@@ -28,7 +28,25 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> int:
-    package_dir = args.package_dir or _latest_package(args.scene_id)
+    try:
+        package_dir = args.package_dir or _latest_package(args.scene_id)
+    except FileNotFoundError as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "invalid",
+                    "reason": str(exc),
+                    "next_action": (
+                        "Build a DAAAM package first with "
+                        "scripts/methods/daaam/build_memory_smoke.py. A native "
+                        "DSG is required; if the native build is blocked, there "
+                        "is no Track 1/2 memory to evaluate yet."
+                    ),
+                },
+                indent=2,
+            )
+        )
+        return 1
     report = validate_package(package_dir)
     if not report.valid:
         print(json.dumps(report.to_json(), indent=2))

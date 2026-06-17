@@ -1,3 +1,42 @@
+"""Build a DAAAM minimal memory package for Track 1/2 smoke tests.
+
+Runbook (local DAAAM smoke):
+
+  # Prepare ScanNet++ RGB-D layout only (no DAAAM run):
+  python scripts/methods/daaam/build_memory_smoke.py --prepare-only \
+      --max-frames 5 --frame-stride 50
+
+  # Raw build route (needs a DAAAM runtime that can finish segmentation +
+  # DAM grounding). Point --daaam-python at the DAAAM conda env:
+  DAAAM_PYTHON=/home/robin_wang/miniforge3/envs/daaam/bin/python \
+  python scripts/methods/daaam/build_memory_smoke.py \
+      --daaam-python /home/robin_wang/miniforge3/envs/daaam/bin/python
+
+  # Package an existing native DAAAM output (DSG already on disk):
+  python scripts/methods/daaam/build_memory_smoke.py \
+      --skip-daaam-run --native-output-dir /path/to/daaam/output
+
+Required local env for a native build:
+  - --daaam-python: a DAAAM conda env that imports spark_dsg, daaam, open_clip,
+    sentence_transformers, torch, ultralytics, segment_anything, boxmot, and
+    daaam.grounding.workers.dam_grounding. PYTHONPATH=$DAAAM/src is set for the
+    subprocess automatically. These are runtime deps, not NAS checkpoints.
+  - --hydra-config-path: defaults to the colcon_ws clio_dataset_khronos.yaml
+    when present.
+  - SAM/YOLO/ReID/DAM model weights are shared-module/NAS artifacts.
+
+Adapter-applied DAAAM config overrides (DAAAM repo is never edited):
+  - segmentation.imgsz cleared (SAM-ViT route would otherwise crash on an
+    injected fastsam_imgsz kwarg); pass --keep-segmenter-imgsz for FastSAM.
+  - tracking.with_reid=false by default (native ReID .engine is usually absent);
+    pass --with-reid with --reid-weights to re-enable.
+
+Known native blocker (2026-06-17): the DAM grounding worker imports
+gradio/fastapi and loads multi-GB nvidia/DAM-3B; until those exist in the DAAAM
+env, no DSG (hence no Track 1/2 memory) can be produced. See
+.codex/baseline_registry.md (DAAAM smoke finish status) for details.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -41,6 +80,9 @@ DEFAULT_SCENE_ID = "036bce3393"
 DEFAULT_SENTENCE_EMBEDDING_MODEL = "sentence-transformers/sentence-t5-large"
 DEFAULT_DAAAM_CONFIG = DEFAULT_DAAAM_ROOT / "config" / "pipeline_config.yaml"
 DEFAULT_SAM_MODEL_CONFIG = DEFAULT_DAAAM_ROOT / "config" / "sam" / "sam_vit_config.yaml"
+DEFAULT_HYDRA_CONFIG = Path(
+    "/home/robin_wang/daaam_colcon_ws/src/daaam_ros/config/hydra_config/clio_dataset_khronos.yaml"
+)
 DEFAULT_SHARED_MODULES_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/modules")
 DAAAM_ENV_HINT = (
     "DAAAM Python imports such as spark_dsg, daaam, open_clip, "
@@ -77,8 +119,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hydra-config-path",
         type=Path,
-        default=None,
-        help="Hydra config YAML passed to DAAAM run_pipeline.py for raw builds.",
+        default=DEFAULT_HYDRA_CONFIG if DEFAULT_HYDRA_CONFIG.exists() else None,
+        help=(
+            "Hydra config YAML passed to DAAAM run_pipeline.py for raw builds. "
+            f"Defaults to {DEFAULT_HYDRA_CONFIG} when present."
+        ),
     )
     parser.add_argument("--sam-model-config-path", type=Path, default=DEFAULT_SAM_MODEL_CONFIG)
     parser.add_argument("--sentence-embedding-model", default=DEFAULT_SENTENCE_EMBEDDING_MODEL)
@@ -143,6 +188,35 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=None,
         help="extra DAAAM config override key=value; repeatable",
+    )
+    parser.add_argument(
+        "--reid-weights",
+        default=None,
+        help=(
+            "DAAAM BotSort ReID weights, relative to the DAAAM repo or absolute. "
+            "ReID is disabled by default for smoke because the native TensorRT "
+            "engine (checkpoints/reid_weights/clip_general.engine) is a "
+            "machine-specific artifact that is usually absent."
+        ),
+    )
+    parser.add_argument(
+        "--with-reid",
+        action="store_true",
+        help=(
+            "enable DAAAM BotSort ReID; requires a real --reid-weights file. "
+            "Off by default so the smoke build does not crash on a missing "
+            "ReID engine."
+        ),
+    )
+    parser.add_argument(
+        "--keep-segmenter-imgsz",
+        action="store_true",
+        help=(
+            "do not clear DAAAM segmentation.imgsz. By default the adapter "
+            "clears it because the shared SAM-ViT checkpoint path triggers "
+            "DAAAM to inject an unsupported 'fastsam_imgsz' kwarg into "
+            "SamAutomaticMaskGenerator. Only keep it for a FastSAM engine run."
+        ),
     )
     parser.add_argument("--class-names", type=Path, default=None)
     parser.add_argument("--sam-checkpoint", type=Path, default=None)
@@ -316,6 +390,8 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
         f"grounding.perframe_clip_model_name={args.clip_model}",
         f"grounding.perframe_clip_model_dataset={args.clip_pretrained}",
     ]
+    overrides.extend(_segmenter_config_overrides(args))
+    overrides.extend(_tracking_config_overrides(args))
     for override in args.config_overrides or []:
         overrides.append(override)
     command.extend(["--config-overrides", *overrides])
@@ -323,6 +399,48 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
     print("running DAAAM:")
     print(" ".join(command))
     subprocess.run(command, cwd=args.daaam_root, env=_daaam_subprocess_env(args), check=True)
+
+
+def _segmenter_config_overrides(args: argparse.Namespace) -> list[str]:
+    """Adapter-side DAAAM segmentation overrides for the shared SAM-ViT route.
+
+    DAAAM's pipeline_config.yaml ships ``segmentation.imgsz: [480, 640]`` for a
+    FastSAM TensorRT engine. ``UniversalSegmenter`` then unconditionally injects
+    ``fastsam_imgsz`` into ``SamAutomaticMaskGenerator(**model_config)``
+    (``src/daaam/utils/segmentation.py``), which the SAM-ViT mask generator does
+    not accept and raises ``unexpected keyword argument 'fastsam_imgsz'``. Since
+    the shared module route always supplies a ``sam_vit`` checkpoint, clear
+    ``imgsz`` so the SAM-ViT path receives only valid kwargs. ``apply_config_overrides``
+    treats an empty value as falsy for the ``Optional[Tuple]`` field.
+    """
+    if args.keep_segmenter_imgsz:
+        return []
+    return ["segmentation.imgsz="]
+
+
+def _tracking_config_overrides(args: argparse.Namespace) -> list[str]:
+    """Adapter-side DAAAM tracking overrides.
+
+    DAAAM defaults to ``tracking.with_reid: true`` with a machine-specific
+    TensorRT ReID engine (``checkpoints/reid_weights/clip_general.engine``) that
+    is typically absent. Disable ReID for smoke unless the caller explicitly
+    opts in with ``--with-reid`` and provides ``--reid-weights``.
+    """
+    overrides: list[str] = []
+    if args.reid_weights:
+        overrides.append(f"tracking.reid_weights={args.reid_weights}")
+    overrides.append(f"tracking.with_reid={'true' if args.with_reid else 'false'}")
+    return overrides
+
+
+def _resolve_reid_weights(args: argparse.Namespace) -> Path | None:
+    """Resolve --reid-weights against the DAAAM repo root like DAAAM does."""
+    if not args.reid_weights:
+        return None
+    path = Path(args.reid_weights)
+    if path.is_absolute():
+        return path
+    return Path(args.daaam_root) / path
 
 
 def export_minimal_package(
@@ -453,6 +571,16 @@ def _preflight_daaam(args: argparse.Namespace, *, require_native_run: bool) -> N
             if path is None or not Path(path).exists():
                 kind = "shared_module_artifact" if label == "shared SAM checkpoint" else "repo_or_config"
                 missing.append({"label": label, "path": str(path), "kind": kind})
+        if args.with_reid:
+            reid_path = _resolve_reid_weights(args)
+            if reid_path is None or not reid_path.exists():
+                missing.append(
+                    {
+                        "label": "DAAAM BotSort ReID weights",
+                        "path": str(reid_path) if reid_path is not None else "(none provided)",
+                        "kind": "shared_module_artifact",
+                    }
+                )
     if missing:
         raise FileNotFoundError(_format_missing_path_error(missing))
     if not args.skip_dependency_preflight:
@@ -464,7 +592,19 @@ def _preflight_daaam(args: argparse.Namespace, *, require_native_run: bool) -> N
 def _preflight_python_deps(args: argparse.Namespace, *, require_native_run: bool) -> None:
     imports = ["spark_dsg", "daaam", "open_clip", "sentence_transformers"]
     if require_native_run:
-        imports.extend(["torch", "ultralytics", "segment_anything"])
+        # The native build also drives the DAM grounding worker (object
+        # description) and the BotSort tracker. Importing the grounding worker
+        # module surfaces the heavy DAM/gradio dependency chain during preflight
+        # instead of crashing several frames into a long run.
+        imports.extend(
+            [
+                "torch",
+                "ultralytics",
+                "segment_anything",
+                "boxmot",
+                "daaam.grounding.workers.dam_grounding",
+            ]
+        )
     code = f"""
 import importlib
 import json
@@ -493,13 +633,25 @@ if any(not item["ok"] for item in status.values()):
     )
     if result.returncode == 0:
         return
+    grounding_hint = ""
+    if "dam_grounding" in result.stdout and "fastapi" in result.stdout:
+        grounding_hint = (
+            "\nKnown blocker: the DAM grounding worker "
+            "(daaam.grounding.workers.dam_grounding) imports gradio/fastapi and "
+            "loads the multi-GB nvidia/DAM-3B model. If your --daaam-python env "
+            "lacks fastapi or cannot fetch DAM-3B, the native object-description "
+            "stage cannot run, so no DSG (and therefore no Track 1/2 memory) is "
+            "produced. Install the grounding deps and cache DAM-3B in the DAAAM "
+            "env, or package an existing native --native-output-dir instead."
+        )
     raise RuntimeError(
         "DAAAM dependency preflight failed.\n"
         f"{DAAAM_ENV_HINT}\n"
         f"{DAAAM_ARTIFACT_HINT}\n"
         "Use --daaam-python pointing to a DAAAM conda/runtime env with the "
         "failed imports installed. For package-from-output, spark_dsg and "
-        "daaam are still required to parse the DSG.\n"
+        "daaam are still required to parse the DSG."
+        f"{grounding_hint}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
 
@@ -1154,6 +1306,10 @@ def _write_build_log(
                 "sentence_embedding_model": args.sentence_embedding_model,
                 "frame_stride": args.frame_stride,
                 "max_frames": args.max_frames,
+                "with_reid": bool(args.with_reid),
+                "reid_weights": args.reid_weights,
+                "applied_native_overrides": _segmenter_config_overrides(args)
+                + _tracking_config_overrides(args),
             },
             "warnings": warnings,
         },
@@ -1201,7 +1357,29 @@ def _find_dsg_path(native_output_dir: Path) -> Path:
     )
     if recursive:
         return recursive[0]
-    raise FileNotFoundError(f"no DAAAM DSG JSON found under {native_output_dir}")
+    exists = native_output_dir.exists()
+    listing = (
+        sorted(p.name for p in native_output_dir.iterdir())[:20]
+        if exists
+        else []
+    )
+    raise FileNotFoundError(
+        "no DAAAM Dynamic Scene Graph JSON found for package-from-output.\n"
+        f"Looked under: {native_output_dir} "
+        f"({'directory exists' if exists else 'directory does not exist'}).\n"
+        f"Searched names: dsg_updated.json, clustered_dsg.json, dsg.json "
+        "(also under backend/ and hydra_output/backend/).\n"
+        + (f"Found instead: {listing}\n" if exists else "")
+        + "Next actions:\n"
+        "- If you meant to package an existing native run, pass "
+        "--native-output-dir pointing at the DAAAM output directory that "
+        "contains a DSG JSON.\n"
+        "- To produce a DSG, run the raw build route (drop --skip-daaam-run) "
+        "with a DAAAM runtime that can complete segmentation + DAM grounding; "
+        "the DSG is written on pipeline shutdown.\n"
+        "- A DSG is required: Track 1 object inventory and the Track 2 "
+        "semantic index are both exported from it."
+    )
 
 
 def _format_missing_path_error(missing: list[dict[str, str]]) -> str:
@@ -1534,5 +1712,16 @@ output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
 '''
 
 
+def _cli() -> int:
+    try:
+        return main(parse_args())
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        # Adapter-raised errors carry actionable guidance; print the message
+        # cleanly rather than dumping a Python traceback. Subprocess/native
+        # failures (CalledProcessError) keep their traceback for debugging.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main(parse_args()))
+    raise SystemExit(_cli())
