@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument(
         "--mode",
-        choices=("fixed_api", "agentic_memory_only"),
+        choices=("fixed_api", "agentic_memory_only", "agentic_full_access"),
         default="fixed_api",
     )
     parser.add_argument("--output", type=Path, default=None)
@@ -49,7 +49,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--agent-include-build-code",
         action="store_true",
-        help="copy scripts/methods/<method> into the agent sandbox as optional context",
+        help="deprecated alias for including source code context; source code is included by default",
+    )
+    parser.add_argument(
+        "--no-agent-include-source-code",
+        action="store_false",
+        dest="agent_include_source_code",
+        default=True,
+        help="do not copy scripts/methods adapters, shared_modules, or the method root repo source tree",
     )
     return parser.parse_args()
 
@@ -69,6 +76,7 @@ def main() -> int:
         sandbox_root=args.sandbox_root,
         agent_extra_paths=args.agent_extra_path or [],
         agent_include_build_code=args.agent_include_build_code,
+        agent_include_source_code=args.agent_include_source_code,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

@@ -50,7 +50,7 @@
       ],
       "properties": {
         "mode": {
-          "enum": ["memory_only", "memory_plus_crops", "memory_plus_raw"]
+          "enum": ["agentic_full_access", "memory_only", "memory_plus_crops", "memory_plus_raw"]
         },
         "read_manifest": {
           "type": "boolean"
@@ -62,6 +62,15 @@
           "type": "boolean"
         },
         "read_evidence": {
+          "type": "boolean"
+        },
+        "read_adapter_code": {
+          "type": "boolean"
+        },
+        "read_shared_module_code": {
+          "type": "boolean"
+        },
+        "read_method_root_source_code": {
           "type": "boolean"
         },
         "read_raw_links": {

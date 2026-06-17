@@ -14,6 +14,19 @@ evaluation repo 的 `adapters/` 只属于后续接入层，不能作为 baseline
 - `missing`：root 路径下没有对应方法 repo，或没有找到需要的原生能力。
 - no-memory controls 单独列出；它们不是 spatial-memory 方法 repo。
 
+## Formal Track 1/2 Vocabulary Policy
+
+Track 1/2 的正式主评测只使用 closed-vocabulary detector-coverable setup。
+所有 detector-backed 或 open-vocabulary object-memory 方法都必须提供 CV eval
+variant，使用同一个 canonical class list、detector/module/checkpoint/preprocess。
+
+- DualMap、HOV-SG、ConceptGraphs 等 OV 方法不能把 unrestricted OV 结果放进主表。
+- 如果 OV 方法内部继续使用 open-vocabulary model，formal eval 也必须把 query/label
+  space 约束到 canonical closed vocabulary。
+- unrestricted OV 结果只能标记为 `ov_ablation`。
+- fixed API support 判断必须来自 root repo 或 native artifact，不能来自 evaluation
+  adapter 或临时 LLM wrapper。
+
 ## 方法总表
 
 | Method | Root path | Local code | Native build / ingest interface | Native query / read interface | Main memory artifact | Perception / model stack | Status |
@@ -32,7 +45,8 @@ evaluation repo 的 `adapters/` 只属于后续接入层，不能作为 baseline
 
 本表只判断 method repo 或导出的 memory package 是否能支持
 `capabilities.json` 里的 fixed API 查询，不判断 agent full access。Track key 以
-`.codex/memory_package_spec.md` 为准。
+`.codex/memory_package_spec.md` 为准。Track 1/2 的 `supported` 默认指 formal
+closed-vocabulary variant；unrestricted OV 只作为 ablation，不提升 fixed API 状态。
 
 状态含义：
 
@@ -49,9 +63,9 @@ evaluation repo 的 `adapters/` 只属于后续接入层，不能作为 baseline
 | Method | Track 1: object inventory API | Track 2: object location query API | Track 3: ScanRefer referring query API | Track 4: OpenEQA QA / retrieval API | First package decision |
 |---|---|---|---|---|---|
 | ClawS SpatialRAG | `native` via `get_spatial_objects(limit)` / SQLite object rows | `native` via `query_spatial_memory`, semantic anchors, storage retrieval | `invalid`: no native ScanRefer-style referring resolver found | `candidate`: native spatial RAG/retrieval exists, but answer schema needs smoke test | Prefer `supported` for Track 1/2, `invalid` for Track 3, Track 4 after smoke |
-| DualMap | `export` from `map/*.pkl` object maps | `candidate`: interactive CLIP/object query exists; needs non-interactive package entrypoint | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 first; Track 2 only after query bridge; Track 3/4 invalid |
-| HOV-SG | `export` from graph/object point-cloud artifacts | `native` via `Graph.query_object` / `query_hierarchy` | `invalid`: open-vocab object query is not a ScanRefer resolver yet | `invalid`: no native general QA API found | Track 1/2 likely supportable; Track 3/4 invalid |
-| ConceptGraphs | `export` from `pcd_saves/*.pkl.gz` / scene graph JSON | `candidate`: interactive CLIP query exists; needs non-interactive bridge | `invalid`: no stable referring resolver found | `invalid`: no stable QA/retrieval API found | Track 1 first; Track 2 after bridge; Track 3/4 invalid |
+| DualMap | `export` from `map/*.pkl` object maps, formal result requires CV eval variant | `candidate`: interactive CLIP/object query exists; needs non-interactive CV package entrypoint | `invalid`: no referring-expression resolver found | `invalid`: no stable QA/retrieval API found | Track 1 CV first; Track 2 only after native query bridge; unrestricted OV is `ov_ablation`; Track 3/4 invalid |
+| HOV-SG | `export` from graph/object point-cloud artifacts, formal result requires CV eval variant | `native` via `Graph.query_object` / `query_hierarchy`, but formal query labels must be CV constrained | `invalid`: open-vocab object query is not a ScanRefer resolver yet | `invalid`: no native general QA API found | Track 1/2 likely supportable as CV variant; unrestricted OV is `ov_ablation`; Track 3/4 invalid |
+| ConceptGraphs | `export` from `pcd_saves/*.pkl.gz` / scene graph JSON, formal result requires CV eval variant | `candidate`: interactive CLIP query exists; needs non-interactive CV bridge | `invalid`: no stable referring resolver found | `invalid`: no stable QA/retrieval API found | Track 1 CV first; Track 2 after native bridge; unrestricted OV is `ov_ablation`; Track 3/4 invalid |
 | DAAAM | `export` from DSG object / semantic nodes if present | `candidate`: scene graph tools can match subjects and spatial neighborhoods | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` exists; needs evaluator-safe call | Track 1/2/4 likely supportable after DSG package; Track 3 invalid |
 | Hydra standalone | `candidate`: DSG object nodes may be exportable when labels exist | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean; Track 2/3/4 invalid |
 | ReMEmbR | `invalid`: caption memory has no object inventory | `invalid`: caption retrieval has pose/time but no object-level location output | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` and retrieval tools | Track 4 supportable; Track 1/2/3 invalid for fixed object-level APIs |

@@ -27,18 +27,18 @@ from scripts.methods.hovsg.build_memory_smoke import (
     _run_timestamp,
 )
 from spatial_memory_evaluation.common.labels import (
-    DEFAULT_DETECTOR_CLASS_LIST_PATH,
     validate_detector_class_list,
 )
 from spatial_memory_evaluation.memory_package_validator import validate_package
+from scripts.methods.shared_modules import (
+    add_shared_module_args,
+    apply_dualmap_shared_modules,
+    shared_modules_metadata,
+)
 
 
 DEFAULT_DUALMAP_ROOT = Path("/home/robin_wang/DualMap")
 DEFAULT_DUALMAP_PYTHON = Path("/home/robin_wang/miniforge3/envs/spatial-rag/bin/python")
-DEFAULT_YOLO_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "yolov8s-world.pt"
-DEFAULT_SAM_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "sam_b.pt"
-DEFAULT_FASTSAM_CHECKPOINT = DEFAULT_DUALMAP_ROOT / "model" / "FastSAM-s.pt"
-DEFAULT_CLASS_NAMES = DEFAULT_DETECTOR_CLASS_LIST_PATH
 DUALMAP_IMAGE_HEIGHT = 192
 DUALMAP_IMAGE_WIDTH = 256
 
@@ -112,18 +112,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="skip a small CUDA/cuDNN test before launching DualMap",
     )
-    parser.add_argument("--yolo-checkpoint", type=Path, default=DEFAULT_YOLO_CHECKPOINT)
-    parser.add_argument("--sam-checkpoint", type=Path, default=DEFAULT_SAM_CHECKPOINT)
-    parser.add_argument("--class-names", type=Path, default=DEFAULT_CLASS_NAMES)
-    parser.add_argument("--clip-model", default="ViT-B-32")
-    parser.add_argument("--clip-pretrained", default="laion2b_s34b_b79k")
+    parser.add_argument("--yolo-checkpoint", type=Path, default=None)
+    parser.add_argument("--sam-checkpoint", type=Path, default=None)
+    parser.add_argument("--class-names", type=Path, default=None)
+    parser.add_argument("--clip-model", default=None)
+    parser.add_argument("--clip-pretrained", default=None)
     parser.add_argument("--clip-length", type=int, default=512)
     parser.add_argument(
         "--enable-fastsam",
         action="store_true",
         help="enable DualMap FastSAM supplementation; disabled by default for smoke",
     )
-    parser.add_argument("--fastsam-checkpoint", type=Path, default=DEFAULT_FASTSAM_CHECKPOINT)
+    parser.add_argument("--fastsam-checkpoint", type=Path, default=None)
     parser.add_argument(
         "--use-parallel",
         action="store_true",
@@ -155,7 +155,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="reuse the computed layout directory for this run-id",
     )
-    return parser.parse_args()
+    add_shared_module_args(parser)
+    args = parser.parse_args()
+    apply_dualmap_shared_modules(args)
+    return args
 
 
 def main(args: argparse.Namespace) -> int:
@@ -840,6 +843,13 @@ def _write_manifest(
                 "timestamp_path": None,
                 "coordinate_frame": "DualMap local map frame from ScanNet++ aligned poses; meters",
             },
+            "vocabulary": {
+                "vocabulary_mode": "closed",
+                "class_list_path": str(args.class_names),
+                "source": "shared_modules",
+                "profile": args.shared_module_profile,
+            },
+            "modules": shared_modules_metadata(args),
             "explicit_memory": True,
             "memory_artifacts": [
                 {
@@ -963,11 +973,14 @@ def _write_capabilities(package_dir: Path) -> None:
                 },
             },
             "agent_access": {
-                "mode": "memory_only",
+                "mode": "agentic_full_access",
                 "read_manifest": True,
                 "read_schema": True,
                 "read_memory_artifacts": True,
                 "read_evidence": True,
+                "read_adapter_code": True,
+                "read_shared_module_code": True,
+                "read_method_root_source_code": True,
                 "read_raw_links": False,
                 "read_raw_frames": False,
                 "read_source_keyframes_or_crops": False,
@@ -999,6 +1012,7 @@ def _write_build_log(
             "config_paths": [],
             "source_outputs": [str(native_map_dir)],
             "object_count": object_count,
+            "shared_modules": shared_modules_metadata(args),
             "dualmap_runtime": {
                 "yolo_checkpoint": str(args.yolo_checkpoint),
                 "sam_checkpoint": str(args.sam_checkpoint),

@@ -18,6 +18,31 @@ Exporter scripts should write validated packages to:
 memories/<method>/<dataset>/<scene-or-episode>/<run-id>/
 ```
 
+## Shared Modules
+
+External method repos should not be edited just to share detectors, SAM, CLIP, or
+class lists. Method scripts must load shared module settings from:
+
+```text
+spatial_memory_evaluation/shared_modules/
+```
+
+and translate them into the external repo's native CLI/Hydra/config overrides
+inside this evaluation repo.
+
+Current adapter:
+
+```text
+scripts/methods/shared_modules.py
+```
+
+Current smoke profiles cover HOV-SG and DualMap. Inspect them with:
+
+```bash
+python scripts/package/inspect_shared_modules.py --method hovsg --profile smoke --check
+python scripts/package/inspect_shared_modules.py --method dualmap --profile smoke --check
+```
+
 Current HOV-SG entrypoints:
 
 ```bash

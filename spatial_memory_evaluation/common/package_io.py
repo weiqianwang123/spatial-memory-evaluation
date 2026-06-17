@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from spatial_memory_evaluation.memory_package_validator import validate_package
 
@@ -122,3 +122,103 @@ def copy_package_to_sandbox(package_dir: Path, sandbox_root: Path) -> Path:
     ignore = shutil.ignore_patterns("raw_links")
     shutil.copytree(package_dir, destination, ignore=ignore)
     return destination
+
+
+def default_agent_context_paths(
+    *,
+    manifest: Mapping[str, Any],
+    method: str,
+    repo_root: Path,
+    explicit_paths: Sequence[Path] | None = None,
+    include_source_code: bool = True,
+) -> list[Path]:
+    paths: list[Path] = []
+    if include_source_code:
+        _append_if_exists(paths, repo_root / "scripts" / "methods" / method)
+        _append_if_exists(paths, repo_root / "scripts" / "methods" / "shared_modules.py")
+        _append_if_exists(paths, repo_root / "spatial_memory_evaluation" / "shared_modules")
+        method_meta = manifest.get("method")
+        if isinstance(method_meta, Mapping):
+            repo_path = method_meta.get("repo_path")
+            if isinstance(repo_path, str) and repo_path:
+                _append_if_exists(paths, Path(repo_path))
+    for path in explicit_paths or []:
+        paths.append(path)
+    return _dedupe_paths(paths)
+
+
+def copy_agent_context_paths(paths: Sequence[Path], output_dir: Path) -> list[Path]:
+    copied: list[Path] = []
+    if not paths:
+        return copied
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for index, source in enumerate(paths):
+        source = source.resolve()
+        if not source.exists():
+            raise FileNotFoundError(f"agent context path not found: {source}")
+        destination = output_dir / f"{index:02d}_{_safe_context_name(source)}"
+        if destination.exists():
+            if destination.is_dir():
+                shutil.rmtree(destination)
+            else:
+                destination.unlink()
+        if source.is_dir():
+            shutil.copytree(source, destination, ignore=_agent_context_ignore)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        copied.append(destination)
+    return copied
+
+
+def _append_if_exists(paths: list[Path], path: Path) -> None:
+    if path.exists():
+        paths.append(path)
+
+
+def _dedupe_paths(paths: Sequence[Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path.expanduser().resolve())
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return result
+
+
+def _safe_context_name(path: Path) -> str:
+    return "_".join(part for part in path.parts if part not in ("", "/"))[-96:]
+
+
+_agent_context_ignore = shutil.ignore_patterns(
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".cache",
+    "data",
+    "datasets",
+    "outputs",
+    "output",
+    "results",
+    "runs",
+    "wandb",
+    "memories",
+    "checkpoints",
+    "checkpoint",
+    "*.pt",
+    "*.pth",
+    "*.ckpt",
+    "*.safetensors",
+    "*.bin",
+    "*.onnx",
+    "*.pkl",
+    "*.pkl.gz",
+    "*.npy",
+    "*.npz",
+    "*.mp4",
+    "*.mov",
+    "*.avi",
+)

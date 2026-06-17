@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 import json
-import shutil
 import time
 from pathlib import Path
 from typing import Any
 
-from spatial_memory_evaluation.common.jsonl import read_jsonl, write_json, write_jsonl
+from spatial_memory_evaluation.common.jsonl import read_jsonl, write_jsonl
 from spatial_memory_evaluation.common.labels import load_aliases
 from spatial_memory_evaluation.common.matching import match_objects, mean, median, safe_div
 from spatial_memory_evaluation.common.package_io import (
+    copy_agent_context_paths,
     copy_package_to_sandbox,
+    default_agent_context_paths,
     fixed_api_capability,
     invalid_result,
     load_entrypoint,
     load_package,
     run_agent_command,
+)
+from spatial_memory_evaluation.common.reporting import (
+    evaluation_output_paths,
+    render_evaluation_report,
+    report_metadata,
+    report_title,
+    write_evaluation_outputs,
 )
 from spatial_memory_evaluation.output_paths import timestamped_result_dir
 
@@ -23,7 +31,7 @@ from spatial_memory_evaluation.output_paths import timestamped_result_dir
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACK_KEY = "track2_object_location"
 SPLITS = ("detector_coverable",)
-K_VALUES = (1, 5, 10)
+K_VALUES = (1, 5)
 
 
 def evaluate_track2(
@@ -38,6 +46,7 @@ def evaluate_track2(
     sandbox_root: Path | None = None,
     agent_extra_paths: list[Path] | None = None,
     agent_include_build_code: bool = False,
+    agent_include_source_code: bool = True,
 ) -> dict[str, Any]:
     manifest, capabilities = load_package(package_dir)
     method = str(manifest["method"]["name"])
@@ -47,7 +56,7 @@ def evaluate_track2(
     aliases = load_aliases(benchmark_dir / "label_aliases.json")
     if mode == "fixed_api":
         result = _run_fixed_api(package_dir, capabilities, benchmark_dir, method)
-    elif mode == "agentic_memory_only":
+    elif mode in ("agentic_memory_only", "agentic_full_access"):
         result = _run_agentic(
             package_dir=package_dir,
             benchmark_dir=benchmark_dir,
@@ -55,16 +64,21 @@ def evaluate_track2(
             agent_command=agent_command,
             agent_output=agent_output,
             sandbox_root=sandbox_root,
-            extra_paths=_agent_extra_paths(
+            context_paths=default_agent_context_paths(
+                manifest=manifest,
                 method=method,
+                repo_root=REPO_ROOT,
                 explicit_paths=agent_extra_paths or [],
-                include_build_code=agent_include_build_code,
+                include_source_code=(
+                    (agent_include_source_code and mode == "agentic_full_access")
+                    or agent_include_build_code
+                ),
             ),
         )
     else:
         raise ValueError(f"unknown Track 2 mode: {mode}")
 
-    summary: dict[str, Any] = {
+    base_summary: dict[str, Any] = {
         "status": result["status"],
         "track": "track2_object_location",
         "mode": mode,
@@ -75,7 +89,7 @@ def evaluate_track2(
     if result["status"] == "ok":
         predictions_by_query = result["predictions_by_query"]
         latencies = result.get("latency_seconds_by_query", {})
-        summary["splits"] = {
+        full_splits = {
             split: _score_split(
                 gt_objects=read_jsonl(track1_benchmark_dir / f"{split}.jsonl"),
                 queries=read_jsonl(benchmark_dir / f"queries_{split}.jsonl"),
@@ -85,10 +99,43 @@ def evaluate_track2(
             )
             for split in SPLITS
         }
+        summary = {
+            **base_summary,
+            "metrics": _track2_summary_metrics(full_splits["detector_coverable"]),
+        }
+        details = {
+            **base_summary,
+            "splits": full_splits,
+        }
     else:
-        summary["result"] = result
-    write_json(output, summary)
+        summary = {**base_summary, "result": result}
+        details = {**base_summary, "result": result}
+
+    paths = evaluation_output_paths(output)
+    report = render_evaluation_report(
+        title=report_title(summary),
+        metadata=report_metadata(summary),
+        metrics=summary.get("metrics") if isinstance(summary.get("metrics"), dict) else None,
+        status=str(summary["status"]),
+        summary_path=paths.summary,
+        details_path=paths.details,
+        result=result if result["status"] != "ok" else None,
+    )
+    write_evaluation_outputs(summary_path=output, summary=summary, details=details, report_markdown=report)
     return summary
+
+
+def _track2_summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "query_count",
+        "success@1",
+        "success@5",
+        "recall@1",
+        "recall@5",
+        "mean_first_hit_distance_m",
+        "mean_query_latency_ms",
+    )
+    return {key: metrics.get(key) for key in keys}
 
 
 def _run_fixed_api(
@@ -140,7 +187,7 @@ def _run_agentic(
     agent_command: str | None,
     agent_output: Path | None,
     sandbox_root: Path | None,
-    extra_paths: list[Path],
+    context_paths: list[Path],
 ) -> dict[str, Any]:
     if agent_output is not None:
         return _load_agent_predictions(agent_output)
@@ -154,10 +201,10 @@ def _run_agentic(
     sandbox_package = copy_package_to_sandbox(package_dir, sandbox_root)
     sandbox_queries = sandbox_root / "queries"
     _write_agent_query_files(benchmark_dir, sandbox_queries)
-    copied_extra_paths = _copy_agent_extra_paths(extra_paths, sandbox_root / "extra_context")
+    copied_context_paths = copy_agent_context_paths(context_paths, sandbox_root / "source_context")
     prompt_path = sandbox_root / "track2_prompt.md"
     agent_output_path = sandbox_root / "track2_agent_output.json"
-    prompt_path.write_text(_track2_prompt(sandbox_package, sandbox_queries, copied_extra_paths), encoding="utf-8")
+    prompt_path.write_text(_track2_prompt(sandbox_package, sandbox_queries, copied_context_paths), encoding="utf-8")
     run_agent_command(
         agent_command=agent_command,
         prompt_path=prompt_path,
@@ -240,59 +287,6 @@ def _write_agent_query_files(benchmark_dir: Path, output_dir: Path) -> None:
                 }
             )
         write_jsonl(output_dir / f"queries_{split}.jsonl", rows)
-
-
-def _agent_extra_paths(
-    *,
-    method: str,
-    explicit_paths: list[Path],
-    include_build_code: bool,
-) -> list[Path]:
-    paths = [path for path in explicit_paths]
-    if include_build_code:
-        method_code = REPO_ROOT / "scripts" / "methods" / method
-        if method_code.exists():
-            paths.append(method_code)
-    return paths
-
-
-def _copy_agent_extra_paths(paths: list[Path], output_dir: Path) -> list[Path]:
-    copied = []
-    if not paths:
-        return copied
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for index, source in enumerate(paths):
-        source = source.resolve()
-        if not source.exists():
-            raise FileNotFoundError(f"agent extra path not found: {source}")
-        destination = output_dir / f"{index:02d}_{_safe_name(source)}"
-        if destination.exists():
-            if destination.is_dir():
-                shutil.rmtree(destination)
-            else:
-                destination.unlink()
-        if source.is_dir():
-            shutil.copytree(
-                source,
-                destination,
-                ignore=shutil.ignore_patterns(
-                    "__pycache__",
-                    ".git",
-                    ".pytest_cache",
-                    "data",
-                    "memories",
-                    "results",
-                ),
-            )
-        else:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-        copied.append(destination)
-    return copied
-
-
-def _safe_name(path: Path) -> str:
-    return "_".join(part for part in path.parts if part not in ("", "/"))[-96:]
 
 
 def _score_split(
@@ -387,23 +381,60 @@ def percentile(values: list[float], percentile_value: float) -> float:
     return values[lower] * (1.0 - fraction) + values[upper] * fraction
 
 
-def _track2_prompt(package_dir: Path, query_dir: Path, extra_paths: list[Path]) -> str:
-    extra_text = "\n".join(f"- {path}" for path in extra_paths) if extra_paths else "- none"
-    return f"""You are evaluating a spatial memory package in memory-only mode.
+def _track2_prompt(package_dir: Path, query_dir: Path, context_paths: list[Path]) -> str:
+    context_text = "\n".join(f"- {path}" for path in context_paths) if context_paths else "- none"
+    access_label = "agentic full-access-to-code" if context_paths else "agentic memory-only access"
+    return f"""You are evaluating a spatial memory package with {access_label}.
 
 Package directory: {package_dir}
 Query files are in: {query_dir}
-Optional source-code/context files copied into the sandbox:
-{extra_text}
+Source-code context copied into this sandbox:
+{context_text}
 
-Read only the package, query files, and optional source-code/context files.
-Do not use raw_links, ground-truth benchmark answers, raw scene data, or external
-source data. The query files contain target_label/canonical_label fields; use
-them to identify the requested object category. Return up to top_k predictions
-for every query_id. Use object ids, labels, positions, and bboxes from the
-memory package. Return only raw JSON with this exact shape. The first character
-of your response must be `{{` and the last character must be `}}`. Do not
-include explanations, headings, Markdown, or code fences:
+Your job:
+Answer every object-location query using the spatial memory package. You may
+design your own temporary Python scripts, small query functions, adapters, or
+command-line tools inside the sandbox to inspect and interact with the memory.
+You are not limited to package-provided fixed APIs.
+
+Allowed resources:
+- The copied memory package: manifest.json, capabilities.json, schema.md,
+  memory/, evidence/, package tools, and build_log.json.
+- The copied query files. They contain query_id, query text, top_k, and
+  target_label/canonical_label fields.
+- The copied source-code context, if present. This may include evaluation
+  adapter code, shared module code, and original method root source code. Use it
+  to understand native memory formats, object fields, coordinate conventions,
+  and query utilities.
+
+Forbidden resources/actions:
+- Do not use benchmark GT annotations, benchmark answers, target object ids, or
+  hidden scorer files.
+- Do not follow raw_links or read raw scene frames unless they were explicitly
+  copied into the sandbox for a declared ablation.
+- Do not use external filesystem paths outside the sandbox.
+- Do not use internet or external services.
+- Do not modify the copied package as your answer source. Temporary scripts and
+  scratch files in the sandbox are fine.
+- Do not hard-code answers for specific query ids or scenes.
+
+How to solve:
+- Inspect the manifest/schema/build log first to learn what artifacts exist.
+- Read the memory artifacts directly, or use/package/adapt method code to parse
+  native maps, scene graphs, databases, feature files, or object tables.
+- You may create a temporary query interface that exact-matches or otherwise
+  searches `target_label` against memory object labels. Prefer closed-vocabulary
+  target_label/canonical_label over brittle natural-language parsing.
+- Return up to `top_k` predictions for every query_id.
+- Use object ids, labels, positions, bboxes, scores, and evidence grounded in
+  the memory package.
+
+Output requirements:
+- Return only raw JSON. The first character must be `{{` and the last character
+  must be `}}`.
+- Do not include Markdown, code fences, headings, or explanations outside JSON.
+- The output must contain every query_id from the query files, even if the list
+  of predictions is empty.
 
 {{
   "predictions_by_query": {{

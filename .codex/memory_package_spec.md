@@ -201,11 +201,14 @@ Required top-level fields:
     }
   },
   "agent_access": {
-    "mode": "memory_only",
+    "mode": "agentic_full_access",
     "read_manifest": true,
     "read_schema": true,
     "read_memory_artifacts": true,
     "read_evidence": true,
+    "read_adapter_code": true,
+    "read_shared_module_code": true,
+    "read_method_root_source_code": true,
     "read_raw_links": false,
     "read_raw_frames": false,
     "read_source_keyframes_or_crops": false,
@@ -413,15 +416,24 @@ object-table-to-LLM answerer does not make Track 4 supported.
 
 ## Agent Access Policy
 
-The default agentic setting is memory-only:
+The default agentic setting is package-plus-source-code access. The sandbox
+receives the memory package, evaluation adapter code, shared module code, and
+the original method root repo source code recorded in `manifest.method.repo_path`.
+The agent may design temporary parsers, query scripts, or small interfaces to
+interact with the memory, rather than being limited to fixed APIs.
+
+Raw/source frames remain disabled by default:
 
 ```json
 {
-  "mode": "memory_only",
+  "mode": "agentic_full_access",
   "read_manifest": true,
   "read_schema": true,
   "read_memory_artifacts": true,
   "read_evidence": true,
+  "read_adapter_code": true,
+  "read_shared_module_code": true,
+  "read_method_root_source_code": true,
   "read_raw_links": false,
   "read_raw_frames": false,
   "read_source_keyframes_or_crops": false,
@@ -429,18 +441,28 @@ The default agentic setting is memory-only:
 }
 ```
 
-Source frames, sampled keyframes, and source crops are ablations:
+Agentic modes:
 
-- `memory_only`: agent may read manifest, schema, memory artifacts, evidence,
-  and package docs. Evidence must be method-exported memory evidence, such as
-  object crops, thumbnails, relation visualizations, or retrieval traces. It must
-  not be a general dump of raw/source frames.
+- `agentic_full_access`: agent may read manifest, schema, memory artifacts,
+  evidence, package docs, package tools, evaluation adapters, shared module
+  code, and original method root source code. It may create temporary scripts in
+  the sandbox to parse/query memory artifacts. This is the default agentic mode.
+- `agentic_memory_only`: legacy/ablation mode where the agent reads only the
+  memory package and package docs.
 - `memory_plus_crops`: agent may additionally read package-local sampled
   keyframes or source crops.
 - `memory_plus_raw`: agent may additionally read raw RGB-D links if allowed.
 
-The first implementation copies the memory package into the sandbox. The agent
-works on the copy and must not modify the source package.
+Source frames, sampled keyframes, and source crops remain ablations. Evidence
+must be method-exported memory evidence, such as object crops, thumbnails,
+relation visualizations, or retrieval traces. It must not be a general dump of
+raw/source frames.
+
+The implementation copies the memory package and source-code context into the
+sandbox. The agent works on copies and must not modify the source package.
+Source-code context copies should exclude `.git`, generated data, checkpoints,
+caches, memories, and result artifacts, but keep original method source,
+configs, scripts, schema, README, and docs.
 
 ## Required Schema Documentation
 
@@ -508,7 +530,10 @@ The first validator should check:
 - `supported` fixed APIs have a non-empty Python entrypoint;
 - `invalid` fixed APIs have a non-empty reason;
 - `agent_access.write_package` is false;
-- `memory_only` packages have raw-frame and source-keyframe/crop access disabled;
+- `agentic_full_access` and `memory_only` packages have raw-frame and
+  source-keyframe/crop access disabled;
+- `agentic_full_access` packages declare adapter, shared module, and method root
+  source-code access;
 - `allowed_access` leakage flags are false unless explicitly justified.
 
 The validator should not require every method to support every track.

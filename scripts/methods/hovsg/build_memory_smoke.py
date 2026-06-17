@@ -19,19 +19,21 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from spatial_memory_evaluation.common.labels import (
-    DEFAULT_DETECTOR_CLASS_LIST_PATH,
     validate_detector_class_list,
 )
 from spatial_memory_evaluation.memory_package_validator import validate_package
+from scripts.methods.shared_modules import (
+    add_shared_module_args,
+    apply_hovsg_shared_modules,
+    shared_modules_metadata,
+)
 
 
 DEFAULT_SCENE_ID = "036bce3393"
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
 DEFAULT_CLAWS_ROOT = Path("/home/robin_wang/ClawS-SpatialRAG")
 DEFAULT_HOVSG_ROOT = Path("/home/robin_wang/HOV-SG")
-DEFAULT_CLASS_NAMES = DEFAULT_DETECTOR_CLASS_LIST_PATH
 DEFAULT_SPATIAL_RAG_PYTHON = Path("/home/robin_wang/miniforge3/envs/spatial-rag/bin/python")
-DEFAULT_SAM_CHECKPOINT = Path("/home/robin_wang/DualMap/sam_b.pt")
 IPHONE_RGB_SHAPE = (1440, 1920)
 IPHONE_DEPTH_SHAPE = (192, 256)
 
@@ -122,15 +124,15 @@ def parse_args() -> argparse.Namespace:
             "empty SAM crops with blank crops to avoid OpenCV resize crashes."
         ),
     )
-    parser.add_argument("--clip-model", default="ViT-B-32")
-    parser.add_argument("--clip-pretrained", default="laion2b_s34b_b79k")
-    parser.add_argument("--sam-type", default="vit_b")
-    parser.add_argument("--sam-checkpoint", type=Path, default=DEFAULT_SAM_CHECKPOINT)
+    parser.add_argument("--clip-model", default=None)
+    parser.add_argument("--clip-pretrained", default=None)
+    parser.add_argument("--sam-type", default=None)
+    parser.add_argument("--sam-checkpoint", type=Path, default=None)
     parser.add_argument("--sam-points-per-side", type=int, default=8)
     parser.add_argument("--sam-points-per-batch", type=int, default=64)
     parser.add_argument("--voxel-size", type=float, default=0.04)
     parser.add_argument("--merge-type", default="sequential")
-    parser.add_argument("--class-names", type=Path, default=DEFAULT_CLASS_NAMES)
+    parser.add_argument("--class-names", type=Path, default=None)
     parser.add_argument(
         "--prepare-only",
         action="store_true",
@@ -160,7 +162,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="do not classify HOV-SG object features into the configured class list",
     )
-    return parser.parse_args()
+    add_shared_module_args(parser)
+    args = parser.parse_args()
+    apply_hovsg_shared_modules(args)
+    return args
 
 
 def main(args: argparse.Namespace) -> int:
@@ -873,6 +878,13 @@ def _write_manifest(
                 "timestamp_path": None,
                 "coordinate_frame": "HOV-SG world frame from ScanNet++ aligned poses; meters",
             },
+            "vocabulary": {
+                "vocabulary_mode": "closed",
+                "class_list_path": str(args.class_names),
+                "source": "shared_modules",
+                "profile": args.shared_module_profile,
+            },
+            "modules": shared_modules_metadata(args),
             "explicit_memory": True,
             "memory_artifacts": [
                 {
@@ -989,11 +1001,14 @@ def _write_capabilities(package_dir: Path) -> None:
                 },
             },
             "agent_access": {
-                "mode": "memory_only",
+                "mode": "agentic_full_access",
                 "read_manifest": True,
                 "read_schema": True,
                 "read_memory_artifacts": True,
                 "read_evidence": True,
+                "read_adapter_code": True,
+                "read_shared_module_code": True,
+                "read_method_root_source_code": True,
                 "read_raw_links": False,
                 "read_raw_frames": False,
                 "read_source_keyframes_or_crops": False,
@@ -1024,6 +1039,7 @@ def _write_build_log(
             "config_paths": [],
             "source_outputs": [],
             "object_count": object_count,
+            "shared_modules": shared_modules_metadata(args),
             "hovsg_runtime": {
                 "class_names": str(args.class_names),
                 "clip_model": args.clip_model,
