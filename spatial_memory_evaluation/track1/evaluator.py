@@ -82,9 +82,13 @@ def evaluate_track1(
         "package_dir": str(package_dir),
         "method": method,
         "dataset": manifest.get("dataset"),
+        "native_memory_size_bytes": memory_size["native_memory_size_bytes"],
         "package_size_bytes": memory_size["package_size_bytes"],
         "memory_artifact_size_bytes": memory_size["memory_artifact_size_bytes"],
         "build_runtime_seconds": build_runtime_seconds,
+        "time_per_frame_seconds": memory_size.get("time_per_frame_seconds"),
+        "peak_ram_bytes": memory_size.get("peak_ram_bytes"),
+        "peak_vram_bytes": memory_size.get("peak_vram_bytes"),
     }
     if result["status"] == "ok":
         predictions = result["objects"]
@@ -256,24 +260,85 @@ Return JSON with this exact shape:
 
 
 def _memory_size_summary(package_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    build_log = _load_build_log(package_dir)
+    build = manifest.get("build") if isinstance(manifest.get("build"), dict) else {}
+    linked_raw_size = linked_raw_size_bytes(manifest)
     return {
-        "package_size_bytes": dir_size_bytes(package_dir),
-        "memory_artifact_size_bytes": dir_size_bytes(package_dir / "memory"),
-        "native_linked_size_bytes_if_available": linked_raw_size_bytes(manifest),
+        "native_memory_size_bytes": _first_int(
+            build_log, build, key="native_memory_size_bytes", fallback=linked_raw_size
+        ),
+        "package_size_bytes": _first_int(
+            build_log, build, key="package_size_bytes", fallback=dir_size_bytes(package_dir)
+        ),
+        "memory_artifact_size_bytes": _first_int(
+            build_log, build, key="memory_artifact_size_bytes", fallback=dir_size_bytes(package_dir / "memory")
+        ),
+        "linked_raw_size_bytes_if_available": linked_raw_size,
+        "frame_count": _first_int(build_log, build, key="frame_count"),
+        "time_per_frame_seconds": _first_float(build_log, build, key="time_per_frame_seconds"),
+        "peak_ram_bytes": _first_int(build_log, build, key="peak_ram_bytes"),
+        "peak_ram_unavailable_reason": _first_value(build_log, build, key="peak_ram_unavailable_reason"),
+        "peak_vram_bytes": _first_int(build_log, build, key="peak_vram_bytes"),
+        "peak_vram_unavailable_reason": _first_value(build_log, build, key="peak_vram_unavailable_reason"),
+        "native_memory_artifacts": _first_value(build_log, build, key="native_memory_artifacts"),
     }
 
 
 def _build_runtime_seconds(package_dir: Path, manifest: dict[str, Any]) -> float | None:
-    value = None
-    if isinstance(manifest.get("build"), dict):
-        value = manifest["build"].get("runtime_seconds")
+    build_log = _load_build_log(package_dir)
+    build = manifest.get("build") if isinstance(manifest.get("build"), dict) else {}
+    value = _first_float(build_log, build, key="build_runtime_seconds")
+    if value is not None:
+        return value
+    return _first_float(build_log, build, key="runtime_seconds")
+
+
+def _load_build_log(package_dir: Path) -> dict[str, Any]:
     build_log = package_dir / "build_log.json"
-    if build_log.exists():
+    if not build_log.exists():
+        return {}
+    try:
         with build_log.open("r", encoding="utf-8") as f:
             loaded = json.load(f)
-        if isinstance(loaded, dict):
-            value = loaded.get("runtime_seconds", value)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _first_value(*sources: dict[str, Any], key: str) -> Any:
+    for source in sources:
+        if isinstance(source, dict) and key in source:
+            return source[key]
+    return None
+
+
+def _first_int(
+    *sources: dict[str, Any],
+    key: str,
+    fallback: int | None = None,
+) -> int | None:
+    value = _first_value(*sources, key=key)
+    if value is None:
+        return fallback
+    if isinstance(value, bool):
+        return fallback
     try:
-        return None if value is None else float(value)
+        return int(value)
     except (TypeError, ValueError):
-        return None
+        return fallback
+
+
+def _first_float(
+    *sources: dict[str, Any],
+    key: str,
+    fallback: float | None = None,
+) -> float | None:
+    value = _first_value(*sources, key=key)
+    if value is None:
+        return fallback
+    if isinstance(value, bool):
+        return fallback
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback

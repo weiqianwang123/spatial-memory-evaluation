@@ -131,7 +131,65 @@
     },
     "build": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": {
+        "command": {
+          "type": ["string", "null"]
+        },
+        "config_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": ["string", "null"]
+        },
+        "started_at": {
+          "type": ["string", "null"]
+        },
+        "finished_at": {
+          "type": ["string", "null"]
+        },
+        "build_runtime_seconds": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "time_per_frame_seconds": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "native_memory_size_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "memory_artifact_size_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "package_size_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "peak_ram_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "peak_ram_unavailable_reason": {
+          "type": ["string", "null"]
+        },
+        "peak_vram_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "peak_vram_unavailable_reason": {
+          "type": ["string", "null"]
+        }
+      }
     },
     "allowed_access": {
       "type": "object",

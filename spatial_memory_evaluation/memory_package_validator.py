@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass, field
@@ -57,6 +58,24 @@ REQUIRED_SCHEMA_MD_TOPICS = (
     ("confidence_or_score", ("confidence", "score", "置信", "分数")),
     ("artifact_formats", ("artifact", "format", "工件", "格式")),
     ("limitations", ("limitation", "unsupported", "invalid", "限制", "不支持")),
+)
+
+BUILD_ACCOUNTING_REQUIRED_FIELDS = (
+    "frame_count",
+    "build_runtime_seconds",
+    "time_per_frame_seconds",
+    "native_memory_size_bytes",
+    "native_memory_artifacts",
+    "memory_artifact_size_bytes",
+    "package_size_bytes",
+    "peak_ram_bytes",
+    "peak_vram_bytes",
+)
+
+BUILD_ACCOUNTING_SIZE_FIELDS = (
+    "native_memory_size_bytes",
+    "memory_artifact_size_bytes",
+    "package_size_bytes",
 )
 
 
@@ -488,8 +507,164 @@ def _validate_build_log(build_log: Mapping[str, Any], report: ValidationReport) 
     if status == "error":
         report.error("build_log.json.status", "package build status is error")
     if "runtime_seconds" in build_log and build_log["runtime_seconds"] is not None:
-        if not isinstance(build_log["runtime_seconds"], (int, float)):
-            report.error("build_log.json.runtime_seconds", "must be a number or null")
+        _validate_nonnegative_number(
+            build_log["runtime_seconds"],
+            "build_log.json.runtime_seconds",
+            report,
+            allow_null=False,
+        )
+    if status != "ok":
+        return
+
+    for key in BUILD_ACCOUNTING_REQUIRED_FIELDS:
+        if key not in build_log:
+            report.error(
+                f"build_log.json.{key}",
+                "missing build accounting field; rerun exporter with resource accounting support",
+            )
+
+    frame_count_ok = _validate_required_nonnegative_int(
+        build_log, "frame_count", "build_log.json.frame_count", report
+    )
+    runtime_ok = _validate_required_nonnegative_number(
+        build_log, "build_runtime_seconds", "build_log.json.build_runtime_seconds", report
+    )
+    time_per_frame_ok = _validate_required_nullable_nonnegative_number(
+        build_log,
+        "time_per_frame_seconds",
+        "build_log.json.time_per_frame_seconds",
+        report,
+    )
+    for key in BUILD_ACCOUNTING_SIZE_FIELDS:
+        _validate_required_nonnegative_int(build_log, key, f"build_log.json.{key}", report)
+
+    _validate_peak_metric(build_log, "peak_ram", report)
+    _validate_peak_metric(build_log, "peak_vram", report)
+    _validate_native_memory_artifacts(build_log, report)
+
+    if frame_count_ok and runtime_ok and time_per_frame_ok:
+        frame_count = build_log.get("frame_count")
+        runtime = build_log.get("build_runtime_seconds")
+        time_per_frame = build_log.get("time_per_frame_seconds")
+        if frame_count and time_per_frame is None:
+            report.error(
+                "build_log.json.time_per_frame_seconds",
+                "must be build_runtime_seconds / frame_count when frame_count > 0",
+            )
+        elif frame_count == 0 and time_per_frame is not None:
+            report.warning(
+                "build_log.json.time_per_frame_seconds",
+                "should be null when frame_count is 0",
+            )
+        elif frame_count and _is_number(runtime) and _is_number(time_per_frame):
+            expected = float(runtime) / int(frame_count)
+            tolerance = max(1e-6, abs(expected) * 1e-6)
+            if abs(float(time_per_frame) - expected) > tolerance:
+                report.warning(
+                    "build_log.json.time_per_frame_seconds",
+                    "does not equal build_runtime_seconds / frame_count",
+                )
+
+
+def _validate_required_nonnegative_int(
+    mapping: Mapping[str, Any],
+    key: str,
+    path: str,
+    report: ValidationReport,
+) -> bool:
+    if key not in mapping:
+        return False
+    value = mapping[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        report.error(path, "must be a non-negative integer")
+        return False
+    return True
+
+
+def _validate_required_nonnegative_number(
+    mapping: Mapping[str, Any],
+    key: str,
+    path: str,
+    report: ValidationReport,
+) -> bool:
+    if key not in mapping:
+        return False
+    return _validate_nonnegative_number(mapping[key], path, report, allow_null=False)
+
+
+def _validate_required_nullable_nonnegative_number(
+    mapping: Mapping[str, Any],
+    key: str,
+    path: str,
+    report: ValidationReport,
+) -> bool:
+    if key not in mapping:
+        return False
+    return _validate_nonnegative_number(mapping[key], path, report, allow_null=True)
+
+
+def _validate_nonnegative_number(
+    value: Any,
+    path: str,
+    report: ValidationReport,
+    *,
+    allow_null: bool,
+) -> bool:
+    if value is None:
+        if allow_null:
+            return True
+        report.error(path, "must be a non-negative number")
+        return False
+    if not _is_number(value) or float(value) < 0:
+        report.error(path, "must be a non-negative number or null" if allow_null else "must be a non-negative number")
+        return False
+    return True
+
+
+def _validate_peak_metric(build_log: Mapping[str, Any], prefix: str, report: ValidationReport) -> None:
+    metric_key = f"{prefix}_bytes"
+    reason_key = f"{prefix}_unavailable_reason"
+    path = f"build_log.json.{metric_key}"
+    if metric_key not in build_log:
+        return
+    value = build_log[metric_key]
+    if not _validate_nonnegative_number(value, path, report, allow_null=True):
+        return
+    if value is None:
+        reason = build_log.get(reason_key)
+        if not isinstance(reason, str) or not reason.strip():
+            report.error(
+                f"build_log.json.{reason_key}",
+                f"must explain why {metric_key} is null",
+            )
+
+
+def _validate_native_memory_artifacts(
+    build_log: Mapping[str, Any],
+    report: ValidationReport,
+) -> None:
+    artifacts = build_log.get("native_memory_artifacts")
+    if artifacts is None:
+        return
+    if not isinstance(artifacts, list):
+        report.error("build_log.json.native_memory_artifacts", "must be an array when present")
+        return
+    for index, artifact in enumerate(artifacts):
+        prefix = f"build_log.json.native_memory_artifacts[{index}]"
+        if not isinstance(artifact, Mapping):
+            report.error(prefix, "must be an object")
+            continue
+        if not isinstance(artifact.get("path"), str) or not artifact.get("path"):
+            report.error(f"{prefix}.path", "must be a non-empty string")
+        if not isinstance(artifact.get("exists"), bool):
+            report.error(f"{prefix}.exists", "must be a boolean")
+        size = artifact.get("size_bytes")
+        if size is not None and (not isinstance(size, int) or isinstance(size, bool) or size < 0):
+            report.error(f"{prefix}.size_bytes", "must be a non-negative integer or null")
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _validate_schema_md(schema_text: str, report: ValidationReport) -> None:

@@ -16,7 +16,13 @@
     "episode_id": null
   },
   "input": {
-    "modality": ["rgb", "depth", "pose", "intrinsics", "timestamp"],
+    "modality": [
+      "rgb",
+      "depth",
+      "pose",
+      "intrinsics",
+      "timestamp"
+    ],
     "frame_count": 1,
     "rgbd_root": null,
     "poses_path": null,
@@ -31,7 +37,9 @@
       "type": "jsonl",
       "path": "memory/object_table.jsonl",
       "description": "Canonical object inventory for smoke validation.",
-      "required_for": ["track1_memory_construction"]
+      "required_for": [
+        "track1_memory_construction"
+      ]
     }
   ],
   "evidence_artifacts": [],
@@ -42,7 +50,9 @@
       "type": "python",
       "path": "tools/list_objects.py",
       "description": "Track 1 fixed API entrypoint.",
-      "required_for": ["track1_memory_construction"]
+      "required_for": [
+        "track1_memory_construction"
+      ]
     }
   ],
   "build": {
@@ -52,7 +62,18 @@
     "started_at": "2026-06-15T00:00:00+08:00",
     "finished_at": "2026-06-15T00:00:00+08:00",
     "runtime_seconds": 0.0,
-    "memory_size_bytes": null
+    "accounting_version": "0.1",
+    "frame_count": 1,
+    "build_runtime_seconds": 0.0,
+    "time_per_frame_seconds": 0.0,
+    "native_memory_size_bytes": 0,
+    "native_memory_artifacts": [],
+    "memory_artifact_size_bytes": 183,
+    "package_size_bytes": 6305,
+    "peak_ram_bytes": null,
+    "peak_ram_unavailable_reason": "not measured by static example fixture",
+    "peak_vram_bytes": null,
+    "peak_vram_unavailable_reason": "not measured by static example fixture"
   },
   "allowed_access": {
     "contains_gt_annotations": false,

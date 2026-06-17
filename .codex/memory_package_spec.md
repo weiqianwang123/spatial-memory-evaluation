@@ -119,8 +119,18 @@ constraints. Required top-level fields:
     "environment": null,
     "started_at": null,
     "finished_at": null,
+    "build_runtime_seconds": null,
     "runtime_seconds": null,
-    "memory_size_bytes": null
+    "frame_count": 0,
+    "time_per_frame_seconds": null,
+    "native_memory_size_bytes": null,
+    "native_memory_artifacts": [],
+    "memory_artifact_size_bytes": null,
+    "package_size_bytes": null,
+    "peak_ram_bytes": null,
+    "peak_ram_unavailable_reason": null,
+    "peak_vram_bytes": null,
+    "peak_vram_unavailable_reason": null
   },
   "allowed_access": {
     "contains_gt_annotations": false,
@@ -131,6 +141,46 @@ constraints. Required top-level fields:
   "notes": ""
 }
 ```
+
+### Build Accounting
+
+The same accounting fields must appear in `manifest.json.build` and
+`build_log.json`. `build_log.json` is the authoritative build-run record; the
+manifest mirrors the stable fields so evaluators can read them without parsing
+method-specific logs.
+
+Required build accounting fields:
+
+- `frame_count`
+- `build_runtime_seconds`
+- `time_per_frame_seconds`
+- `native_memory_size_bytes`
+- `native_memory_artifacts`
+- `memory_artifact_size_bytes`
+- `package_size_bytes`
+- `peak_ram_bytes`
+- `peak_ram_unavailable_reason`
+- `peak_vram_bytes`
+- `peak_vram_unavailable_reason`
+
+Rules:
+
+- `native_memory_size_bytes` is the size of the original method artifact and is
+  the primary memory-size metric.
+- `native_memory_artifacts` records each native artifact path, whether it
+  exists, and its individual size.
+- `package_size_bytes` is the wrapper/package size and must be reported
+  separately.
+- `memory_artifact_size_bytes` is the package `memory/` directory size, useful
+  for debugging export inflation.
+- Size accounting must not include GT/query files or benchmark annotations.
+- `peak_ram_bytes` and `peak_vram_bytes` should only be filled when measured
+  reliably. If either is `null`, the corresponding unavailable reason must be a
+  non-empty string.
+- `time_per_frame_seconds = build_runtime_seconds / frame_count` when
+  `frame_count > 0`; otherwise it is `null`.
+- `runtime_seconds` is legacy compatibility only. New readers must prefer
+  `build_runtime_seconds`.
 
 ### Method Family
 

@@ -6,5 +6,17 @@
   "command": "static example fixture",
   "config_paths": [],
   "source_outputs": [],
-  "warnings": []
+  "warnings": [],
+  "accounting_version": "0.1",
+  "frame_count": 1,
+  "build_runtime_seconds": 0.0,
+  "time_per_frame_seconds": 0.0,
+  "native_memory_size_bytes": 0,
+  "native_memory_artifacts": [],
+  "memory_artifact_size_bytes": 183,
+  "package_size_bytes": 6305,
+  "peak_ram_bytes": null,
+  "peak_ram_unavailable_reason": "not measured by static example fixture",
+  "peak_vram_bytes": null,
+  "peak_vram_unavailable_reason": "not measured by static example fixture"
 }

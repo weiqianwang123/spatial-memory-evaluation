@@ -30,6 +30,7 @@ from spatial_memory_evaluation.common.labels import (
     validate_detector_class_list,
 )
 from spatial_memory_evaluation.memory_package_validator import validate_package
+from spatial_memory_evaluation.common.build_accounting import write_build_log_with_accounting
 from scripts.methods.shared_modules import (
     add_shared_module_args,
     apply_dualmap_shared_modules,
@@ -373,6 +374,7 @@ def export_minimal_package(
         started_at=started_at,
         object_count=len(objects),
         native_map_dir=native_map_dir,
+        layout_summary=layout_summary,
         warnings=warnings,
     )
 
@@ -927,8 +929,18 @@ def _write_manifest(
                 "environment": str(args.dualmap_python),
                 "started_at": None,
                 "finished_at": None,
+                "build_runtime_seconds": None,
                 "runtime_seconds": None,
-                "memory_size_bytes": None,
+                "frame_count": int(layout_summary.get("frame_count") or 0),
+                "time_per_frame_seconds": None,
+                "native_memory_size_bytes": None,
+                "native_memory_artifacts": [],
+                "memory_artifact_size_bytes": None,
+                "package_size_bytes": None,
+                "peak_ram_bytes": None,
+                "peak_ram_unavailable_reason": None,
+                "peak_vram_bytes": None,
+                "peak_vram_unavailable_reason": None,
             },
             "allowed_access": {
                 "contains_gt_annotations": False,
@@ -998,18 +1010,24 @@ def _write_build_log(
     started_at: float,
     object_count: int,
     native_map_dir: Path,
+    layout_summary: dict[str, Any],
     warnings: list[str],
 ) -> None:
     finished_at = time.time()
-    _write_json(
-        package_dir / "build_log.json",
-        {
+    runtime_seconds = finished_at - started_at
+    write_build_log_with_accounting(
+        package_dir=package_dir,
+        native_memory_artifact_paths=[native_map_dir],
+        frame_count=int(layout_summary.get("frame_count") or 0),
+        build_log={
             "status": "ok",
             "started_at": _iso_time(started_at),
             "finished_at": _iso_time(finished_at),
-            "runtime_seconds": finished_at - started_at,
+            "build_runtime_seconds": runtime_seconds,
+            "runtime_seconds": runtime_seconds,
             "command": " ".join(sys.argv),
             "config_paths": [],
+            "environment": str(args.dualmap_python),
             "source_outputs": [str(native_map_dir)],
             "object_count": object_count,
             "shared_modules": shared_modules_metadata(args),
