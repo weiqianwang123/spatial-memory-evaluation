@@ -190,7 +190,7 @@
       </div>
       <div class="refresh">
         <strong>Updated</strong>
-        <span>2026-06-17 19:11:39</span>
+        <span>2026-06-17 23:09:07</span>
         <strong style="margin-top: 8px;">Auto refresh</strong>
         <span>5s</span>
       </div>
@@ -198,13 +198,185 @@
     <section class="toolbar">
       <input id="search" class="search" placeholder="Search branch, task, worktree, summary..." />
       <div class="chips">
-        <button class="chip active" data-filter="all">all <span>1</span></button>
+        <button class="chip active" data-filter="all">all <span>5</span></button>
         <button class="chip" data-filter="running">running <span>0</span></button>
-<button class="chip" data-filter="stopped">stopped <span>0</span></button>
+<button class="chip" data-filter="stopped">stopped <span>4</span></button>
 <button class="chip" data-filter="idle">idle <span>1</span></button>
       </div>
     </section>
-    <section class="grid"><article class="card idle" data-status="idle" data-search="main idle  /home/robin_wang/spatial-memory-evaluation no active task summary yet. 4ec8276 (head -&gt; main, origin/main) add metric in test time">
+    <section class="grid"><article class="card stopped" data-status="stopped" data-search="claude/task-13-daaam-finish-smoke stopped task 13: daaam track 1/2 fixed api finish and smoke /home/robin_wang/spatial-memory-evaluation-task13 assistant: aam_colcon_ / assistant: ws is not a git repo. / assistant: all tasks complete. here&#x27;s my summary. ## summary i finished the daaam track 1/2 fixed-api adapter and ran the local smoke as far as the runtime allows. all changes are confined to this worktree; the daaam repo is unt... / message: end_turn / model response complete | 16.3s | output_tokens=1286 / result: success | 1475.8s | $9.8947 | all tasks complete. here&#x27;s my summary. ## summary i finished the daaam track 1/2 fixed-api ad 58f450e (head -&gt; claude/task-13-daaam-finish-smoke) feat: finish daaam track12 fixed api smoke">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-13-daaam-finish-smoke</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 13: DAAAM Track 1/2 Fixed API Finish And Smoke</div>
+    <div class="summary">assistant: aam_colcon_ / assistant: ws is not a git repo. / assistant: All tasks complete. Here&#x27;s my summary. ## Summary I finished the DAAAM Track 1/2 fixed-API adapter and ran the local smoke as far as the runtime allows. All changes are confined to this worktree; the DAAAM repo is unt... / message: end_turn / model response complete | 16.3s | output_tokens=1286 / result: success | 1475.8s | $9.8947 | All tasks complete. Here&#x27;s my summary. ## Summary I finished the DAAAM Track 1/2 fixed-API ad</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>1054543</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task13 &amp;&amp; tail -f .claude/session_logs/20260617-215427_claude-task-13-daaam-finish-smoke_task_13_track12_fixed_api_daaam_finish_smoke.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task13">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task13</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_13_track12_fixed_api_daaam_finish_smoke.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task13/.claude/session_logs/20260617-215427_claude-task-13-daaam-finish-smoke_task_13_track12_fixed_api_daaam_finish_smoke.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task13/.claude/session_logs/20260617-215427_claude-task-13-daaam-finish-smoke_task_13_track12_fixed_api_daaam_finish_smoke.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task13/.claude/session_logs/20260617-215427_claude-task-13-daaam-finish-smoke_task_13_track12_fixed_api_daaam_finish_smoke.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task13/.claude/session_logs/20260617-215427_claude-task-13-daaam-finish-smoke_task_13_track12_fixed_api_daaam_finish_smoke.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>58f450e (HEAD -&gt; claude/task-13-daaam-finish-smoke) feat: finish daaam track12 fixed api smoke</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: aam_colcon_
+assistant: ws) were
+assistant: not
+assistant: modified by me — D
+assistant: AAAM is clean and
+assistant: da
+assistant: aam_colcon_
+assistant: ws is not a git repo.
+assistant: All tasks complete. Here&#x27;s my summary. ## Summary I finished the DAAAM Track 1/2 fixed-API adapter and ran the local smoke as far as the runtime allows. All changes are confined to this worktree; the DAAAM repo is unt...
+message: end_turn
+model response complete | 16.3s | output_tokens=1286
+result: success | 1475.8s | $9.8947 | All tasks complete. Here&#x27;s my summary. ## Summary I finished the DAAAM Track 1/2 fixed-API adapter and ran the local smoke as far as the runtime allows. All changes are confined to this worktree; the DAAAM repo is unt...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-18-hydra-outcome stopped task 22: finish hydra task 18 /home/robin_wang/spatial-memory-evaluation-task18 assistant: on_ws/src/h / assistant: ydra`) / assistant: task complete. the hydra task 18 work is finalized and committed cleanly. ## summary finished the incomplete hydra standalone track 1/2 fixed-api outcome work and committed it on `claude/task-18-hydra-outcome` as `dda... / message: end_turn / model response complete | 17.0s | output_tokens=944 / result: success | 575.4s | $1.9715 | task complete. the hydra task 18 work is finalized and committed cleanly. ## summary finished the incomplete h dda6b82 (head -&gt; claude/task-18-hydra-outcome) docs: finalize hydra fixed api invalid outcome">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-18-hydra-outcome</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 22: Finish Hydra Task 18</div>
+    <div class="summary">assistant: on_ws/src/h / assistant: ydra`) / assistant: Task complete. The Hydra Task 18 work is finalized and committed cleanly. ## Summary Finished the incomplete Hydra standalone Track 1/2 fixed-API outcome work and committed it on `claude/task-18-hydra-outcome` as `dda... / message: end_turn / model response complete | 17.0s | output_tokens=944 / result: success | 575.4s | $1.9715 | Task complete. The Hydra Task 18 work is finalized and committed cleanly. ## Summary Finished the incomplete H</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>1094734</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task18 &amp;&amp; tail -f .claude/session_logs/20260617-225227_claude-task-18-hydra-outcome_task_22_finish_hydra_task18.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task18">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task18</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_22_finish_hydra_task18.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task18/.claude/session_logs/20260617-225227_claude-task-18-hydra-outcome_task_22_finish_hydra_task18.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task18/.claude/session_logs/20260617-225227_claude-task-18-hydra-outcome_task_22_finish_hydra_task18.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task18/.claude/session_logs/20260617-225227_claude-task-18-hydra-outcome_task_22_finish_hydra_task18.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task18/.claude/session_logs/20260617-225227_claude-task-18-hydra-outcome_task_22_finish_hydra_task18.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>dda6b82 (HEAD -&gt; claude/task-18-hydra-outcome) docs: finalize hydra fixed api invalid outcome</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: package - ✅ `
+assistant: /home/robin_wang
+assistant: /Hydra` remains
+assistant: clean (the only external repo
+assistant: inspected; I did not tou
+assistant: ch `daaam_colc
+assistant: on_ws/src/h
+assistant: ydra`)
+assistant: Task complete. The Hydra Task 18 work is finalized and committed cleanly. ## Summary Finished the incomplete Hydra standalone Track 1/2 fixed-API outcome work and committed it on `claude/task-18-hydra-outcome` as `dda...
+message: end_turn
+model response complete | 17.0s | output_tokens=944
+result: success | 575.4s | $1.9715 | Task complete. The Hydra Task 18 work is finalized and committed cleanly. ## Summary Finished the incomplete Hydra standalone Track 1/2 fixed-API outcome work and committed it on `claude/task-18-hydra-outcome` as `dda...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-19-remembr-outcome stopped task 23: fix remembr task 19 memory artifact leak /home/robin_wang/spatial-memory-evaluation-task19 assistant: ed api invalid outcome / assistant: `. / assistant: task complete. here&#x27;s a concise summary. ## summary repaired the task 19 remembr branch (`claude/task-19-remembr-outcome`) so its history no longer contains any tracked `memories/` files, while preserving the correct ... / message: end_turn / model response complete | 15.0s | output_tokens=948 / result: success | 409.2s | $2.8380 | task complete. here&#x27;s a concise summary. ## summary repaired the task 19 remembr branch (`claude/task-1 48f9c5e (head -&gt; claude/task-19-remembr-outcome) docs: finalize remembr fixed api invalid outcome">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-19-remembr-outcome</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 23: Fix ReMEmbR Task 19 Memory Artifact Leak</div>
+    <div class="summary">assistant: ed api invalid outcome / assistant: `. / assistant: Task complete. Here&#x27;s a concise summary. ## Summary Repaired the Task 19 ReMEmbR branch (`claude/task-19-remembr-outcome`) so its history no longer contains any tracked `memories/` files, while preserving the correct ... / message: end_turn / model response complete | 15.0s | output_tokens=948 / result: success | 409.2s | $2.8380 | Task complete. Here&#x27;s a concise summary. ## Summary Repaired the Task 19 ReMEmbR branch (`claude/task-1</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>1094745</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task19 &amp;&amp; tail -f .claude/session_logs/20260617-225227_claude-task-19-remembr-outcome_task_23_fix_remembr_task19_no_memories.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task19">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task19</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_23_fix_remembr_task19_no_memories.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task19/.claude/session_logs/20260617-225227_claude-task-19-remembr-outcome_task_23_fix_remembr_task19_no_memories.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task19/.claude/session_logs/20260617-225227_claude-task-19-remembr-outcome_task_23_fix_remembr_task19_no_memories.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task19/.claude/session_logs/20260617-225227_claude-task-19-remembr-outcome_task_23_fix_remembr_task19_no_memories.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task19/.claude/session_logs/20260617-225227_claude-task-19-remembr-outcome_task_23_fix_remembr_task19_no_memories.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>48f9c5e (HEAD -&gt; claude/task-19-remembr-outcome) docs: finalize remembr fixed api invalid outcome</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: spected; ver
+assistant: ified unmodified). The
+assistant: branch is committed and
+assistant: ready.
+assistant: PR title: `docs:
+assistant: finalize remembr fix
+assistant: ed api invalid outcome
+assistant: `.
+assistant: Task complete. Here&#x27;s a concise summary. ## Summary Repaired the Task 19 ReMEmbR branch (`claude/task-19-remembr-outcome`) so its history no longer contains any tracked `memories/` files, while preserving the correct ...
+message: end_turn
+model response complete | 15.0s | output_tokens=948
+result: success | 409.2s | $2.8380 | Task complete. Here&#x27;s a concise summary. ## Summary Repaired the Task 19 ReMEmbR branch (`claude/task-19-remembr-outcome`) so its history no longer contains any tracked `memories/` files, while preserving the correct ...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card stopped" data-status="stopped" data-search="claude/task-24-unify-control-tasks stopped task 24: unify multi-frame vlm and caption control branches /home/robin_wang/spatial-memory-evaluation-task24 assistant: ify track12 no-memory / assistant: control semantics`. / assistant: all acceptance checks pass and the working tree is clean. the task is complete. ## summary i created the unified control branch by combining task 20 and task 21 on `claude/task-24-unify-control-tasks`, which already s... / message: end_turn / model response complete | 21.3s | output_tokens=1471 / result: success | 408.4s | $2.5544 | all acceptance checks pass and the working tree is clean. the task is complete. ## sum cb98663 (head -&gt; claude/task-24-unify-control-tasks) docs: mark caption memory as track12 control">
+  <div class="card-inner">
+    <div class="card-top">
+      <div class="branch">claude/task-24-unify-control-tasks</div>
+      <span class="badge stopped">STOPPED</span>
+    </div>
+    <div class="task">Task 24: Unify Multi-Frame VLM And Caption Control Branches</div>
+    <div class="summary">assistant: ify track12 no-memory / assistant: control semantics`. / assistant: All acceptance checks pass and the working tree is clean. The task is complete. ## Summary I created the unified control branch by combining Task 20 and Task 21 on `claude/task-24-unify-control-tasks`, which already s... / message: end_turn / model response complete | 21.3s | output_tokens=1471 / result: success | 408.4s | $2.5544 | All acceptance checks pass and the working tree is clean. The task is complete. ## Sum</div>
+    <div class="stats">
+      <div class="stat"><label>pid</label><strong>1094756</strong></div>
+      <div class="stat"><label>changed</label><strong>0</strong></div>
+      <div class="stat"><label>elapsed</label><strong>-</strong></div>
+    </div>
+    <div class="actions">
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task24 &amp;&amp; tail -f .claude/session_logs/20260617-225227_claude-task-24-unify-control-tasks_task_24_unify_control_tasks_20_21.stream.jsonl">Copy inspect</button>
+      <button class="copy" data-copy="cd /home/robin_wang/spatial-memory-evaluation-task24">Copy cd</button>
+    </div>
+    <details>
+      <summary>Details and logs</summary>
+      <div class="detail-grid">
+        <div class="mono"><strong>worktree</strong><br>/home/robin_wang/spatial-memory-evaluation-task24</div>
+        <div class="mono"><strong>task</strong><br>/home/robin_wang/spatial-memory-evaluation/.claude/tasks/task_24_unify_control_tasks_20_21.md</div>
+        <div class="mono"><strong>session</strong><br>/home/robin_wang/spatial-memory-evaluation-task24/.claude/session_logs/20260617-225227_claude-task-24-unify-control-tasks_task_24_unify_control_tasks_20_21.json</div>
+        <div class="mono"><strong>stdout</strong><br>/home/robin_wang/spatial-memory-evaluation-task24/.claude/session_logs/20260617-225227_claude-task-24-unify-control-tasks_task_24_unify_control_tasks_20_21.stdout.log</div>
+        <div class="mono"><strong>stderr</strong><br>/home/robin_wang/spatial-memory-evaluation-task24/.claude/session_logs/20260617-225227_claude-task-24-unify-control-tasks_task_24_unify_control_tasks_20_21.stderr.log</div>
+        <div class="mono"><strong>stream json</strong><br>/home/robin_wang/spatial-memory-evaluation-task24/.claude/session_logs/20260617-225227_claude-task-24-unify-control-tasks_task_24_unify_control_tasks_20_21.stream.jsonl</div>
+        <div class="mono"><strong>last commit</strong><br>cb98663 (HEAD -&gt; claude/task-24-unify-control-tasks) docs: mark caption memory as track12 control</div>
+        <div class="mono logs"><strong>recent log</strong><br>assistant: work
+assistant: is committed on the branch.
+assistant: P
+assistant: R title for op
+assistant: ening the
+assistant: PR: `feat: un
+assistant: ify track12 no-memory
+assistant: control semantics`.
+assistant: All acceptance checks pass and the working tree is clean. The task is complete. ## Summary I created the unified control branch by combining Task 20 and Task 21 on `claude/task-24-unify-control-tasks`, which already s...
+message: end_turn
+model response complete | 21.3s | output_tokens=1471
+result: success | 408.4s | $2.5544 | All acceptance checks pass and the working tree is clean. The task is complete. ## Summary I created the unified control branch by combining Task 20 and Task 21 on `claude/task-24-unify-control-tasks`, which already s...</div>
+      </div>
+    </details>
+  </div>
+</article>
+<article class="card idle" data-status="idle" data-search="main idle  /home/robin_wang/spatial-memory-evaluation no active task summary yet. b9747e5 (head -&gt; main, origin/main) wip">
   <div class="card-inner">
     <div class="card-top">
       <div class="branch">main</div>
@@ -214,7 +386,7 @@
     <div class="summary">No active task summary yet.</div>
     <div class="stats">
       <div class="stat"><label>pid</label><strong>-</strong></div>
-      <div class="stat"><label>changed</label><strong>1</strong></div>
+      <div class="stat"><label>changed</label><strong>21</strong></div>
       <div class="stat"><label>elapsed</label><strong>-</strong></div>
     </div>
     <div class="actions">
@@ -230,7 +402,7 @@
         <div class="mono"><strong>stdout</strong><br>-</div>
         <div class="mono"><strong>stderr</strong><br>-</div>
         <div class="mono"><strong>stream json</strong><br>-</div>
-        <div class="mono"><strong>last commit</strong><br>4ec8276 (HEAD -&gt; main, origin/main) add metric in test time</div>
+        <div class="mono"><strong>last commit</strong><br>b9747e5 (HEAD -&gt; main, origin/main) wip</div>
         <div class="mono logs"><strong>recent log</strong><br>No recent log lines.</div>
       </div>
     </details>

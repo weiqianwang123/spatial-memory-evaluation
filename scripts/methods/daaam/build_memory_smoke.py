@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -77,16 +78,19 @@ DEFAULT_DAAAM_PYTHON = Path(os.environ.get("DAAAM_PYTHON", sys.executable))
 DEFAULT_CLAWS_ROOT = Path("/home/robin_wang/ClawS-SpatialRAG")
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
 DEFAULT_SCENE_ID = "036bce3393"
-DEFAULT_SENTENCE_EMBEDDING_MODEL = "sentence-transformers/sentence-t5-large"
+DEFAULT_SENTENCE_EMBEDDING_MODEL = None
 DEFAULT_DAAAM_CONFIG = DEFAULT_DAAAM_ROOT / "config" / "pipeline_config.yaml"
 DEFAULT_SAM_MODEL_CONFIG = DEFAULT_DAAAM_ROOT / "config" / "sam" / "sam_vit_config.yaml"
 DEFAULT_HYDRA_CONFIG = Path(
     "/home/robin_wang/daaam_colcon_ws/src/daaam_ros/config/hydra_config/clio_dataset_khronos.yaml"
 )
 DEFAULT_SHARED_MODULES_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/modules")
+DEFAULT_NATIVE_FASTSAM_MODEL = "fastsam/FastSAM-x-640x480.engine"
+DEFAULT_NATIVE_FASTSAM_CONFIG = "fastsam/fastsam_config.yaml"
+ADAPTER_WARNINGS_NAME = "adapter_warnings.json"
 DAAAM_ENV_HINT = (
     "DAAAM Python imports such as spark_dsg, daaam, open_clip, "
-    "sentence_transformers, torch, ultralytics, and segment_anything are "
+    "sentence_transformers, torch, ultralytics, segment_anything, and cvxpy are "
     "environment dependencies. Install them in the conda env used by "
     "--daaam-python; do not treat them as NAS/model-checkpoint files."
 )
@@ -127,6 +131,41 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sam-model-config-path", type=Path, default=DEFAULT_SAM_MODEL_CONFIG)
     parser.add_argument("--sentence-embedding-model", default=DEFAULT_SENTENCE_EMBEDDING_MODEL)
+    parser.add_argument(
+        "--dam-model-path",
+        type=Path,
+        default=None,
+        help="DAAAM DAM model snapshot path; defaults to shared_modules NAS snapshot.",
+    )
+    parser.add_argument(
+        "--daaam-segmenter",
+        choices=("shared_sam", "native_fastsam_trt"),
+        default="shared_sam",
+        help=(
+            "DAAAM segmentation route. shared_sam uses the shared SAM checkpoint "
+            "for benchmark consistency; native_fastsam_trt uses DAAAM's native "
+            "FastSAM/TensorRT path for realtime/async smoke experiments."
+        ),
+    )
+    parser.add_argument(
+        "--native-fastsam-model",
+        type=Path,
+        default=None,
+        help=(
+            "DAAAM-native FastSAM checkpoint/engine, relative to "
+            "$DAAAM_ROOT/checkpoints or absolute. Used only with "
+            "--daaam-segmenter native_fastsam_trt."
+        ),
+    )
+    parser.add_argument(
+        "--native-fastsam-config-path",
+        type=Path,
+        default=DEFAULT_NATIVE_FASTSAM_CONFIG,
+        help=(
+            "DAAAM-native FastSAM config, relative to $DAAAM_ROOT/config or "
+            "absolute. Used only with --daaam-segmenter native_fastsam_trt."
+        ),
+    )
     parser.add_argument("--semantic-config", type=Path, default=None)
     parser.add_argument("--labelspace-colors", type=Path, default=None)
     parser.add_argument(
@@ -163,6 +202,16 @@ def parse_args() -> argparse.Namespace:
         help="maximum sampled frames for smoke; use 0 for all frames selected by stride",
     )
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--target-fps",
+        type=float,
+        default=None,
+        help=(
+            "optional DAAAM processing FPS. If unset, the adapter uses "
+            "--no-throttle. Use a low value when DAM grounding worker model "
+            "loading needs more time than the short smoke frame sequence."
+        ),
+    )
     parser.add_argument("--cuda-visible-devices", default=None)
     parser.add_argument("--skip-cuda-preflight", action="store_true")
     parser.add_argument("--skip-dependency-preflight", action="store_true")
@@ -177,6 +226,20 @@ def parse_args() -> argparse.Namespace:
         "--skip-postprocess",
         action="store_true",
         help="do not run DAAAM postprocess_scene_graph.py after a native run",
+    )
+    parser.add_argument(
+        "--strict-native-run",
+        action="store_true",
+        help=(
+            "fail immediately if DAAAM run_pipeline.py exits nonzero. By default "
+            "the smoke adapter can package recoverable partial native output when "
+            "a current-run DSG exists."
+        ),
+    )
+    parser.add_argument(
+        "--native-verbose",
+        action="store_true",
+        help="pass --verbose to DAAAM run_pipeline.py so native exceptions print tracebacks",
     )
     parser.add_argument(
         "--skip-track2-index",
@@ -245,6 +308,7 @@ def _normalize_repo_relative_paths(args: argparse.Namespace) -> None:
         "package_root",
         "semantic_config",
         "labelspace_colors",
+        "dam_model_path",
     ):
         setattr(args, name, _repo_path(getattr(args, name)))
 
@@ -351,11 +415,11 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
     labelspace_colors = args.labelspace_colors or (native_output_dir / "labels_pseudo.csv")
     semantic_config.parent.mkdir(parents=True, exist_ok=True)
     labelspace_colors.parent.mkdir(parents=True, exist_ok=True)
-    sam_model_path = _materialize_daaam_sam_checkpoint(args, native_output_dir)
+    segmenter_model_path, segmenter_config_path = _daaam_segmenter_paths(args, native_output_dir)
 
     command = [
         str(args.daaam_python),
-        str(args.daaam_root / "scripts" / "run_pipeline.py"),
+        str(REPO_ROOT / "scripts" / "methods" / "daaam" / "run_pipeline_patched.py"),
         str(layout_dir),
         "--config",
         str(args.config),
@@ -363,15 +427,15 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
         "ImageSequenceDataset",
         "--output-dir",
         str(native_output_dir),
+        "--no-logging",
         "--depth-scale",
         "1000.0",
-        "--no-throttle",
         "--sam-model",
-        str(sam_model_path),
+        str(segmenter_model_path),
         "--sam-model-config-path",
-        str(args.sam_model_config_path),
+        str(segmenter_config_path),
         "--sentence-embedding-model",
-        args.sentence_embedding_model,
+        str(args.sentence_embedding_model),
         "--semantic-config",
         str(semantic_config),
         "--labelspace-path",
@@ -381,12 +445,19 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
         "--hydra-config-path",
         str(args.hydra_config_path),
     ]
+    if args.target_fps is None:
+        command.append("--no-throttle")
+    else:
+        command.extend(["--target-fps", str(args.target_fps)])
+    if args.native_verbose:
+        command.append("--verbose")
     if args.max_frames and args.max_frames > 0:
         command.extend(["--max-frames", str(args.max_frames)])
     overrides = [
         f"workers.dam_grounding_config.selectframe_clip_model_name={args.clip_model}",
         f"workers.dam_grounding_config.selectframe_clip_model_dataset={args.clip_pretrained}",
         "workers.dam_grounding_config.selectframe_clip_backend=openclip",
+        f"workers.dam_grounding_config.dam_model_path={args.dam_model_path}",
         f"grounding.perframe_clip_model_name={args.clip_model}",
         f"grounding.perframe_clip_model_dataset={args.clip_pretrained}",
     ]
@@ -398,7 +469,51 @@ def run_daaam_native(args: argparse.Namespace, *, layout_dir: Path, native_outpu
 
     print("running DAAAM:")
     print(" ".join(command))
-    subprocess.run(command, cwd=args.daaam_root, env=_daaam_subprocess_env(args), check=True)
+    run_started_at = time.time()
+    result = subprocess.run(command, cwd=args.daaam_root, env=_daaam_subprocess_env(args), check=False)
+    _collect_daaam_native_outputs(args, native_output_dir, run_started_at=run_started_at)
+    if result.returncode != 0:
+        warning = (
+            f"DAAAM native run exited with code {result.returncode}. "
+            "The smoke adapter normalized current-run artifacts and will recover "
+            "only if a DSG JSON exists. Re-run with --native-verbose for a native traceback."
+        )
+        if args.strict_native_run:
+            raise RuntimeError(warning + " --strict-native-run was set.")
+        try:
+            dsg_path = _find_dsg_path(native_output_dir)
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                warning
+                + "\nNo recoverable current-run DSG JSON was found after the native failure."
+            ) from exc
+        warning = warning + f" Recovering from partial native output using {dsg_path}."
+        print(f"warning: {warning}", file=sys.stderr)
+        _append_adapter_warning(native_output_dir, warning)
+
+
+def _daaam_segmenter_paths(args: argparse.Namespace, native_output_dir: Path) -> tuple[Path, Path]:
+    if args.daaam_segmenter == "native_fastsam_trt":
+        return _resolve_native_fastsam_model(args), _resolve_daaam_config_path(
+            args.daaam_root,
+            args.native_fastsam_config_path,
+        )
+    return _materialize_daaam_sam_checkpoint(args, native_output_dir), Path(args.sam_model_config_path)
+
+
+def _resolve_native_fastsam_model(args: argparse.Namespace) -> Path:
+    value = args.native_fastsam_model or Path(DEFAULT_NATIVE_FASTSAM_MODEL)
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return Path(args.daaam_root) / "checkpoints" / path
+
+
+def _resolve_daaam_config_path(daaam_root: Path, value: Path | str | None) -> Path:
+    path = Path(value or DEFAULT_NATIVE_FASTSAM_CONFIG)
+    if path.is_absolute():
+        return path
+    return Path(daaam_root) / "config" / path
 
 
 def _segmenter_config_overrides(args: argparse.Namespace) -> list[str]:
@@ -409,11 +524,11 @@ def _segmenter_config_overrides(args: argparse.Namespace) -> list[str]:
     ``fastsam_imgsz`` into ``SamAutomaticMaskGenerator(**model_config)``
     (``src/daaam/utils/segmentation.py``), which the SAM-ViT mask generator does
     not accept and raises ``unexpected keyword argument 'fastsam_imgsz'``. Since
-    the shared module route always supplies a ``sam_vit`` checkpoint, clear
-    ``imgsz`` so the SAM-ViT path receives only valid kwargs. ``apply_config_overrides``
-    treats an empty value as falsy for the ``Optional[Tuple]`` field.
+    the shared SAM route supplies a ``sam_vit`` checkpoint, clear ``imgsz`` so
+    the SAM-ViT path receives only valid kwargs. The native FastSAM/TensorRT
+    route keeps ``imgsz`` from DAAAM's config.
     """
-    if args.keep_segmenter_imgsz:
+    if args.daaam_segmenter == "native_fastsam_trt" or args.keep_segmenter_imgsz:
         return []
     return ["segmentation.imgsz="]
 
@@ -462,8 +577,15 @@ def export_minimal_package(
     native_dsg_path = package_dir / "memory" / "native" / dsg_path.name
     shutil.copy2(dsg_path, native_dsg_path)
     native_artifacts = [dsg_path]
-    for name in ("background_objects.yaml", "corrections.yaml", "region_summaries.yaml"):
-        source = native_output_dir / name
+    for name in (
+        "background_objects.yaml",
+        "corrections.yaml",
+        "region_summaries.yaml",
+        "object_positions.json",
+        "correction_stats.json",
+        ADAPTER_WARNINGS_NAME,
+    ):
+        source = _find_native_artifact(native_output_dir, name)
         if source.exists():
             shutil.copy2(source, package_dir / "memory" / "native" / name)
             native_artifacts.append(source)
@@ -518,7 +640,7 @@ def export_minimal_package(
     )
     _write_capabilities(package_dir, track2_status=track2_status, track2_reason=track2_reason)
     _write_raw_links(package_dir, args=args, native_output_dir=native_output_dir, layout_dir=layout_dir, dsg_path=dsg_path)
-    warnings = list(extraction.get("warnings") or []) + canonicalization_warnings
+    warnings = _read_adapter_warnings(native_output_dir) + list(extraction.get("warnings") or []) + canonicalization_warnings
     _write_build_log(
         package_dir=package_dir,
         args=args,
@@ -553,6 +675,11 @@ def _preflight_daaam(args: argparse.Namespace, *, require_native_run: bool) -> N
         (args.daaam_root, "DAAAM root", "repo_or_config"),
         (args.daaam_root / "scripts" / "run_pipeline.py", "DAAAM run_pipeline.py", "repo_or_config"),
         (
+            REPO_ROOT / "scripts" / "methods" / "daaam" / "run_pipeline_patched.py",
+            "DAAAM adapter run_pipeline wrapper",
+            "repo_or_config",
+        ),
+        (
             args.daaam_root / "scripts" / "postprocess_scene_graph.py",
             "DAAAM postprocess_scene_graph.py",
             "repo_or_config",
@@ -562,14 +689,34 @@ def _preflight_daaam(args: argparse.Namespace, *, require_native_run: bool) -> N
         if path is not None and not Path(path).exists():
             missing.append({"label": label, "path": str(path), "kind": kind})
     if require_native_run:
-        for path, label in (
-            (args.config, "DAAAM pipeline config"),
-            (args.hydra_config_path, "Hydra config"),
-            (args.sam_checkpoint, "shared SAM checkpoint"),
-            (args.sam_model_config_path, "DAAAM SAM model config"),
-        ):
+        required_paths = [
+            (args.config, "DAAAM pipeline config", "repo_or_config"),
+            (args.hydra_config_path, "Hydra config", "repo_or_config"),
+        ]
+        if args.daaam_segmenter == "native_fastsam_trt":
+            required_paths.extend(
+                [
+                    (
+                        _resolve_native_fastsam_model(args),
+                        "shared FastSAM TensorRT engine/checkpoint",
+                        "shared_module_artifact",
+                    ),
+                    (
+                        _resolve_daaam_config_path(args.daaam_root, args.native_fastsam_config_path),
+                        "DAAAM FastSAM model config",
+                        "repo_or_config",
+                    ),
+                ]
+            )
+        else:
+            required_paths.extend(
+                [
+                    (args.sam_checkpoint, "shared SAM checkpoint", "shared_module_artifact"),
+                    (args.sam_model_config_path, "DAAAM SAM model config", "repo_or_config"),
+                ]
+            )
+        for path, label, kind in required_paths:
             if path is None or not Path(path).exists():
-                kind = "shared_module_artifact" if label == "shared SAM checkpoint" else "repo_or_config"
                 missing.append({"label": label, "path": str(path), "kind": kind})
         if args.with_reid:
             reid_path = _resolve_reid_weights(args)
@@ -593,15 +740,17 @@ def _preflight_python_deps(args: argparse.Namespace, *, require_native_run: bool
     imports = ["spark_dsg", "daaam", "open_clip", "sentence_transformers"]
     if require_native_run:
         # The native build also drives the DAM grounding worker (object
-        # description) and the BotSort tracker. Importing the grounding worker
-        # module surfaces the heavy DAM/gradio dependency chain during preflight
-        # instead of crashing several frames into a long run.
+        # description), the BotSort tracker, and the assignment worker.
+        # Importing these modules surfaces heavy DAM/gradio/langchain/cvxpy
+        # dependency issues during preflight instead of crashing several frames
+        # into a long run.
         imports.extend(
             [
                 "torch",
                 "ultralytics",
                 "segment_anything",
                 "boxmot",
+                "cvxpy",
                 "daaam.grounding.workers.dam_grounding",
             ]
         )
@@ -694,10 +843,14 @@ print(f"cuda_cudnn_smoke=ok shape={tuple(y.shape)}")
 
 def _run_daaam_postprocess(args: argparse.Namespace, native_output_dir: Path) -> None:
     if not (native_output_dir / "dsg.json").exists():
-        print(f"skipping DAAAM postprocess: no dsg.json in {native_output_dir}", file=sys.stderr)
+        warning = f"skipping DAAAM postprocess: no dsg.json in {native_output_dir}"
+        print(warning, file=sys.stderr)
+        _append_adapter_warning(native_output_dir, warning)
         return
     if not (native_output_dir / "corrections.yaml").exists():
-        print(f"skipping DAAAM postprocess: no corrections.yaml in {native_output_dir}", file=sys.stderr)
+        warning = f"skipping DAAAM postprocess: no corrections.yaml in {native_output_dir}"
+        print(warning, file=sys.stderr)
+        _append_adapter_warning(native_output_dir, warning)
         return
     command = [
         str(args.daaam_python),
@@ -705,11 +858,118 @@ def _run_daaam_postprocess(args: argparse.Namespace, native_output_dir: Path) ->
         "--data-dir",
         str(native_output_dir),
         "--sentence-model-name",
-        args.sentence_embedding_model,
+        str(args.sentence_embedding_model),
     ]
     print("postprocessing DAAAM DSG:")
     print(" ".join(command))
-    subprocess.run(command, cwd=args.daaam_root, env=_daaam_subprocess_env(args), check=True)
+    result = subprocess.run(
+        command,
+        cwd=args.daaam_root,
+        env=_daaam_subprocess_env(args),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode == 0:
+        return
+    combined = result.stdout + "\n" + result.stderr
+    if "KeyError: 'features'" in combined or "no DAAAM object embeddings found" in combined:
+        warning = (
+            "DAAAM postprocess failed because the DSG does not contain semantic "
+            "feature metadata yet. Continuing with the raw DSG; Track 1 can still "
+            "export objects, while Track 2 fixed API may be invalid."
+        )
+        print(f"warning: {warning}", file=sys.stderr)
+        _append_adapter_warning(native_output_dir, warning)
+        return
+    raise RuntimeError(
+        "DAAAM postprocess_scene_graph.py failed.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+
+
+def _collect_daaam_native_outputs(
+    args: argparse.Namespace,
+    native_output_dir: Path,
+    *,
+    run_started_at: float,
+) -> None:
+    """Normalize DAAAM's actual output layout into the adapter native dir.
+
+    DAAAM's runner can write Hydra DSG artifacts under ``hydra_output/`` and
+    DAAAM correction artifacts under a timestamped ``out_*`` directory. Keep the
+    original tree, but copy the files needed by postprocess/package to the
+    native root.
+    """
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    hydra_roots = [
+        native_output_dir / "hydra_output",
+        args.daaam_root / "output" / "hydra_output",
+    ]
+    for hydra_root in hydra_roots:
+        for relative in (
+            Path("backend/dsg.json"),
+            Path("backend/dsg_with_mesh.json"),
+            Path("frontend/dsg.json"),
+            Path("frontend/dsg_with_mesh.json"),
+            Path("backend/mesh.ply"),
+        ):
+            source = hydra_root / relative
+            if source.exists() and _is_from_current_run(source, run_started_at):
+                target = native_output_dir / "hydra_output" / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if source.resolve() != target.resolve():
+                    shutil.copy2(source, target)
+
+    dsg_candidates = [
+        native_output_dir / "hydra_output" / "backend" / "dsg.json",
+        args.daaam_root / "output" / "hydra_output" / "backend" / "dsg.json",
+    ]
+    for source in dsg_candidates:
+        if source.exists() and _is_from_current_run(source, run_started_at):
+            target = native_output_dir / "dsg.json"
+            if source.resolve() != target.resolve():
+                shutil.copy2(source, target)
+            break
+
+    timestamped_outputs = sorted(
+        list(native_output_dir.glob("out_*")) + list((args.daaam_root / "output").glob("out_*")),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    for run_dir in timestamped_outputs:
+        if not run_dir.is_dir() or not _is_from_current_run(run_dir, run_started_at):
+            continue
+        archive_target = native_output_dir / "daaam_output" / run_dir.name
+        if run_dir.resolve() != archive_target.resolve() and not archive_target.exists():
+            shutil.copytree(run_dir, archive_target)
+        for name in (
+            "dsg.json",
+            "adapter_corrected_dsg_status.json",
+            "corrections.yaml",
+            "object_positions.json",
+            "correction_stats.json",
+            "background_objects.yaml",
+            "keyframe_annotations.yaml",
+            "clip_features.pkl",
+            "pipeline_config.yaml",
+            "performance_statistics.csv",
+        ):
+            source = run_dir / name
+            target = native_output_dir / name
+            if source.exists() and (name == "dsg.json" or not target.exists()):
+                shutil.copy2(source, target)
+        if (native_output_dir / "corrections.yaml").exists():
+            break
+
+
+def _is_from_current_run(path: Path, run_started_at: float) -> bool:
+    # Allow a small clock/logging slack for files created at process startup.
+    return path.stat().st_mtime >= run_started_at - 5.0
 
 
 def _extract_daaam_memory(args: argparse.Namespace, *, dsg_path: Path, output_path: Path) -> dict[str, Any]:
@@ -717,11 +977,12 @@ def _extract_daaam_memory(args: argparse.Namespace, *, dsg_path: Path, output_pa
     payload = {
         "daaam_root": str(args.daaam_root),
         "dsg_path": str(dsg_path),
+        "native_dir": str(dsg_path.parent),
         "class_names": str(args.class_names),
         "build_track2_index": not args.skip_track2_index,
         "clip_model": args.clip_model,
         "clip_pretrained": args.clip_pretrained,
-        "sentence_embedding_model": args.sentence_embedding_model,
+        "sentence_embedding_model": str(args.sentence_embedding_model),
     }
     _write_json(input_path, payload)
     result = subprocess.run(
@@ -827,6 +1088,9 @@ def _canonical_label_for_object(
     normalized = normalize_label(raw_label, DEFAULT_LABEL_ALIASES)
     if normalized in class_labels:
         return normalized, "raw_exact_or_alias", None
+    keyword = _keyword_label_for_raw_label(normalized, class_labels)
+    if keyword is not None:
+        return keyword, "raw_keyword_or_alias", None
     if label_lookup_ready and object_id in object_embeddings:
         embedding = object_embeddings[object_id]
         if embedding.ndim == 1 and embedding.shape[0] == label_embeddings.shape[1]:
@@ -834,6 +1098,38 @@ def _canonical_label_for_object(
             index = int(np.argmax(scores))
             return class_labels[index], "daaam_semantic_projection", float(scores[index])
     return normalized or "object", "raw_unmapped", None
+
+
+def _keyword_label_for_raw_label(normalized_raw_label: str, class_labels: list[str]) -> str | None:
+    class_set = set(class_labels)
+    phrase_aliases = dict(DEFAULT_LABEL_ALIASES)
+    phrase_aliases.update(
+        {
+            "desk": "table",
+            "office chair": "chair",
+            "computer monitor": "monitor",
+            "flat screen monitor": "monitor",
+            "flat screen computer monitor": "monitor",
+            "light fixture": "lamp",
+            "fluorescent light fixture": "lamp",
+            "lampshade": "lamp",
+        }
+    )
+    for phrase, label in sorted(phrase_aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        if label in class_set and _contains_label_phrase(normalized_raw_label, phrase):
+            return label
+    for label in sorted(class_labels, key=len, reverse=True):
+        if _contains_label_phrase(normalized_raw_label, label):
+            return label
+    return None
+
+
+def _contains_label_phrase(text: str, phrase: str) -> bool:
+    normalized_phrase = normalize_label(phrase, {})
+    if not normalized_phrase:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(normalized_phrase) + r"(?![a-z0-9])"
+    return re.search(pattern, text) is not None
 
 
 def _write_track2_index(
@@ -846,12 +1142,15 @@ def _write_track2_index(
     track2 = extraction.get("track2_index") if isinstance(extraction.get("track2_index"), dict) else {}
     if track2.get("status") != "ok":
         reason = str(track2.get("reason") or "DAAAM semantic index was not built.")
-        return "invalid", reason
+        _write_track2_label_index(package_dir, objects, source_reason=reason)
+        return "supported", f"Using deterministic object_table label query; native DAAAM semantic index unavailable: {reason}"
     object_embeddings = track2.get("objects") or []
     label_embeddings = track2.get("label_embeddings") or []
     labels = track2.get("labels") or []
     if not object_embeddings or not label_embeddings or labels != class_labels:
-        return "invalid", "DAAAM semantic index is incomplete or not aligned with the shared class list."
+        reason = "DAAAM semantic index is incomplete or not aligned with the shared class list."
+        _write_track2_label_index(package_dir, objects, source_reason=reason)
+        return "supported", f"Using deterministic object_table label query; {reason}"
     object_by_id = {obj["object_id"]: obj for obj in objects}
     rows = []
     for item in object_embeddings:
@@ -867,7 +1166,9 @@ def _write_track2_index(
             }
         )
     if not rows:
-        return "invalid", "DAAAM semantic index contains no package object ids."
+        reason = "DAAAM semantic index contains no package object ids."
+        _write_track2_label_index(package_dir, objects, source_reason=reason)
+        return "supported", f"Using deterministic object_table label query; {reason}"
     _write_json(
         package_dir / "memory" / "track2_semantic_index.json",
         {
@@ -879,6 +1180,27 @@ def _write_track2_index(
         },
     )
     return "supported", ""
+
+
+def _write_track2_label_index(package_dir: Path, objects: list[dict[str, Any]], *, source_reason: str) -> None:
+    _write_json(
+        package_dir / "memory" / "track2_label_index.json",
+        {
+            "status": "ok",
+            "source": "deterministic canonical-label query over memory/object_table.jsonl",
+            "source_reason": source_reason,
+            "objects": [
+                {
+                    "object_id": obj.get("object_id"),
+                    "label": obj.get("label"),
+                    "raw_label": obj.get("raw_label"),
+                    "label_source": obj.get("label_source"),
+                    "position_3d": obj.get("position_3d"),
+                }
+                for obj in objects
+            ],
+        },
+    )
 
 
 def _write_tool_files(package_dir: Path, *, track2_supported: bool) -> None:
@@ -908,7 +1230,6 @@ def list_objects(package_dir: str, query: dict[str, Any]) -> dict[str, Any]:
         """from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 from typing import Any
@@ -918,25 +1239,47 @@ def query_object(package_dir: str, query: dict[str, Any]) -> dict[str, Any]:
     target_label = _normalize_label(
         query.get("target_label") or query.get("canonical_label") or query.get("object") or ""
     )
+    query_text = _normalize_label(query.get("query") or "")
     top_k = int(query.get("top_k") or 5)
-    package = Path(package_dir)
-    objects = _load_objects(package)
-    index = _load_index(package)
-    label_embeddings = {
-        _normalize_label(label): vector
-        for label, vector in zip(index["labels"], index["label_embeddings"])
-    }
-    target_embedding = label_embeddings.get(target_label)
-    if target_embedding is None:
-        return {"status": "ok", "predictions": []}
-    object_lookup = {obj["object_id"]: obj for obj in objects}
-    predictions = []
-    for item in index["objects"]:
-        obj = object_lookup.get(str(item["object_id"]))
-        if obj is None:
-            continue
-        score = _dot(item["embedding"], target_embedding)
-        predictions.append(
+    objects = _load_objects(Path(package_dir))
+    predictions = _rank_by_label(objects, target_label, query_text)[:top_k]
+    return {"status": "ok", "predictions": predictions}
+
+
+def _rank_by_label(
+    objects: list[dict[str, Any]],
+    target_label: str,
+    query_text: str,
+) -> list[dict[str, Any]]:
+    ranked = []
+    target_tokens = set(target_label.split())
+    query_tokens = set(query_text.split())
+    for obj in objects:
+        label = _normalize_label(obj.get("label") or "object")
+        raw_label = _normalize_label(obj.get("raw_label") or "")
+        label_tokens = set(label.split())
+        raw_tokens = set(raw_label.split())
+        if target_label and target_label == label:
+            score = 1.0
+        elif target_label and (target_label in label or label in target_label):
+            score = 0.9
+        elif target_label and target_label in raw_label:
+            score = 0.8
+        elif target_tokens and target_tokens & label_tokens:
+            score = 0.75
+        elif target_tokens and target_tokens & raw_tokens:
+            score = 0.6
+        elif query_text and query_text == label:
+            score = 0.55
+        elif query_text and (query_text in label or label in query_text or query_text in raw_label):
+            score = 0.45
+        elif query_tokens and (query_tokens & label_tokens or query_tokens & raw_tokens):
+            score = 0.35
+        else:
+            score = 0.05
+        provenance = obj.get("provenance") if isinstance(obj.get("provenance"), dict) else {}
+        score += min(float(provenance.get("position_observation_count") or 0) / 1000.0, 0.1)
+        ranked.append(
             {
                 "object_id": obj.get("object_id"),
                 "label": obj.get("label"),
@@ -947,8 +1290,8 @@ def query_object(package_dir: str, query: dict[str, Any]) -> dict[str, Any]:
                 "evidence": obj.get("evidence", []),
             }
         )
-    predictions.sort(key=lambda item: (-float(item["score"]), str(item.get("object_id"))))
-    return {"status": "ok", "predictions": predictions[:top_k]}
+    ranked.sort(key=lambda item: (-float(item["score"]), str(item.get("object_id"))))
+    return ranked
 
 
 def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
@@ -961,26 +1304,9 @@ def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _load_index(package_dir: Path) -> dict[str, Any]:
-    with (package_dir / "memory" / "track2_semantic_index.json").open("r", encoding="utf-8") as f:
-        value = json.load(f)
-    if value.get("status") != "ok":
-        raise ValueError("DAAAM Track2 semantic index is not ok")
-    return value
-
-
 def _normalize_label(value: Any) -> str:
     text = re.sub(r"[^a-z0-9]+", " ", str(value).lower())
     return re.sub(r"\\s+", " ", text).strip()
-
-
-def _dot(left: list[float], right: list[float]) -> float:
-    if len(left) != len(right):
-        return float("-inf")
-    score = sum(float(a) * float(b) for a, b in zip(left, right))
-    if not math.isfinite(score):
-        return float("-inf")
-    return score
 """,
         encoding="utf-8",
     )
@@ -1029,11 +1355,23 @@ Scene Graph object nodes. Units are meters in the DAAAM/Hydra world frame.
 
 Object id format: regular DSG objects use `daaam_object_<id>`. Background
 objects from the DAAAM BACKGROUND_OBJECTS layer use `daaam_background_<id>`.
+If DAAAM/Hydra emits no OBJECTS nodes, the adapter may export
+`daaam_track_<semantic_id>` rows from DAAAM's own `corrections.yaml` plus
+`object_positions.json` track observations.
 
 Label meaning: `raw_label` preserves the DAAAM DAM/VLM free-text object
 description. `label` is the canonical evaluator label: exact/alias mapping
 first, then DAAAM semantic embedding projection to the shared OV class list
 when a semantic index is available. `label_source` records which route was used.
+
+Relations: DAAAM/Hydra DSG relation edges are kept in `memory/native/dsg.json`
+for provenance, but the Track 1/2 fixed API object inventory does not expose
+relations yet.
+
+Confidence or score: DAAAM DAM corrections are free-text descriptions and do
+not always expose a calibrated detector confidence. Exported rows keep native
+score/confidence fields when present; otherwise confidence is null/omitted and
+provenance plus observation counts should be used for debugging only.
 
 Native artifact formats: native DSG artifacts are copied under
 `memory/native/`. The source DSG was `{dsg_path}`. `memory/object_table.jsonl`
@@ -1100,10 +1438,22 @@ def _write_manifest(
             "modules": {
                 **shared_modules_metadata(args),
                 "daaam_native": {
-                    "dam_model": "nvidia/DAM-3B",
-                    "sentence_embedding_model": args.sentence_embedding_model,
+                    "segmenter_mode": args.daaam_segmenter,
+                    "native_fastsam_model": str(_resolve_native_fastsam_model(args))
+                    if args.daaam_segmenter == "native_fastsam_trt"
+                    else None,
+                    "native_fastsam_config_path": str(
+                        _resolve_daaam_config_path(args.daaam_root, args.native_fastsam_config_path)
+                    )
+                    if args.daaam_segmenter == "native_fastsam_trt"
+                    else None,
+                    "dam_model": str(args.dam_model_path),
+                    "sentence_embedding_model": str(args.sentence_embedding_model),
                     "hydra_config_path": str(args.hydra_config_path) if args.hydra_config_path else None,
                     "sam_model_config_path": str(args.sam_model_config_path),
+                    "sam_checkpoint": str(args.sam_checkpoint)
+                    if args.daaam_segmenter == "shared_sam"
+                    else None,
                     "daaam_python": str(args.daaam_python),
                 },
             },
@@ -1134,7 +1484,20 @@ def _write_manifest(
                         "required_for": ["track2_object_location"],
                     }
                 ]
-                if track2_status == "supported"
+                if (package_dir / "memory" / "track2_semantic_index.json").exists()
+                else []
+            )
+            + (
+                [
+                    {
+                        "name": "track2_label_index",
+                        "type": "json",
+                        "path": "memory/track2_label_index.json",
+                        "description": "Deterministic canonical-label object index for Track 2.",
+                        "required_for": ["track2_object_location"],
+                    }
+                ]
+                if (package_dir / "memory" / "track2_label_index.json").exists()
                 else []
             ),
             "evidence_artifacts": [
@@ -1177,7 +1540,7 @@ def _write_manifest(
                         "name": "query_object",
                         "type": "python",
                         "path": "tools/query_object.py",
-                        "description": "Query DAAAM semantic index with a target label.",
+                        "description": "Query exported DAAAM object memory with a target label.",
                         "required_for": ["track2_object_location"],
                     }
                 ]
@@ -1231,7 +1594,7 @@ def _write_capabilities(package_dir: Path, *, track2_status: str, track2_reason:
                 "track2_object_location": {
                     "status": "supported" if track2_supported else "invalid",
                     "entrypoint": "tools/query_object.py:query_object" if track2_supported else None,
-                    "reason": "" if track2_supported else track2_reason,
+                    "reason": track2_reason if track2_reason else "",
                     "input_schema": "schemas/track2_input.schema.json" if track2_supported else None,
                     "output_schema": "schemas/object_query_result.schema.json" if track2_supported else None,
                 },
@@ -1298,14 +1661,27 @@ def _write_build_log(
             "shared_modules": shared_modules_metadata(args),
             "daaam_runtime": {
                 "daaam_root": str(args.daaam_root),
+                "segmenter_mode": args.daaam_segmenter,
                 "hydra_config_path": str(args.hydra_config_path) if args.hydra_config_path else None,
-                "sam_checkpoint": str(args.sam_checkpoint),
-                "sam_model_config_path": str(args.sam_model_config_path),
+                "sam_checkpoint": str(args.sam_checkpoint) if args.daaam_segmenter == "shared_sam" else None,
+                "sam_model_config_path": str(args.sam_model_config_path)
+                if args.daaam_segmenter == "shared_sam"
+                else None,
+                "native_fastsam_model": str(_resolve_native_fastsam_model(args))
+                if args.daaam_segmenter == "native_fastsam_trt"
+                else None,
+                "native_fastsam_config_path": str(
+                    _resolve_daaam_config_path(args.daaam_root, args.native_fastsam_config_path)
+                )
+                if args.daaam_segmenter == "native_fastsam_trt"
+                else None,
                 "clip_model": args.clip_model,
                 "clip_pretrained": args.clip_pretrained,
-                "sentence_embedding_model": args.sentence_embedding_model,
+                "dam_model_path": str(args.dam_model_path),
+                "sentence_embedding_model": str(args.sentence_embedding_model),
                 "frame_stride": args.frame_stride,
                 "max_frames": args.max_frames,
+                "target_fps": args.target_fps,
                 "with_reid": bool(args.with_reid),
                 "reid_weights": args.reid_weights,
                 "applied_native_overrides": _segmenter_config_overrides(args)
@@ -1338,6 +1714,18 @@ def _write_raw_links(
 
 
 def _find_dsg_path(native_output_dir: Path) -> Path:
+    corrected_candidates = sorted(
+        [
+            status_path.parent / "dsg.json"
+            for status_path in native_output_dir.rglob("adapter_corrected_dsg_status.json")
+        ],
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    for path in corrected_candidates:
+        if path.exists():
+            return path
+
     candidates = [
         native_output_dir / "dsg_updated.json",
         native_output_dir / "clustered_dsg.json",
@@ -1380,6 +1768,21 @@ def _find_dsg_path(native_output_dir: Path) -> Path:
         "- A DSG is required: Track 1 object inventory and the Track 2 "
         "semantic index are both exported from it."
     )
+
+
+def _find_native_artifact(native_output_dir: Path, name: str) -> Path:
+    direct = native_output_dir / name
+    if direct.exists():
+        return direct
+    candidates = sorted(
+        list(native_output_dir.glob(f"out_*/{name}"))
+        + list(native_output_dir.glob(f"daaam_output/out_*/{name}")),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
+    return direct
 
 
 def _format_missing_path_error(missing: list[dict[str, str]]) -> str:
@@ -1474,7 +1877,24 @@ def _daaam_subprocess_env(args: argparse.Namespace) -> dict[str, str]:
     env["PYTHONPATH"] = pythonpath
     if args.cuda_visible_devices is not None:
         env["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
+    openclip_cache = _openclip_hf_cache_dir(args)
+    if openclip_cache is not None:
+        env.setdefault("HF_HUB_CACHE", str(openclip_cache))
+        env.setdefault("HUGGINGFACE_HUB_CACHE", str(openclip_cache))
+        env.setdefault("HF_HUB_OFFLINE", "1")
+        env.setdefault("TRANSFORMERS_OFFLINE", "1")
     return env
+
+
+def _openclip_hf_cache_dir(args: argparse.Namespace) -> Path | None:
+    model = getattr(args, "clip_model", None)
+    pretrained = getattr(args, "clip_pretrained", None)
+    if not model or not pretrained:
+        return None
+    candidate = DEFAULT_SHARED_MODULES_ROOT / "openclip" / str(model) / str(pretrained) / "hf_cache"
+    if candidate.exists():
+        return candidate
+    return None
 
 
 def _reset_dir(path: Path) -> None:
@@ -1488,6 +1908,25 @@ def _write_json(path: Path, value: Any) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(value, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+def _append_adapter_warning(native_output_dir: Path, warning: str) -> None:
+    path = native_output_dir / ADAPTER_WARNINGS_NAME
+    warnings = _read_adapter_warnings(native_output_dir)
+    if warning not in warnings:
+        warnings.append(warning)
+    _write_json(path, warnings)
+
+
+def _read_adapter_warnings(native_output_dir: Path) -> list[str]:
+    path = native_output_dir / ADAPTER_WARNINGS_NAME
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as f:
+        value = json.load(f)
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1521,10 +1960,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 output_path = Path(sys.argv[2])
 daaam_root = Path(payload["daaam_root"])
+native_dir = Path(payload["native_dir"])
 sys.path.insert(0, str(daaam_root / "src"))
 
 warnings = []
@@ -1571,6 +2012,91 @@ def node_for_regular(objects_layer, object_id):
         except Exception:
             continue
     return None
+
+
+def load_yaml(path):
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        value = yaml.safe_load(f)
+    return value if isinstance(value, dict) else {}
+
+
+def position_from_observations(observations):
+    positions = []
+    for obs in observations or []:
+        value = obs.get("position_world") if isinstance(obs, dict) else None
+        if value is None:
+            continue
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        if arr.size == 3 and np.all(np.isfinite(arr)):
+            positions.append(arr)
+    if not positions:
+        return None
+    return np.mean(positions, axis=0).astype(float).tolist()
+
+
+def fallback_objects_from_corrections(native_dir, dsg_name):
+    corrections = load_yaml(native_dir / "corrections.yaml")
+    positions_by_semantic = {}
+    positions_path = native_dir / "object_positions.json"
+    if positions_path.exists():
+        try:
+            positions_by_semantic = json.loads(positions_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            warnings.append(f"could not read DAAAM object_positions.json: {type(exc).__name__}: {exc}")
+            positions_by_semantic = {}
+    labels = corrections.get("label_names") or []
+    if not labels:
+        return []
+    fallback = []
+    for label in labels:
+        if not isinstance(label, dict):
+            continue
+        semantic_id = label.get("label")
+        if semantic_id is None:
+            continue
+        try:
+            semantic_int = int(semantic_id)
+        except Exception:
+            continue
+        raw_label = str(label.get("name") or "object")
+        observations = positions_by_semantic.get(str(semantic_int), [])
+        position = position_from_observations(observations)
+        if position is None:
+            continue
+        temporal = label.get("temporal_history") if isinstance(label.get("temporal_history"), dict) else {}
+        fallback.append(
+            {
+                "object_id": f"daaam_track_{semantic_int}",
+                "native_id": semantic_int,
+                "raw_label": raw_label,
+                "position_3d": position,
+                "dimensions_3d": None,
+                "bbox_3d": None,
+                "semantic_label": semantic_int,
+                "is_background": True,
+                "first_observed": temporal.get("first_observed"),
+                "last_observed": temporal.get("last_observed"),
+                "observation_timestamps": temporal.get("timestamps") or [],
+                "dsg_name": dsg_name,
+                "provenance": {
+                    "layer": "DAAAM_CORRECTIONS_WITH_TRACK_POSITIONS",
+                    "native_id": semantic_int,
+                    "position_observation_count": len(observations),
+                },
+            }
+        )
+    if fallback:
+        warnings.append(
+            "DAAAM DSG had no native OBJECTS/BACKGROUND_OBJECTS; exported "
+            f"{len(fallback)} objects from corrections.yaml + object_positions.json."
+        )
+    elif positions_by_semantic:
+        warnings.append("DAAAM corrections existed but no correction labels matched saved object positions.")
+    else:
+        warnings.append("DAAAM DSG had no objects and no object_positions.json fallback was available.")
+    return fallback
 
 
 scene_graph = sdsg.DynamicSceneGraph.load(str(payload["dsg_path"]))
@@ -1633,6 +2159,9 @@ for object_id, bg in background_objects.items():
             "provenance": {"layer": "BACKGROUND_OBJECTS", "native_id": int(object_id)},
         }
     )
+
+if not objects:
+    objects = fallback_objects_from_corrections(native_dir, dsg_name)
 
 track2_index = {"status": "invalid", "reason": "Track2 semantic index was not requested."}
 if payload.get("build_track2_index"):

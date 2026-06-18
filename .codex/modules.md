@@ -77,7 +77,7 @@ before formal runs.
 |---|---|---|---|---|---|---|
 | SAM | segmentation / mask proposal | HOV-SG, DualMap, ConceptGraphs, DAAAM | `vit_h` if all methods can run it | target: `sam_vit_h_4b8939.pth` | missing | HOV-SG default config points to `checkpoints/sam_vit_h_4b8939.pth`, but it was not found locally/NAS common paths. |
 | SAM | segmentation / mask proposal | HOV-SG, DualMap, ConceptGraphs, DAAAM | fallback common version: `vit_b` | `/home/robin_wang/DualMap/sam_b.pt` | present | Historical HOV-SG run used `models.sam.type=vit_b` with this checkpoint. Use this as smoke fallback until `vit_h` is centralized. |
-| FastSAM | fast segmentation | DualMap optional, DAAAM optional | TBD | not centralized | unverified | Only use if SAM is too slow or method-native path requires it; record override. |
+| FastSAM | fast segmentation | DualMap optional, DAAAM native-fast route | DAAAM native target: `FastSAM-x-640x480.engine`; smoke/debug fallback: `FastSAM-s.pt` / `FastSAM-s-640x480.engine` | `/data/mondo-training-dataset/semantic_mapping/modules/fastsam/{x,s}/...` | shared target, artifacts may be missing | FastSAM belongs under shared modules, not external method repos. DAAAM native FastSAM/TensorRT is a recorded native-fast route/ablation; shared SAM route remains available for cross-method consistency. |
 | SAM2 | video/image segmentation | DAAAM optional | TBD | not centralized | unverified | Do not mix with SAM results unless explicitly running an ablation. |
 | OV prompt/evaluation label list | detector prompts / label normalization / evaluator split | HOV-SG, DualMap, ConceptGraphs, future detector-backed methods | shared detector-coverable prompt/eval list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | Used as the shared OV detector prompt/evaluation list and Track 1/2 detector-coverable split; check with `python scripts/package/sync_detector_class_list.py --check`. |
 | YOLO / Ultralytics | object detection | ClawS SpatialRAG, DualMap | YOLO11 if both can run | not centralized | unverified | ClawS references YOLO11/Ultralytics; DualMap uses YOLO/YOLO-World variants. Need exact checkpoint discovery. |
@@ -133,10 +133,11 @@ before formal runs.
   modules into DAAAM `run_pipeline.py` args and applies these native config
   overrides without editing the DAAAM repo:
   - `segmentation.imgsz=` (cleared): DAAAM ships `imgsz: [480,640]` for a FastSAM
-    TensorRT engine, but the shared route uses a `sam_vit` checkpoint;
+    TensorRT engine, but the shared SAM route uses a `sam_vit` checkpoint;
     `UniversalSegmenter` would otherwise inject an unsupported `fastsam_imgsz`
-    kwarg into `SamAutomaticMaskGenerator`. Use `--keep-segmenter-imgsz` only for
-    a genuine FastSAM engine run.
+    kwarg into `SamAutomaticMaskGenerator`. The explicit
+    `--daaam-segmenter native_fastsam_trt` route keeps `imgsz` and reads the
+    FastSAM engine from shared modules.
   - `tracking.with_reid=false` (default): the native ReID weights
     `checkpoints/reid_weights/clip_general.engine` are a machine-specific
     TensorRT artifact and are usually absent. Pass `--with-reid` with a real

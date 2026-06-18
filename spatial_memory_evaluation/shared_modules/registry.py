@@ -129,6 +129,12 @@ class SharedModuleRegistry:
         if openclip is not None:
             settings["clip_model"] = openclip.model_name
             settings["clip_pretrained"] = openclip.pretrained
+        dam = by_kind.get("dam")
+        if dam is not None:
+            settings["dam_model_path"] = dam.checkpoint or dam.model_name
+        sentence_embedding = by_kind.get("sentence_embedding")
+        if sentence_embedding is not None:
+            settings["sentence_embedding_model"] = sentence_embedding.checkpoint or sentence_embedding.model_name
         return settings
 
     def _build_modules(self) -> dict[str, ModuleSpec]:
@@ -193,15 +199,45 @@ class SharedModuleRegistry:
                     "download or symlink it before formal runs."
                 ),
             ),
-            "fastsam.s": ModuleSpec(
-                key="fastsam.s",
+            "fastsam.s_pt": ModuleSpec(
+                key="fastsam.s_pt",
                 kind="fastsam",
                 name="FastSAM",
-                role="optional fast segmentation supplement",
+                role="smoke optional fast segmentation checkpoint",
                 version="FastSAM-s",
-                status="unverified",
-                checkpoint=Path("/home/robin_wang/DualMap/model/FastSAM-s.pt"),
-                notes="Optional only; not required for current Track 1/2 main runs.",
+                status="nas_snapshot",
+                checkpoint=self.root / "fastsam" / "s" / "FastSAM-s.pt",
+                notes=(
+                    "Optional only; not required for current Track 1/2 main runs. "
+                    "Keep the .pt under shared_modules before exporting TensorRT engines."
+                ),
+            ),
+            "fastsam.x_trt_640x480": ModuleSpec(
+                key="fastsam.x_trt_640x480",
+                kind="fastsam",
+                name="FastSAM TensorRT",
+                role="DAAAM-native realtime segmentation engine",
+                version="FastSAM-x-640x480.engine",
+                status="nas_snapshot",
+                checkpoint=self.root / "fastsam" / "x" / "FastSAM-x-640x480.engine",
+                notes=(
+                    "DAAAM native-fast route target. Export from FastSAM-x.pt on the target "
+                    "GPU/TensorRT stack and store under shared_modules; the adapter passes the "
+                    "absolute engine path to DAAAM without editing the DAAAM repo."
+                ),
+            ),
+            "fastsam.s_trt_640x480": ModuleSpec(
+                key="fastsam.s_trt_640x480",
+                kind="fastsam",
+                name="FastSAM TensorRT",
+                role="DAAAM-native realtime segmentation smoke fallback",
+                version="FastSAM-s-640x480.engine",
+                status="nas_snapshot",
+                checkpoint=self.root / "fastsam" / "s" / "FastSAM-s-640x480.engine",
+                notes=(
+                    "Smaller optional TensorRT engine for DAAAM smoke/debug runs. Record it as "
+                    "a native-fast ablation if used instead of the formal FastSAM-x engine."
+                ),
             ),
             "openclip.vit_b_32": ModuleSpec(
                 key="openclip.vit_b_32",
@@ -209,10 +245,24 @@ class SharedModuleRegistry:
                 name="OpenCLIP",
                 role="smoke shared visual-language feature encoder",
                 version="ViT-B-32/laion2b_s34b_b79k",
-                status="package_resolved",
+                status="nas_snapshot",
+                checkpoint=(
+                    self.root
+                    / "openclip"
+                    / "ViT-B-32"
+                    / "laion2b_s34b_b79k"
+                    / "hf_cache"
+                    / "models--laion--CLIP-ViT-B-32-laion2B-s34B-b79K"
+                    / "snapshots"
+                    / "1a25a446712ba5ee05982a381eed697ef9b435cf"
+                    / "open_clip_model.safetensors"
+                ),
                 model_name="ViT-B-32",
                 pretrained="laion2b_s34b_b79k",
-                notes="Resolved through open_clip; no local checkpoint path is recorded.",
+                notes=(
+                    "Resolved through open_clip using the NAS HuggingFace cache under "
+                    "shared_modules/openclip/ViT-B-32/laion2b_s34b_b79k/hf_cache."
+                ),
             ),
             "openclip.vit_h_14": ModuleSpec(
                 key="openclip.vit_h_14",
@@ -231,9 +281,10 @@ class SharedModuleRegistry:
                 name="Describe Anything Model",
                 role="DAAAM-native object grounding / free-text description model",
                 version="nvidia/DAM-3B",
-                status="package_resolved",
+                status="nas_snapshot",
+                checkpoint=self.root / "dam" / "nvidia_DAM-3B",
                 model_name="nvidia/DAM-3B",
-                notes="Loaded by DAAAM grounding workers through the DAM package.",
+                notes="Loaded by DAAAM grounding workers through the DAM package; use NAS snapshot for reproducible runs.",
             ),
             "daaam.sentence_t5_large": ModuleSpec(
                 key="daaam.sentence_t5_large",
@@ -241,9 +292,10 @@ class SharedModuleRegistry:
                 name="SentenceTransformers",
                 role="DAAAM-native text embedding for scene-understanding tools",
                 version="sentence-transformers/sentence-t5-large",
-                status="package_resolved",
+                status="nas_snapshot",
+                checkpoint=self.root / "embeddings" / "sentence-transformers_sentence-t5-large",
                 model_name="sentence-transformers/sentence-t5-large",
-                notes="Used for DAAAM deterministic scene-graph semantic tools.",
+                notes="Used for DAAAM deterministic scene-graph semantic tools; use NAS snapshot for reproducible runs.",
             ),
             "daaam.hydra_spark_dsg": ModuleSpec(
                 key="daaam.hydra_spark_dsg",
@@ -278,7 +330,7 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("yolo_world.v8s", True),
             ("sam.vit_b", True),
             ("openclip.vit_b_32", True),
-            ("fastsam.s", False),
+            ("fastsam.s_pt", False),
         ],
         "conceptgraphs": [
             ("detector_class_list.canonical", True),
@@ -289,6 +341,7 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
         "daaam": [
             ("detector_class_list.canonical", True),
             ("sam.vit_b", True),
+            ("fastsam.x_trt_640x480", False),
             ("openclip.vit_b_32", True),
             ("daaam.dam_3b", True),
             ("daaam.sentence_t5_large", True),
@@ -307,7 +360,7 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("yolo_world.v8l", True),
             ("sam.vit_h", True),
             ("openclip.vit_h_14", True),
-            ("fastsam.s", False),
+            ("fastsam.s_pt", False),
         ],
         "conceptgraphs": [
             ("detector_class_list.canonical", True),
@@ -318,6 +371,7 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
         "daaam": [
             ("detector_class_list.canonical", True),
             ("sam.vit_h", True),
+            ("fastsam.x_trt_640x480", False),
             ("openclip.vit_h_14", True),
             ("daaam.dam_3b", True),
             ("daaam.sentence_t5_large", True),

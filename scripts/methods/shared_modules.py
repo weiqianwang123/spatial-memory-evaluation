@@ -46,6 +46,14 @@ def apply_daaam_shared_modules(args: argparse.Namespace) -> None:
     settings = get_shared_module_registry().method_settings("daaam", args.shared_module_profile)
     _set_path(args, "class_names", settings["class_names"], "OV prompt/evaluation label list")
     _set_path(args, "sam_checkpoint", settings["sam_checkpoint"], "SAM checkpoint")
+    _set_path(args, "native_fastsam_model", settings.get("fastsam_checkpoint"), "FastSAM checkpoint/engine")
+    _set_path(args, "dam_model_path", settings["dam_model_path"], "DAAAM DAM checkpoint/model snapshot")
+    _set_path(
+        args,
+        "sentence_embedding_model",
+        settings["sentence_embedding_model"],
+        "DAAAM sentence embedding model snapshot",
+    )
     _set_value(args, "sam_type", settings["sam_type"], "SAM type")
     _set_value(args, "clip_model", settings["clip_model"], "OpenCLIP model")
     _set_value(args, "clip_pretrained", settings["clip_pretrained"], "OpenCLIP pretrained tag")
