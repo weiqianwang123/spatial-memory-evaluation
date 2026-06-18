@@ -24,6 +24,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("package_dir", nargs="?", type=Path, default=None)
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--mode",
+        choices=("fixed_api", "agentic_memory_only", "agentic_full_access"),
+        default="fixed_api",
+        help="Evaluation mode for both Track 1 and Track 2.",
+    )
+    parser.add_argument(
+        "--agent-command",
+        default=None,
+        help=(
+            "Command template for agentic modes. Available placeholders: "
+            "{prompt_path}, {sandbox_dir}, {output_path}."
+        ),
+    )
+    parser.add_argument(
+        "--track1-agent-output",
+        type=Path,
+        default=None,
+        help="Precomputed Track 1 agent JSON output; bypasses --agent-command for Track 1.",
+    )
+    parser.add_argument(
+        "--track2-agent-output",
+        type=Path,
+        default=None,
+        help="Precomputed Track 2 agent JSON output; bypasses --agent-command for Track 2.",
+    )
+    parser.add_argument(
+        "--sandbox-root",
+        type=Path,
+        default=None,
+        help="Root directory for agent sandboxes. Track-specific subdirs are created under it.",
+    )
+    parser.add_argument(
+        "--agent-extra-path",
+        action="append",
+        type=Path,
+        default=None,
+        help="Optional file/directory to copy into the agent sandbox; repeatable.",
+    )
+    parser.add_argument(
+        "--no-agent-include-source-code",
+        action="store_false",
+        dest="agent_include_source_code",
+        default=True,
+        help="Do not copy DAAAM adapter/shared code or the DAAAM root repo into full-access sandboxes.",
+    )
     return parser.parse_args()
 
 
@@ -63,20 +109,31 @@ def main(args: argparse.Namespace) -> int:
     track1_summary = evaluate_track1(
         package_dir=package_dir,
         benchmark_dir=benchmark_track1,
-        mode="fixed_api",
+        mode=args.mode,
         output=track1_output,
+        agent_command=args.agent_command,
+        agent_output=args.track1_agent_output,
+        sandbox_root=_track_sandbox_root(args.sandbox_root, "track1"),
+        agent_extra_paths=args.agent_extra_path or [],
+        agent_include_source_code=args.agent_include_source_code,
     )
     track2_summary = evaluate_track2(
         package_dir=package_dir,
         benchmark_dir=benchmark_track2,
         track1_benchmark_dir=benchmark_track1,
-        mode="fixed_api",
+        mode=args.mode,
         output=track2_output,
+        agent_command=args.agent_command,
+        agent_output=args.track2_agent_output,
+        sandbox_root=_track_sandbox_root(args.sandbox_root, "track2"),
+        agent_extra_paths=args.agent_extra_path or [],
+        agent_include_source_code=args.agent_include_source_code,
     )
 
     result = {
         "status": "ok",
         "package_dir": str(package_dir),
+        "mode": args.mode,
         "validation": report.to_json(),
         "track1": _result_paths(track1_output, track1_summary),
         "track2": _result_paths(track2_output, track2_summary),
@@ -103,6 +160,12 @@ def _latest_package(scene_id: str) -> Path:
     if not candidates:
         raise FileNotFoundError(f"no DAAAM packages found under {root}")
     return candidates[-1]
+
+
+def _track_sandbox_root(sandbox_root: Path | None, track: str) -> Path | None:
+    if sandbox_root is None:
+        return None
+    return sandbox_root / track
 
 
 if __name__ == "__main__":

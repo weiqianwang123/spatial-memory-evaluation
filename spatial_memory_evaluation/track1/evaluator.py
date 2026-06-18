@@ -192,12 +192,59 @@ def _run_agentic(
 
 
 def _load_agent_objects(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
-        value = json.load(f)
+    text = path.read_text(encoding="utf-8")
+    value = _load_agent_json_value(text, path)
+    if isinstance(value, dict) and "objects" not in value and isinstance(value.get("result"), str):
+        value = _load_agent_json_value(value["result"], path)
     objects = value.get("objects") if isinstance(value, dict) else None
     if not isinstance(objects, list):
         return {"status": "error", "message": f"agent output missing objects list: {path}"}
     return {"status": "ok", "objects": objects}
+
+
+def _load_agent_json_value(text: str, path: Path) -> Any:
+    stripped = text.strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+    for candidate in _json_object_candidates(stripped):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    preview = stripped[:300].replace("\n", "\\n")
+    raise ValueError(f"could not parse agent JSON output from {path}; preview={preview!r}")
+
+
+def _json_object_candidates(text: str) -> list[str]:
+    candidates = []
+    start = None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                candidates.append(text[start : index + 1])
+                start = None
+    return candidates
 
 
 def _track1_prompt(package_dir: Path, context_paths: list[Path]) -> str:
@@ -232,6 +279,14 @@ Forbidden resources/actions:
 - Do not modify the copied package as your answer source. Temporary scripts and
   scratch files in the sandbox are fine.
 - Do not hard-code answers for specific query ids or scenes.
+
+Memory artifact priority:
+- Inspect manifest.json, schema.md, and build_log.json before choosing artifacts.
+- If the package contains `memory/object_table.jsonl`, treat it as the primary
+  Track 1 object inventory unless schema.md explicitly says otherwise.
+- If the package also contains debug/evidence tables such as
+  `memory/background_object_table.jsonl`, use them only as supporting evidence
+  unless schema.md says they are part of the Track 1 fixed object universe.
 
 Output requirements:
 - Return only raw JSON. The first character must be `{{` and the last character

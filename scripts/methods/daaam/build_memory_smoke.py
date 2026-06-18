@@ -596,11 +596,28 @@ def export_minimal_package(
         output_path=package_dir / "memory" / "native" / "daaam_extraction.json",
     )
     class_labels = read_detector_class_list(args.class_names)
-    objects, canonicalization_warnings = _canonicalize_objects(extraction, class_labels)
-    if not objects:
-        raise ValueError(f"DAAAM DSG exported no objects: {dsg_path}")
+    objects, canonicalization_warnings = _canonicalize_objects(
+        extraction,
+        class_labels,
+        source_key="objects",
+        source_artifact="memory/object_table.jsonl",
+        evidence_note="Merged object exported from DAAAM/Hydra OBJECTS layer.",
+    )
+    background_objects, background_warnings = _canonicalize_objects(
+        extraction,
+        class_labels,
+        source_key="background_objects",
+        source_artifact="memory/background_object_table.jsonl",
+        evidence_note=(
+            "Filtered/background object exported from DAAAM BACKGROUND_OBJECTS layer; "
+            "kept for debug and agentic evidence, not Track 1/2 fixed API."
+        ),
+    )
+    if not objects and not background_objects:
+        raise ValueError(f"DAAAM DSG exported no objects or background objects: {dsg_path}")
 
     _write_jsonl(package_dir / "memory" / "object_table.jsonl", objects)
+    _write_jsonl(package_dir / "memory" / "background_object_table.jsonl", background_objects)
     _write_jsonl(
         package_dir / "evidence" / "object_sources.jsonl",
         [
@@ -613,7 +630,7 @@ def export_minimal_package(
                 "source_artifacts": obj.get("source_artifacts", []),
                 "provenance": obj.get("provenance"),
             }
-            for obj in objects
+            for obj in [*objects, *background_objects]
         ],
     )
 
@@ -637,10 +654,16 @@ def export_minimal_package(
         layout_dir=layout_dir,
         layout_summary=layout_summary,
         track2_status=track2_status,
+        background_object_count=len(background_objects),
     )
     _write_capabilities(package_dir, track2_status=track2_status, track2_reason=track2_reason)
     _write_raw_links(package_dir, args=args, native_output_dir=native_output_dir, layout_dir=layout_dir, dsg_path=dsg_path)
-    warnings = _read_adapter_warnings(native_output_dir) + list(extraction.get("warnings") or []) + canonicalization_warnings
+    warnings = (
+        _read_adapter_warnings(native_output_dir)
+        + list(extraction.get("warnings") or [])
+        + canonicalization_warnings
+        + background_warnings
+    )
     _write_build_log(
         package_dir=package_dir,
         args=args,
@@ -648,6 +671,7 @@ def export_minimal_package(
         native_output_dir=native_output_dir,
         native_artifacts=native_artifacts,
         object_count=len(objects),
+        background_object_count=len(background_objects),
         layout_summary=layout_summary,
         track2_status=track2_status,
         warnings=warnings,
@@ -662,6 +686,7 @@ def export_minimal_package(
         "native_output_dir": str(native_output_dir),
         "native_dsg_path": str(dsg_path),
         "object_count": len(objects),
+        "background_object_count": len(background_objects),
         "track2_fixed_api": track2_status,
         "track2_reason": track2_reason,
         "validation": report.to_json(),
@@ -1011,11 +1036,15 @@ def _extract_daaam_memory(args: argparse.Namespace, *, dsg_path: Path, output_pa
 def _canonicalize_objects(
     extraction: dict[str, Any],
     class_labels: list[str],
+    *,
+    source_key: str,
+    source_artifact: str,
+    evidence_note: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     import numpy as np
 
     warnings: list[str] = []
-    raw_objects = extraction.get("objects") or []
+    raw_objects = extraction.get(source_key) or []
     track2 = extraction.get("track2_index") if isinstance(extraction.get("track2_index"), dict) else {}
     object_embeddings = {
         str(item.get("object_id")): np.asarray(item.get("embedding"), dtype=np.float32)
@@ -1060,13 +1089,13 @@ def _canonicalize_objects(
                 "first_observed": raw.get("first_observed"),
                 "last_observed": raw.get("last_observed"),
                 "observation_timestamps": raw.get("observation_timestamps") or [],
-                "source_artifacts": ["memory/object_table.jsonl", "memory/native/" + str(raw.get("dsg_name") or "dsg.json")],
+                "source_artifacts": [source_artifact, "memory/native/" + str(raw.get("dsg_name") or "dsg.json")],
                 "provenance": raw.get("provenance"),
                 "evidence": [
                     {
                         "source_type": "daaam_dsg_node",
                         "source_path": "evidence/object_sources.jsonl",
-                        "notes": "Object exported from DAAAM Dynamic Scene Graph.",
+                        "notes": evidence_note,
                     }
                 ],
             }
@@ -1353,11 +1382,19 @@ def _write_schema_md(package_dir: Path, *, dsg_path: Path, track2_status: str, t
 Coordinate frame and units: object positions come from DAAAM/Hydra Dynamic
 Scene Graph object nodes. Units are meters in the DAAAM/Hydra world frame.
 
-Object id format: regular DSG objects use `daaam_object_<id>`. Background
-objects from the DAAAM BACKGROUND_OBJECTS layer use `daaam_background_<id>`.
-If DAAAM/Hydra emits no OBJECTS nodes, the adapter may export
-`daaam_track_<semantic_id>` rows from DAAAM's own `corrections.yaml` plus
-`object_positions.json` track observations.
+Object id format: merged DSG objects use `daaam_object_<id>` and are written to
+`memory/object_table.jsonl`. DAAAM BACKGROUND_OBJECTS use
+`daaam_background_<id>` and are written separately to
+`memory/background_object_table.jsonl`.
+
+Track 1/2 fixed API reads only `memory/object_table.jsonl`, which represents
+the native merged DAAAM/Hydra OBJECTS layer. BACKGROUND_OBJECTS are retained for
+debugging, provenance, and agentic full-access evaluation, but they are not part
+of the default fixed-API object universe.
+
+Timestamp fields: rows may include `first_observed`, `last_observed`, and
+`observation_timestamps` copied from DAAAM/Hydra temporal metadata. These times
+are seconds in the prepared RGB-D sequence timeline.
 
 Label meaning: `raw_label` preserves the DAAAM DAM/VLM free-text object
 description. `label` is the canonical evaluator label: exact/alias mapping
@@ -1375,8 +1412,9 @@ provenance plus observation counts should be used for debugging only.
 
 Native artifact formats: native DSG artifacts are copied under
 `memory/native/`. The source DSG was `{dsg_path}`. `memory/object_table.jsonl`
-is the canonical Track 1 object inventory. `evidence/object_sources.jsonl`
-maps package object ids back to DAAAM node provenance.
+is the canonical Track 1/2 object inventory. `memory/background_object_table.jsonl`
+contains DAAAM filtered/background objects for debug/evidence. `evidence/object_sources.jsonl`
+maps both tables back to DAAAM node provenance.
 
 Track 2 fixed API: {track2_status}. {track2_reason or "The package includes a deterministic DAAAM semantic index exported from native scene-understanding embeddings."}
 
@@ -1397,6 +1435,7 @@ def _write_manifest(
     dsg_path: Path,
     native_dsg_path: Path,
     object_count: int,
+    background_object_count: int,
     layout_dir: Path | None,
     layout_summary: dict[str, Any],
     track2_status: str,
@@ -1463,8 +1502,21 @@ def _write_manifest(
                     "name": "object_table",
                     "type": "jsonl",
                     "path": "memory/object_table.jsonl",
-                    "description": f"Canonical DAAAM DSG object inventory with {object_count} objects.",
+                    "description": (
+                        f"Canonical DAAAM/Hydra merged OBJECTS inventory with {object_count} objects. "
+                        "This is the Track 1/2 fixed-API object universe."
+                    ),
                     "required_for": ["track1_memory_construction", "track2_object_location"],
+                },
+                {
+                    "name": "background_object_table",
+                    "type": "jsonl",
+                    "path": "memory/background_object_table.jsonl",
+                    "description": (
+                        f"DAAAM BACKGROUND_OBJECTS/debug inventory with {background_object_count} objects. "
+                        "Not used by Track 1/2 fixed API."
+                    ),
+                    "required_for": [],
                 },
                 {
                     "name": "native_dsg",
@@ -1636,6 +1688,7 @@ def _write_build_log(
     native_output_dir: Path,
     native_artifacts: list[Path],
     object_count: int,
+    background_object_count: int,
     layout_summary: dict[str, Any],
     track2_status: str,
     warnings: list[str],
@@ -1657,6 +1710,7 @@ def _write_build_log(
             "environment": str(args.daaam_python),
             "source_outputs": [str(native_output_dir)],
             "object_count": object_count,
+            "background_object_count": background_object_count,
             "track2_fixed_api": track2_status,
             "shared_modules": shared_modules_metadata(args),
             "daaam_runtime": {
@@ -2105,6 +2159,7 @@ regular_objects = retrieve_objects_from_scene_graph(scene_graph)
 objects_layer = scene_graph.get_layer(DsgLayers.OBJECTS)
 
 objects = []
+background_object_rows = []
 for object_id, object_data in regular_objects.items():
     info = object_data.object_info
     node = node_for_regular(objects_layer, object_id)
@@ -2142,7 +2197,7 @@ except Exception as exc:
 
 for object_id, bg in background_objects.items():
     position = as_list(bg.position)
-    objects.append(
+    background_object_rows.append(
         {
             "object_id": f"daaam_background_{object_id}",
             "native_id": int(object_id),
@@ -2160,7 +2215,7 @@ for object_id, bg in background_objects.items():
         }
     )
 
-if not objects:
+if not objects and not background_object_rows:
     objects = fallback_objects_from_corrections(native_dir, dsg_name)
 
 track2_index = {"status": "invalid", "reason": "Track2 semantic index was not requested."}
@@ -2235,7 +2290,12 @@ if payload.get("build_track2_index"):
         }
         warnings.append(track2_index["reason"])
 
-output = {"objects": objects, "track2_index": track2_index, "warnings": warnings}
+output = {
+    "objects": objects,
+    "background_objects": background_object_rows,
+    "track2_index": track2_index,
+    "warnings": warnings,
+}
 output_path.parent.mkdir(parents=True, exist_ok=True)
 output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
 '''

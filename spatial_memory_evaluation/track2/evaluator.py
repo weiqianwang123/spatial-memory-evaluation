@@ -420,6 +420,11 @@ Forbidden resources/actions:
 
 How to solve:
 - Inspect the manifest/schema/build log first to learn what artifacts exist.
+- If the package contains `memory/object_table.jsonl`, treat it as the primary
+  Track 2 object universe unless schema.md explicitly says otherwise.
+- If the package also contains debug/evidence tables such as
+  `memory/background_object_table.jsonl`, use them only as supporting evidence
+  unless schema.md says they are part of the Track 2 query object universe.
 - Read the memory artifacts directly, or use/package/adapt method code to parse
   native maps, scene graphs, databases, feature files, or object tables.
 - You may create a temporary query interface that exact-matches or otherwise
