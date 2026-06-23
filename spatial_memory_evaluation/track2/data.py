@@ -11,7 +11,7 @@ Target benchmark layout:
 ```text
 benchmarks/track2/scanrefer/<scannet-split>/
   referring_queries.jsonl   # one row per ScanRefer utterance
-  scene_objects.jsonl       # GT instance boxes per scene (for IoU / center scoring)
+  scene_objects.jsonl       # GT instance boxes per scene (for distance / center scoring)
   metadata.json
 ```
 
@@ -107,14 +107,25 @@ def build_track2_data(
     scene_id: str | None = None,
     top_k: int = 10,
     max_queries: int | None = None,
+    resolve_bbox: bool = True,
+    scannet_scans_root: Path | None = None,
 ) -> dict[str, Any]:
     """Build the Track 2 referring benchmark from a ScanRefer/ScanEnts3D JSON.
 
     Each query row carries the referring ``utterance`` plus GT
     ``target_object_id`` / ``target_object_name`` and, when present (ScanEnts3D),
-    the ``anchor_object_names`` parsed from ``entities``. There is no 3D bbox in
-    the json, so Track 2 scores referring at the target object-name level; if a
-    future split provides ``bbox`` the evaluator can also score IoU.
+    the ``anchor_object_names`` parsed from ``entities``.
+
+    The json has no 3D bbox, but ScanEnts3D ``object_id`` is a ScanNet instance
+    id whose box is derivable from the scan geometry. When ``resolve_bbox`` is
+    set and the scene's ScanNet files are present, each row also gets a corner
+    ``target_bbox_3d`` (``[xmin,ymin,zmin,xmax,ymax,zmax]``, unaligned mesh frame
+    to match ``.sens`` poses) and a ``scene_objects.jsonl`` of all instance boxes
+    is written. This activates the evaluator's distance-based localization
+    scoring (``acc@0.25m`` / ``acc@0.5m`` and ``mean_center_distance_m``); rows
+    fall back to name-level scoring when geometry is unavailable.
+    ``target_bbox_3d`` is GT and is never forwarded into the tool-LLM sandbox
+    (the evaluator only passes utterance/scene_id/top_k to the agent).
     """
 
     rows = read_jsonl_or_json(scanrefer_json)
@@ -125,32 +136,77 @@ def build_track2_data(
     if not rows:
         raise ValueError(f"no referring rows found (scene_id={scene_id}) in {scanrefer_json}")
 
+    # Resolve instance bboxes per scene (cached), tolerating missing geometry.
+    bboxes_by_scene: dict[str, dict[int, list[float]]] = {}
+    bbox_unavailable: dict[str, str] = {}
+    if resolve_bbox:
+        from spatial_memory_evaluation.track2.scannet_bbox import (
+            ScanNetSceneNotFound,
+            resolve_scene_bboxes,
+        )
+
+        for sid in sorted({str(r.get("scene_id")) for r in rows}):
+            try:
+                bboxes_by_scene[sid] = resolve_scene_bboxes(
+                    sid, scans_root=scannet_scans_root
+                )
+            except (ScanNetSceneNotFound, OSError, ValueError) as exc:
+                bbox_unavailable[sid] = f"{type(exc).__name__}: {exc}"
+
     output_dir.mkdir(parents=True, exist_ok=True)
     queries = []
+    bbox_hits = 0
     for index, r in enumerate(rows):
         sid = str(r.get("scene_id"))
         target_id = str(r.get("object_id"))
-        queries.append(
-            {
-                "query_id": f"{sid}_{target_id}_{r.get('ann_id')}_{index:04d}",
-                "dataset": "scanents3d",
-                "scene_id": sid,
-                "utterance": r.get("description"),
-                "target_object_id": target_id,
-                "target_object_name": _normalize_object_name(r.get("object_name")),
-                "anchor_object_names": _anchor_object_names(r.get("entities"), target_id),
-                "top_k": top_k,
-            }
-        )
+        row: dict[str, Any] = {
+            "query_id": f"{sid}_{target_id}_{r.get('ann_id')}_{index:04d}",
+            "dataset": "scanents3d",
+            "scene_id": sid,
+            "utterance": r.get("description"),
+            "target_object_id": target_id,
+            "target_object_name": _normalize_object_name(r.get("object_name")),
+            "anchor_object_names": _anchor_object_names(r.get("entities"), target_id),
+            "top_k": top_k,
+        }
+        scene_bboxes = bboxes_by_scene.get(sid)
+        if scene_bboxes is not None:
+            bbox = scene_bboxes.get(int(target_id)) if target_id.lstrip("-").isdigit() else None
+            if bbox is not None:
+                row["target_bbox_3d"] = bbox
+                bbox_hits += 1
+        queries.append(row)
+
     from spatial_memory_evaluation.common.jsonl import write_jsonl
 
     write_jsonl(output_dir / REFERRING_QUERIES_FILE, queries)
+
+    # All instance boxes per scene (GT centers for distance-based scoring).
+    if bboxes_by_scene:
+        scene_objects = [
+            {
+                "scene_id": sid,
+                "object_id": str(object_id),
+                "bbox_3d": bbox,
+            }
+            for sid, boxes in bboxes_by_scene.items()
+            for object_id, bbox in sorted(boxes.items())
+        ]
+        write_jsonl(output_dir / SCENE_OBJECTS_FILE, scene_objects)
+
+    scoring = (
+        "object_name + distance-to-center (target_bbox_3d resolved from ScanNet instance geometry)"
+        if bbox_hits
+        else "object_name (ScanNet geometry unavailable; no 3D bbox resolved)"
+    )
     summary = {
         "status": "ok",
         "track": "track2_scanrefer",
         "scene_id": scene_id,
         "query_count": len(queries),
-        "scoring": "object_name (ScanEnts3D references instance ids, no 3D bbox in json)",
+        "bbox_resolved_count": bbox_hits,
+        "bbox_unavailable_scenes": bbox_unavailable or None,
+        "scoring": scoring,
         "source": str(scanrefer_json),
         "output_dir": str(output_dir),
     }

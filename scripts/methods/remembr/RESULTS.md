@@ -52,37 +52,51 @@ is its public superset and is used instead. The val json
 (`ScanRefer_filtered_val_ScanEnts3D.json`, on NAS at
 `semantic_mapping/scanents3d/`) has GT target `object_id`/`object_name`, the
 referring `description`, and an `entities` array grounding every phrase to ScanNet
-instance ids (target + anchors). Objects are referenced by ScanNet instance id
-(no 3D bbox in the json), so a caption-memory method like ReMEmbR is scored at the
-**target object-name level** (does the resolved object's label match the GT
-`object_name`); the IoU path stays available for any future bbox-bearing split.
+instance ids (target + anchors). The json has no 3D bbox, but `object_id` is a
+ScanNet instance id whose **3D box is derivable from the scan geometry**
+(`track2/scannet_bbox.py`: aggregation `objectId`->segments -> segs.json
+seg->verts -> `_vh_clean_2.ply` verts -> axis-aligned min/max; verified bit-exact
+against ScanRefer's `load_scannet_data.py`). The benchmark builder resolves each
+target's GT bbox into `target_bbox_3d`, so Track 2 reports both **target
+object-name accuracy** and **distance-based localization** (`acc@0.25m` /
+`acc@0.5m` = top-1 predicted position within X m of the GT object center, plus
+`mean_center_distance_m`). Distance, not IoU, is used: caption-memory methods
+emit a viewpoint position, not an instance bbox.
 
 - Scene: `scene0207_00` (28 distinct object types, 169 val referring queries) -
   chosen for object diversity so name-level referring is non-trivial. Frames
   extracted from NAS `.sens` to `semantic_mapping/scanents3d_frames/scene0207_00`.
+  GT bboxes resolved from the 4 ScanNet annotation files for the scene on NAS
+  (`scannet/scans/scene0207_00/`: `.aggregation.json`,
+  `_vh_clean_2.0.010000.segs.json`, `_vh_clean_2.ply`, `.txt`).
 - Memory: 24 Claude-captioned frames,
   `memories/remembr/scanents3d/scene0207_00/remembr-track2-scene0207_00`.
 - Benchmark: `scripts/build_track2_data.py --scene-id scene0207_00` ->
-  `benchmarks/track2/scanents3d/scene0207_00/referring_queries.jsonl`.
+  `benchmarks/track2/scanents3d/scene0207_00/{referring_queries.jsonl,scene_objects.jsonl}`
+  (all 169 queries get `target_bbox_3d`).
 - Eval: `--mode tool_llm` over a 15-query subset spanning distinct object types
   (window, bathtub, cabinet, toilet, door, mirror, desk, monitor, ...). The LLM
   calls `retrieve_from_text` over the captions and returns referring predictions.
 - Result (15-query subset): **referring_acc@1 = 0.87** (13/15; missed only
-  `bathtub` and `rack`, which the captions did not name). Mean latency ~126 s/query
-  (multi-step tool loops). Caveat: this is **target object-name level** accuracy -
-  it measures whether the resolved object's class matches the GT `object_name`, not
-  whether the correct *instance* was localized. Caption memory has no per-instance
-  3D output, so it cannot disambiguate among same-class instances; a stronger,
-  instance/bbox-level metric would require GT bboxes (resolvable from ScanNet
-  instance annotations via the ScanEnts3D instance ids) and a method that emits
-  instance predictions. See `results/remembr/track2-tool_llm/remembr-track2-scene0207_00/`.
+  `bathtub` and `rack`, which the captions did not name), **acc@0.25m = acc@0.5m
+  = 0.0**, **mean_center_distance_m = 2.20 m**. Mean latency ~126 s/query
+  (multi-step tool loops). Reading: name-level referring is strong, but
+  localization is far off — caption memory emits the *robot viewpoint* position
+  ("where the robot stood when it saw X"), ~2.2 m from the object itself, and has
+  no per-instance 3D output, so it cannot disambiguate same-class instances or
+  hit a sub-meter distance threshold. This is the expected weakness of
+  non-geometric caption memory; the distance metric (and the resolved GT bboxes)
+  become discriminative for instance-emitting object-memory methods
+  (ConceptGraphs/DAAAM) later. See
+  `results/remembr/track2-tool_llm/remembr-track2-scene0207_00/`.
 
 ### Reproduce (Track 2)
 
 ```bash
 # extract a ScanEnts3D val scene's frames from NAS .sens (24 sampled frames)
 #   -> data/scanents3d_layouts/scene0207_00/{color,pose}
-python scripts/build_track2_data.py --scene-id scene0207_00      # build referring benchmark
+# build referring benchmark (resolves GT target_bbox_3d from ScanNet geometry on NAS)
+python scripts/build_track2_data.py --scene-id scene0207_00
 python scripts/methods/remembr/build_memory_package.py \
   --layout-dir data/scanents3d_layouts/scene0207_00 \
   --dataset scanents3d --scene-id scene0207_00 --captioner claude --max-frames 24 \
@@ -92,6 +106,12 @@ python scripts/evaluate_track2.py "$PKG" --mode tool_llm \
   --benchmark-dir benchmarks/track2/scanents3d/scene0207_00 \
   --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}' \
   --output "$(pwd)/results/remembr/track2-tool_llm/remembr-track2-scene0207_00/eval_summary.json"
+
+# (optional) re-score a prior run's persisted predictions against the GT bboxes
+# without re-invoking the LLM (deterministic; adds acc@0.25m/acc@0.5m + distance):
+python scripts/methods/remembr/rescore_track2_distance.py \
+  --results-dir results/remembr/track2-tool_llm/remembr-track2-scene0207_00 \
+  --benchmark-dir benchmarks/track2/scanents3d/scene0207_00
 ```
 
 ## Track 3 — OpenEQA General QA (ScanNet scene0709_00)

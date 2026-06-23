@@ -42,6 +42,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Default: benchmarks/track2/scanents3d/<scene-id or all>",
     )
+    parser.add_argument(
+        "--scannet-scans-root",
+        type=Path,
+        default=None,
+        help="ScanNet scans/ root for instance->bbox resolution (default: NAS).",
+    )
+    parser.add_argument(
+        "--no-resolve-bbox",
+        action="store_true",
+        help="Skip ScanNet instance->bbox resolution (name-level scoring only).",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +71,8 @@ def main() -> int:
         scene_id=args.scene_id,
         top_k=args.top_k,
         max_queries=args.max_queries,
+        resolve_bbox=not args.no_resolve_bbox,
+        scannet_scans_root=args.scannet_scans_root,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
