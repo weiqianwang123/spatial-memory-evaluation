@@ -162,6 +162,11 @@ def run_llm_command(
     prompt_path: Path,
     output_path: Path,
 ) -> None:
+    # Resolve to absolute paths: the command runs with cwd=sandbox_dir, so a
+    # repo-relative {prompt_path}/{output_path} would break (e.g. `cat` would not
+    # find the prompt). Absolute paths work regardless of cwd.
+    prompt_path = prompt_path.resolve()
+    output_path = output_path.resolve()
     command = llm_command
     for key, value in {
         "prompt_path": prompt_path,

@@ -5,10 +5,12 @@ against the exported memory. Supports ``fixed_api`` (package declares a native
 ``resolve_referring_expression`` entrypoint) and ``tool_llm`` (per-query LLM +
 method-native referring/retrieval tools).
 
-Status: skeleton. The control flow, capability gating, invalid/data_unavailable
-results, and IoU/center scoring helpers are implemented; the harness emits a
-``data_unavailable`` result until the ScanRefer benchmark is built (see
-``track2/data.py``).
+Scoring: target object-name accuracy (``referring_acc@1/@5``) plus distance-based
+localization accuracy (``acc@0.25m`` / ``acc@0.5m`` — top-1 predicted 3D position
+within X meters of the GT object center) and ``mean_center_distance_m``. Distance,
+not IoU, is used because caption-memory methods emit a viewpoint position rather
+than an instance bbox. The harness emits a ``data_unavailable`` result until the
+referring benchmark is built (see ``track2/data.py``).
 """
 
 from __future__ import annotations
@@ -40,7 +42,11 @@ from .data import REFERRING_QUERIES_FILE, SCENE_OBJECTS_FILE, track2_data_status
 
 TRACK_KEY = "track2_scanrefer"
 K_VALUES = (1, 5)
-IOU_THRESHOLDS = (0.25, 0.5)
+# Localization accuracy thresholds in METERS: a top-1 prediction counts as a hit
+# if its 3D position is within the threshold of the GT object center. ReMEmbR
+# (and other caption-memory methods) emit a viewpoint position, not an instance
+# bbox, so distance — not IoU — is the meaningful localization metric here.
+DISTANCE_THRESHOLDS_M = (0.25, 0.5)
 
 
 def evaluate_track2(
@@ -135,8 +141,10 @@ def _finalize(
 def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "query_count",
-        "acc@0.25",
-        "acc@0.5",
+        "referring_acc@1",
+        "referring_acc@5",
+        "acc@0.25m",
+        "acc@0.5m",
         "mean_center_distance_m",
         "mean_query_latency_ms",
     )
@@ -249,7 +257,7 @@ def _run_tool_llm(
 
 
 def _scene_objects_by_id(benchmark_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
-    """Map scene_id -> {object_id -> object record} for IoU/center scoring."""
+    """Map scene_id -> {object_id -> object record} for distance/center scoring."""
 
     scene_objects_path = benchmark_dir / SCENE_OBJECTS_FILE
     by_scene: dict[str, dict[str, dict[str, Any]]] = {}
@@ -269,31 +277,52 @@ def _score(
     predictions_by_query: dict[str, list[dict[str, Any]]],
     latency_seconds_by_query: dict[str, float],
 ) -> dict[str, Any]:
-    iou_hits = {threshold: 0 for threshold in IOU_THRESHOLDS}
+    distance_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     center_distances: list[float] = []
+    name_hits_top1 = 0
+    name_hits_topk = 0
+    name_scored = 0
+    distance_scored = 0
     per_query = []
 
     for query in queries:
         query_id = str(query["query_id"])
         target_bbox = query.get("target_bbox_3d")
+        target_name = query.get("target_object_name")
         predictions = predictions_by_query.get(query_id, [])
         top1 = predictions[0] if predictions else None
-        best_iou = 0.0
+
+        # Name-level referring accuracy (ScanEnts3D has no 3D bbox): does the
+        # resolved object's label match the GT target object_name?
+        name_top1 = None
+        name_topk = None
+        if isinstance(target_name, str) and target_name.strip():
+            name_scored += 1
+            name_top1 = bool(top1 is not None and _name_match(top1.get("label"), target_name))
+            name_topk = any(_name_match(p.get("label"), target_name) for p in predictions)
+            if name_top1:
+                name_hits_top1 += 1
+            if name_topk:
+                name_hits_topk += 1
+
+        # Distance-based localization accuracy: the top-1 prediction's 3D
+        # position vs the GT object-bbox center. A query is "distance-scored"
+        # only when both a GT bbox and a usable predicted position exist.
         center_distance = None
-        if top1 is not None and isinstance(target_bbox, list):
-            pred_bbox = top1.get("bbox_3d")
-            if isinstance(pred_bbox, list):
-                best_iou = _bbox_iou_3d(pred_bbox, target_bbox)
-            center_distance = _center_distance(top1, target_bbox)
-        for threshold in IOU_THRESHOLDS:
-            if best_iou >= threshold:
-                iou_hits[threshold] += 1
-        if center_distance is not None:
-            center_distances.append(center_distance)
+        if isinstance(target_bbox, list):
+            center_distance = _center_distance(top1, target_bbox) if top1 is not None else None
+            if center_distance is not None:
+                distance_scored += 1
+                center_distances.append(center_distance)
+                for threshold in DISTANCE_THRESHOLDS_M:
+                    if center_distance <= threshold:
+                        distance_hits[threshold] += 1
         per_query.append(
             {
                 "query_id": query_id,
-                "top1_iou": best_iou,
+                "target_object_name": target_name,
+                "name_match_top1": name_top1,
+                "name_match_topk": name_topk,
                 "center_distance_m": center_distance,
                 "latency_ms": latency_seconds_by_query.get(query_id, 0.0) * 1000.0,
             }
@@ -302,11 +331,27 @@ def _score(
     latencies = [latency_seconds_by_query.get(str(q["query_id"]), 0.0) for q in queries]
     return {
         "query_count": len(queries),
-        **{f"acc@{threshold}": safe_div(iou_hits[threshold], len(queries)) for threshold in IOU_THRESHOLDS},
+        "referring_acc@1": safe_div(name_hits_top1, name_scored) if name_scored else None,
+        "referring_acc@5": safe_div(name_hits_topk, name_scored) if name_scored else None,
+        "name_scored_count": name_scored,
+        **{
+            f"acc@{threshold}m": (safe_div(distance_hits[threshold], distance_scored) if distance_scored else None)
+            for threshold in DISTANCE_THRESHOLDS_M
+        },
+        "distance_scored_count": distance_scored,
         "mean_center_distance_m": mean(center_distances),
         "mean_query_latency_ms": (mean(latencies) or 0.0) * 1000.0,
         "per_query": per_query,
     }
+
+
+def _name_match(predicted_label: Any, target_name: str) -> bool:
+    pred = str(predicted_label or "").strip().lower().replace("_", " ")
+    target = str(target_name or "").strip().lower().replace("_", " ")
+    if not pred or not target:
+        return False
+    # match if either name contains the other (handles "office chair" vs "chair")
+    return target in pred or pred in target
 
 
 def _center_distance(prediction: dict[str, Any], target_bbox: list[float]) -> float | None:
@@ -331,29 +376,3 @@ def _bbox_center(bbox: Any) -> list[float] | None:
         ]
     except (TypeError, ValueError):
         return None
-
-
-def _bbox_iou_3d(a: list[float], b: list[float]) -> float:
-    if not (isinstance(a, list) and isinstance(b, list) and len(a) == 6 and len(b) == 6):
-        return 0.0
-    try:
-        a = [float(x) for x in a]
-        b = [float(x) for x in b]
-    except (TypeError, ValueError):
-        return 0.0
-    inter = 1.0
-    for axis in range(3):
-        lo = max(a[axis], b[axis])
-        hi = min(a[axis + 3], b[axis + 3])
-        overlap = max(0.0, hi - lo)
-        inter *= overlap
-    if inter <= 0.0:
-        return 0.0
-    vol_a = _bbox_volume(a)
-    vol_b = _bbox_volume(b)
-    union = vol_a + vol_b - inter
-    return inter / union if union > 0 else 0.0
-
-
-def _bbox_volume(bbox: list[float]) -> float:
-    return max(0.0, bbox[3] - bbox[0]) * max(0.0, bbox[4] - bbox[1]) * max(0.0, bbox[5] - bbox[2])

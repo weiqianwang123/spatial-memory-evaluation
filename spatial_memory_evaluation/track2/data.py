@@ -11,7 +11,7 @@ Target benchmark layout:
 ```text
 benchmarks/track2/scanrefer/<scannet-split>/
   referring_queries.jsonl   # one row per ScanRefer utterance
-  scene_objects.jsonl       # GT instance boxes per scene (for IoU / center scoring)
+  scene_objects.jsonl       # GT instance boxes per scene (for distance / center scoring)
   metadata.json
 ```
 
@@ -85,27 +85,172 @@ def track2_data_status(benchmark_dir: Path) -> dict[str, Any]:
     }
 
 
+# Track 2 referring data. The primary public source is ScanEnts3D
+# (https://scanents3d.github.io/), a superset of ScanRefer whose val split has GT
+# target object_id + object_name and an `entities` array grounding every phrase to
+# ScanNet instance ids (target + anchors). Fields used: scene_id, object_id,
+# object_name, ann_id, description, entities. ScanEnts3D references objects by
+# ScanNet instance id (no bbox in the json), so a caption-memory method like
+# ReMEmbR is scored at the target object-name level (does the resolved object match
+# the GT object_name); anchor object names are kept for analysis. The older public
+# ScanRefer test json has the same shared fields but no entities.
+DEFAULT_SCANENTS3D_VAL_JSON = Path(
+    "/data/mondo-training-dataset/semantic_mapping/scanents3d/ScanRefer_filtered_val_ScanEnts3D.json"
+)
+DEFAULT_SCANREFER_JSON = DEFAULT_SCANENTS3D_VAL_JSON
+
+
 def build_track2_data(
     *,
-    scanrefer_root: Path,
-    scannet_root: Path,
+    scanrefer_json: Path,
     output_dir: Path,
+    scene_id: str | None = None,
     top_k: int = 10,
+    max_queries: int | None = None,
+    resolve_bbox: bool = True,
+    scannet_scans_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Build the ScanRefer referring-query benchmark.
+    """Build the Track 2 referring benchmark from a ScanRefer/ScanEnts3D JSON.
 
-    SKELETON: the parsing of ScanRefer JSON into ``referring_queries.jsonl`` and
-    of ScanNet instance boxes into ``scene_objects.jsonl`` is not implemented
-    until the dataset is on NAS. The function documents the intended inputs and
-    fails loudly rather than producing an empty benchmark.
+    Each query row carries the referring ``utterance`` plus GT
+    ``target_object_id`` / ``target_object_name`` and, when present (ScanEnts3D),
+    the ``anchor_object_names`` parsed from ``entities``.
+
+    The json has no 3D bbox, but ScanEnts3D ``object_id`` is a ScanNet instance
+    id whose box is derivable from the scan geometry. When ``resolve_bbox`` is
+    set and the scene's ScanNet files are present, each row also gets a corner
+    ``target_bbox_3d`` (``[xmin,ymin,zmin,xmax,ymax,zmax]``, unaligned mesh frame
+    to match ``.sens`` poses) and a ``scene_objects.jsonl`` of all instance boxes
+    is written. This activates the evaluator's distance-based localization
+    scoring (``acc@0.25m`` / ``acc@0.5m`` and ``mean_center_distance_m``); rows
+    fall back to name-level scoring when geometry is unavailable.
+    ``target_bbox_3d`` is GT and is never forwarded into the tool-LLM sandbox
+    (the evaluator only passes utterance/scene_id/top_k to the agent).
     """
 
-    raise NotImplementedError(
-        "build_track2_data is a skeleton. Implement ScanRefer parsing once the "
-        f"dataset is available. Expected ScanRefer root={scanrefer_root}, "
-        f"ScanNet root={scannet_root}, output={output_dir}, top_k={top_k}. "
-        "See .codex/agentic_eval_plan.md Phase 2 and .codex/path_registry.md."
+    rows = read_jsonl_or_json(scanrefer_json)
+    if scene_id is not None:
+        rows = [r for r in rows if str(r.get("scene_id")) == scene_id]
+    if max_queries is not None:
+        rows = rows[:max_queries]
+    if not rows:
+        raise ValueError(f"no referring rows found (scene_id={scene_id}) in {scanrefer_json}")
+
+    # Resolve instance bboxes per scene (cached), tolerating missing geometry.
+    bboxes_by_scene: dict[str, dict[int, list[float]]] = {}
+    bbox_unavailable: dict[str, str] = {}
+    if resolve_bbox:
+        from spatial_memory_evaluation.track2.scannet_bbox import (
+            ScanNetSceneNotFound,
+            resolve_scene_bboxes,
+        )
+
+        for sid in sorted({str(r.get("scene_id")) for r in rows}):
+            try:
+                bboxes_by_scene[sid] = resolve_scene_bboxes(
+                    sid, scans_root=scannet_scans_root
+                )
+            except (ScanNetSceneNotFound, OSError, ValueError) as exc:
+                bbox_unavailable[sid] = f"{type(exc).__name__}: {exc}"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    queries = []
+    bbox_hits = 0
+    for index, r in enumerate(rows):
+        sid = str(r.get("scene_id"))
+        target_id = str(r.get("object_id"))
+        row: dict[str, Any] = {
+            "query_id": f"{sid}_{target_id}_{r.get('ann_id')}_{index:04d}",
+            "dataset": "scanents3d",
+            "scene_id": sid,
+            "utterance": r.get("description"),
+            "target_object_id": target_id,
+            "target_object_name": _normalize_object_name(r.get("object_name")),
+            "anchor_object_names": _anchor_object_names(r.get("entities"), target_id),
+            "top_k": top_k,
+        }
+        scene_bboxes = bboxes_by_scene.get(sid)
+        if scene_bboxes is not None:
+            bbox = scene_bboxes.get(int(target_id)) if target_id.lstrip("-").isdigit() else None
+            if bbox is not None:
+                row["target_bbox_3d"] = bbox
+                bbox_hits += 1
+        queries.append(row)
+
+    from spatial_memory_evaluation.common.jsonl import write_jsonl
+
+    write_jsonl(output_dir / REFERRING_QUERIES_FILE, queries)
+
+    # All instance boxes per scene (GT centers for distance-based scoring).
+    if bboxes_by_scene:
+        scene_objects = [
+            {
+                "scene_id": sid,
+                "object_id": str(object_id),
+                "bbox_3d": bbox,
+            }
+            for sid, boxes in bboxes_by_scene.items()
+            for object_id, bbox in sorted(boxes.items())
+        ]
+        write_jsonl(output_dir / SCENE_OBJECTS_FILE, scene_objects)
+
+    scoring = (
+        "object_name + distance-to-center (target_bbox_3d resolved from ScanNet instance geometry)"
+        if bbox_hits
+        else "object_name (ScanNet geometry unavailable; no 3D bbox resolved)"
     )
+    summary = {
+        "status": "ok",
+        "track": "track2_scanrefer",
+        "scene_id": scene_id,
+        "query_count": len(queries),
+        "bbox_resolved_count": bbox_hits,
+        "bbox_unavailable_scenes": bbox_unavailable or None,
+        "scoring": scoring,
+        "source": str(scanrefer_json),
+        "output_dir": str(output_dir),
+    }
+    write_json(output_dir / "metadata.json", summary)
+    return summary
+
+
+def _anchor_object_names(entities: Any, target_id: str) -> list[str]:
+    """Extract anchor object names from a ScanEnts3D ``entities`` array.
+
+    Each entity is ``[[token_idxs], ["<id>_<label>", ...]]``. Anchors are the
+    referenced objects other than the target id.
+    """
+
+    names: list[str] = []
+    if not isinstance(entities, list):
+        return names
+    for entity in entities:
+        if not (isinstance(entity, list) and len(entity) == 2 and isinstance(entity[1], list)):
+            continue
+        for ref in entity[1]:
+            if not isinstance(ref, str) or "_" not in ref:
+                continue
+            obj_id, _, label = ref.partition("_")
+            if obj_id == target_id:
+                continue
+            name = _normalize_object_name(label)
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def read_jsonl_or_json(path: Path) -> list[dict[str, Any]]:
+    import json
+
+    text = Path(path).read_text(encoding="utf-8")
+    data = json.loads(text)
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    raise ValueError(f"expected a JSON list in {path}")
+
+
+def _normalize_object_name(name: Any) -> str:
+    return str(name or "").strip().lower().replace("_", " ")
 
 
 def write_unavailable_metadata(output_dir: Path, *, scanrefer_root: Path | None = None) -> dict[str, Any]:
