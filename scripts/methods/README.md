@@ -121,3 +121,19 @@ DAAAM dependency policy:
 - If preflight reports missing `spark_dsg` or `daaam`, fix the conda/env first.
   If it reports a missing checkpoint path, place or symlink that artifact under
   `/data/mondo-training-dataset/semantic_mapping/modules/`.
+
+Current ReMEmbR entrypoint:
+
+```bash
+python scripts/methods/remembr/build_invalid_declaration.py
+python scripts/methods/remembr/build_invalid_declaration.py --run-id 20260617-000000
+```
+
+ReMEmbR is a caption/spatio-temporal memory with no object inventory and no
+object-location read path, so its Track 1/2/3 fixed APIs are `invalid` by design
+and Track 4 is served only through the agentic `ReMEmbRAgent.query` path. The
+script writes a validated, declaration-only memory package (no native memory
+artifacts) under the gitignored `memories/remembr/<dataset>/<episode>/<run-id>/`.
+Because declaration packages are still generated artifacts, the package is
+produced on demand rather than committed; see `.codex/baseline_registry.md`
+(ReMEmbR section) for the root-repo evidence behind the decision.
