@@ -18,6 +18,7 @@ def run_tool_llm_query(
     llm_command: str,
     work_dir: Path,
     max_tool_iterations: int = 3,
+    response_kind: str = "predictions",
 ) -> dict[str, Any]:
     """Run one query through an LLM + method-native tool loop.
 
@@ -25,6 +26,11 @@ def run_tool_llm_query(
     sandbox may mount the original method source so declared native tools can
     run, while the LLM only sees the current query, method/package metadata,
     declared tool schemas, sandbox file summary, and prior observations.
+
+    ``response_kind`` selects the final-answer contract:
+    - ``"predictions"`` (Track 1/2): the LLM returns ``final.predictions``.
+    - ``"answer"`` (Track 3 OpenEQA QA): the LLM returns ``final.answer`` plus
+      optional ``final.evidence``.
     """
 
     executor = NativeToolExecutor(package_dir, manifest)
@@ -67,6 +73,7 @@ def run_tool_llm_query(
                 observations=observations,
                 sandbox_context=sandbox_context,
                 max_tool_iterations=max_tool_iterations,
+                response_kind=response_kind,
             ),
             encoding="utf-8",
         )
@@ -87,8 +94,17 @@ def run_tool_llm_query(
             }
         )
 
-        final = _extract_final(value)
+        final = _extract_final(value, response_kind=response_kind)
         if final is not None:
+            if response_kind == "answer":
+                evidence = final.get("evidence")
+                return {
+                    "status": "ok",
+                    "answer": str(final.get("answer") or ""),
+                    "evidence": evidence if isinstance(evidence, list) else [],
+                    "latency_seconds": time.perf_counter() - started,
+                    "trace": trace,
+                }
             predictions = final.get("predictions")
             if not isinstance(predictions, list):
                 predictions = []
@@ -103,8 +119,9 @@ def run_tool_llm_query(
         if tool_call is None:
             return {
                 "status": "error",
-                "message": "LLM output must contain either tool_call or final.predictions",
+                "message": f"LLM output must contain either tool_call or final.{response_kind}",
                 "predictions": [],
+                "answer": "",
                 "latency_seconds": time.perf_counter() - started,
                 "trace": trace,
             }
@@ -113,6 +130,7 @@ def run_tool_llm_query(
                 "status": "error",
                 "message": "LLM requested another tool after max_tool_iterations",
                 "predictions": [],
+                "answer": "",
                 "latency_seconds": time.perf_counter() - started,
                 "trace": trace,
             }
@@ -134,6 +152,7 @@ def run_tool_llm_query(
         "status": "error",
         "message": "tool-LLM loop ended without a final answer",
         "predictions": [],
+        "answer": "",
         "latency_seconds": time.perf_counter() - started,
         "trace": trace,
         "last_llm_output": last_value,
@@ -148,6 +167,7 @@ def _render_prompt(
     observations: list[dict[str, Any]],
     sandbox_context: Mapping[str, Any],
     max_tool_iterations: int,
+    response_kind: str = "predictions",
 ) -> str:
     method_meta = manifest.get("method") if isinstance(manifest.get("method"), Mapping) else {}
     dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), Mapping) else {}
@@ -157,14 +177,55 @@ def _render_prompt(
         "explicit_memory": manifest.get("explicit_memory"),
         "memory_format": manifest.get("memory_format"),
     }
-    query_payload = {
-        "query_id": query.get("query_id"),
-        "query": query.get("query"),
-        "target_label": query.get("target_label") or query.get("canonical_label"),
-        "canonical_label": query.get("canonical_label"),
-        "top_k": query.get("top_k"),
-    }
-    return f"""You are answering one spatial-memory retrieval query.
+    if response_kind == "answer":
+        query_payload = {
+            "query_id": query.get("query_id"),
+            "question": query.get("question") or query.get("query"),
+            "episode_id": query.get("episode_id"),
+        }
+        task_line = "You are answering one open-ended spatial question about a scene."
+        final_rules = (
+            "- Retrieve relevant caption/memory context, then answer the question.\n"
+            "- The answer must be a short, direct phrase (a few words), like OpenEQA.\n"
+            "- Cite the memory you used as evidence."
+        )
+        final_format = """{
+  "final": {
+    "answer": "a short direct answer",
+    "evidence": []
+  }
+}"""
+    else:
+        query_payload = {
+            "query_id": query.get("query_id"),
+            "query": query.get("query") or query.get("utterance"),
+            "target_label": query.get("target_label") or query.get("canonical_label"),
+            "canonical_label": query.get("canonical_label"),
+            "utterance": query.get("utterance"),
+            "top_k": query.get("top_k"),
+        }
+        task_line = "You are answering one spatial-memory retrieval query."
+        final_rules = (
+            "- Prefer the provided target_label/canonical_label when choosing retrieval terms.\n"
+            "- Return up to top_k predictions.\n"
+            "- A prediction should include label/raw_label, object_id if available,\n"
+            "  position_3d or bbox_3d if available, score, and evidence."
+        )
+        final_format = """{
+  "final": {
+    "predictions": [
+      {
+        "object_id": "string-or-null",
+        "label": "canonical-or-raw-label",
+        "position_3d": [0.0, 0.0, 0.0],
+        "bbox_3d": null,
+        "score": 0.0,
+        "evidence": []
+      }
+    ]
+  }
+}"""
+    return f"""{task_line}
 
 This is not a coding-agent task. You cannot run shell commands, inspect source
 code to create new adapters, or access benchmark ground truth. You may only
@@ -196,10 +257,7 @@ Rules:
 - If you are running in an agent runtime that can inspect files, use only the
   listed sandbox files for understanding tool inputs/outputs. Do not create a
   new query interface or adapter.
-- Prefer the provided target_label/canonical_label when choosing retrieval terms.
-- Return up to top_k predictions.
-- A prediction should include label/raw_label, object_id if available,
-  position_3d or bbox_3d if available, score, and evidence.
+{final_rules}
 - You may make at most {max_tool_iterations} tool calls before final answer.
 
 Return exactly one raw JSON object and no Markdown.
@@ -213,20 +271,7 @@ To call a tool:
 }}
 
 To finish:
-{{
-  "final": {{
-    "predictions": [
-      {{
-        "object_id": "string-or-null",
-        "label": "canonical-or-raw-label",
-        "position_3d": [0.0, 0.0, 0.0],
-        "bbox_3d": null,
-        "score": 0.0,
-        "evidence": []
-      }}
-    ]
-  }}
-}}
+{final_format}
 """
 
 
@@ -294,13 +339,16 @@ def _symlink_once(source: Path, destination: Path) -> Path:
     return destination
 
 
-def _extract_final(value: Any) -> Mapping[str, Any] | None:
+def _extract_final(value: Any, *, response_kind: str = "predictions") -> Mapping[str, Any] | None:
     if not isinstance(value, Mapping):
         return None
     final = value.get("final")
     if isinstance(final, Mapping):
         return final
-    if "predictions" in value:
+    # Allow a bare top-level final object (no "final" wrapper).
+    if response_kind == "answer" and "answer" in value:
+        return value
+    if response_kind != "answer" and "predictions" in value:
         return value
     return None
 

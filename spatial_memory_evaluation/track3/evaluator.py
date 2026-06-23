@@ -232,6 +232,7 @@ def _run_tool_llm(
                 llm_command=llm_command,
                 work_dir=work_dir,
                 max_tool_iterations=max_tool_iterations,
+                response_kind="answer",
             )
         except Exception as exc:
             query_result = {
