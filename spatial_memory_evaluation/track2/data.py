@@ -85,12 +85,19 @@ def track2_data_status(benchmark_dir: Path) -> dict[str, Any]:
     }
 
 
-# ScanRefer benchmark/test annotations (public): scene_id, object_id,
-# object_name, ann_id, description. No 3D bbox -> referring is scored at the
-# target object-name level (does the resolved object match the GT object_name).
-DEFAULT_SCANREFER_JSON = Path(
-    "/data/mondo-training-dataset/semantic_mapping/scanrefer/ScanRefer_filtered_test.json"
+# Track 2 referring data. The primary public source is ScanEnts3D
+# (https://scanents3d.github.io/), a superset of ScanRefer whose val split has GT
+# target object_id + object_name and an `entities` array grounding every phrase to
+# ScanNet instance ids (target + anchors). Fields used: scene_id, object_id,
+# object_name, ann_id, description, entities. ScanEnts3D references objects by
+# ScanNet instance id (no bbox in the json), so a caption-memory method like
+# ReMEmbR is scored at the target object-name level (does the resolved object match
+# the GT object_name); anchor object names are kept for analysis. The older public
+# ScanRefer test json has the same shared fields but no entities.
+DEFAULT_SCANENTS3D_VAL_JSON = Path(
+    "/data/mondo-training-dataset/semantic_mapping/scanents3d/ScanRefer_filtered_val_ScanEnts3D.json"
 )
+DEFAULT_SCANREFER_JSON = DEFAULT_SCANENTS3D_VAL_JSON
 
 
 def build_track2_data(
@@ -101,12 +108,13 @@ def build_track2_data(
     top_k: int = 10,
     max_queries: int | None = None,
 ) -> dict[str, Any]:
-    """Build the ScanRefer referring-query benchmark from the ScanRefer JSON.
+    """Build the Track 2 referring benchmark from a ScanRefer/ScanEnts3D JSON.
 
-    Each query row carries the referring ``utterance`` plus the GT
-    ``target_object_id`` / ``target_object_name``. The benchmark/test split has no
-    3D bbox, so Track 2 scores referring at the target object-name level; if a
-    later split provides ``bbox`` the evaluator can also score IoU.
+    Each query row carries the referring ``utterance`` plus GT
+    ``target_object_id`` / ``target_object_name`` and, when present (ScanEnts3D),
+    the ``anchor_object_names`` parsed from ``entities``. There is no 3D bbox in
+    the json, so Track 2 scores referring at the target object-name level; if a
+    future split provides ``bbox`` the evaluator can also score IoU.
     """
 
     rows = read_jsonl_or_json(scanrefer_json)
@@ -115,20 +123,22 @@ def build_track2_data(
     if max_queries is not None:
         rows = rows[:max_queries]
     if not rows:
-        raise ValueError(f"no ScanRefer rows found (scene_id={scene_id}) in {scanrefer_json}")
+        raise ValueError(f"no referring rows found (scene_id={scene_id}) in {scanrefer_json}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     queries = []
     for index, r in enumerate(rows):
         sid = str(r.get("scene_id"))
+        target_id = str(r.get("object_id"))
         queries.append(
             {
-                "query_id": f"{sid}_{r.get('object_id')}_{r.get('ann_id')}_{index:04d}",
-                "dataset": "scanrefer",
+                "query_id": f"{sid}_{target_id}_{r.get('ann_id')}_{index:04d}",
+                "dataset": "scanents3d",
                 "scene_id": sid,
                 "utterance": r.get("description"),
-                "target_object_id": str(r.get("object_id")),
+                "target_object_id": target_id,
                 "target_object_name": _normalize_object_name(r.get("object_name")),
+                "anchor_object_names": _anchor_object_names(r.get("entities"), target_id),
                 "top_k": top_k,
             }
         )
@@ -140,12 +150,37 @@ def build_track2_data(
         "track": "track2_scanrefer",
         "scene_id": scene_id,
         "query_count": len(queries),
-        "scoring": "object_name (no 3D bbox in ScanRefer test split)",
+        "scoring": "object_name (ScanEnts3D references instance ids, no 3D bbox in json)",
         "source": str(scanrefer_json),
         "output_dir": str(output_dir),
     }
     write_json(output_dir / "metadata.json", summary)
     return summary
+
+
+def _anchor_object_names(entities: Any, target_id: str) -> list[str]:
+    """Extract anchor object names from a ScanEnts3D ``entities`` array.
+
+    Each entity is ``[[token_idxs], ["<id>_<label>", ...]]``. Anchors are the
+    referenced objects other than the target id.
+    """
+
+    names: list[str] = []
+    if not isinstance(entities, list):
+        return names
+    for entity in entities:
+        if not (isinstance(entity, list) and len(entity) == 2 and isinstance(entity[1], list)):
+            continue
+        for ref in entity[1]:
+            if not isinstance(ref, str) or "_" not in ref:
+                continue
+            obj_id, _, label = ref.partition("_")
+            if obj_id == target_id:
+                continue
+            name = _normalize_object_name(label)
+            if name and name not in names:
+                names.append(name)
+    return names
 
 
 def read_jsonl_or_json(path: Path) -> list[dict[str, Any]]:

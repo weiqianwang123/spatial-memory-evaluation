@@ -45,28 +45,54 @@ python scripts/evaluate_track1.py "$PKG" --scene-id 036bce3393 --mode tool_llm \
   --output "$(pwd)/results/remembr/track1-tool_llm/remembr-track1-036bce3393/eval_summary.json"
 ```
 
-## Track 2 — ScanRefer / ScanEnts3D (deferred)
+## Track 2 — Instance-Level Referring (ScanEnts3D val, scene0207_00)
 
-Deferred by request, pending a proper data source.
+ScanRefer's filtered train/val is gated; **ScanEnts3D** (https://scanents3d.github.io/)
+is its public superset and is used instead. The val json
+(`ScanRefer_filtered_val_ScanEnts3D.json`, on NAS at
+`semantic_mapping/scanents3d/`) has GT target `object_id`/`object_name`, the
+referring `description`, and an `entities` array grounding every phrase to ScanNet
+instance ids (target + anchors). Objects are referenced by ScanNet instance id
+(no 3D bbox in the json), so a caption-memory method like ReMEmbR is scored at the
+**target object-name level** (does the resolved object's label match the GT
+`object_name`); the IoU path stays available for any future bbox-bearing split.
 
-- The public ScanRefer **benchmark/test** json
-  (`ScanRefer_filtered_test.json`) is on NAS at
-  `/data/mondo-training-dataset/semantic_mapping/scanrefer/`; it has
-  `scene_id`/`object_id`/`object_name`/`description` but **no 3D bbox** (test
-  split is for leaderboard submission), so it only supports object-name-level
-  referring scoring. The full filtered train/val (with bbox-resolvable instance
-  ids) is gated behind a Google form.
-- Preferred replacement: **ScanEnts3D** (https://scanents3d.github.io/), a public
-  superset of ScanRefer with the same json fields plus an `entities` array giving
-  every phrase->instance-id correspondence (target + anchors). Download is public:
-  `https://scanents3d.github.io/ScanEnts3D_ScanRefer.zip` (~3.9 MB) and
-  `.../ScanEnts3D_Nr3D.csv`. Objects are ScanNet **instance ids** (`"45_toaster_oven"`),
-  resolvable to 3D bboxes via ScanNet instance annotations. The Track 2 data
-  builder (`spatial_memory_evaluation/track2/data.py:build_track2_data`) already
-  parses the shared `scene_id`/`object_id`/`object_name`/`description` fields.
-- Track 2 needs a ScanNet scene with extracted frames (to build the ReMEmbR
-  memory). `scene0709_00` is both an OpenEQA scene (frames on NAS) and a ScanRefer
-  test scene, so it is a ready candidate once GT-with-bbox referring data lands.
+- Scene: `scene0207_00` (28 distinct object types, 169 val referring queries) -
+  chosen for object diversity so name-level referring is non-trivial. Frames
+  extracted from NAS `.sens` to `semantic_mapping/scanents3d_frames/scene0207_00`.
+- Memory: 24 Claude-captioned frames,
+  `memories/remembr/scanents3d/scene0207_00/remembr-track2-scene0207_00`.
+- Benchmark: `scripts/build_track2_data.py --scene-id scene0207_00` ->
+  `benchmarks/track2/scanents3d/scene0207_00/referring_queries.jsonl`.
+- Eval: `--mode tool_llm` over a 15-query subset spanning distinct object types
+  (window, bathtub, cabinet, toilet, door, mirror, desk, monitor, ...). The LLM
+  calls `retrieve_from_text` over the captions and returns referring predictions.
+- Result (15-query subset): **referring_acc@1 = 0.87** (13/15; missed only
+  `bathtub` and `rack`, which the captions did not name). Mean latency ~126 s/query
+  (multi-step tool loops). Caveat: this is **target object-name level** accuracy -
+  it measures whether the resolved object's class matches the GT `object_name`, not
+  whether the correct *instance* was localized. Caption memory has no per-instance
+  3D output, so it cannot disambiguate among same-class instances; a stronger,
+  instance/bbox-level metric would require GT bboxes (resolvable from ScanNet
+  instance annotations via the ScanEnts3D instance ids) and a method that emits
+  instance predictions. See `results/remembr/track2-tool_llm/remembr-track2-scene0207_00/`.
+
+### Reproduce (Track 2)
+
+```bash
+# extract a ScanEnts3D val scene's frames from NAS .sens (24 sampled frames)
+#   -> data/scanents3d_layouts/scene0207_00/{color,pose}
+python scripts/build_track2_data.py --scene-id scene0207_00      # build referring benchmark
+python scripts/methods/remembr/build_memory_package.py \
+  --layout-dir data/scanents3d_layouts/scene0207_00 \
+  --dataset scanents3d --scene-id scene0207_00 --captioner claude --max-frames 24 \
+  --run-id remembr-track2-scene0207_00
+PKG=$(pwd)/memories/remembr/scanents3d/scene0207_00/remembr-track2-scene0207_00
+python scripts/evaluate_track2.py "$PKG" --mode tool_llm \
+  --benchmark-dir benchmarks/track2/scanents3d/scene0207_00 \
+  --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}' \
+  --output "$(pwd)/results/remembr/track2-tool_llm/remembr-track2-scene0207_00/eval_summary.json"
+```
 
 ## Track 3 — OpenEQA General QA (ScanNet scene0709_00)
 

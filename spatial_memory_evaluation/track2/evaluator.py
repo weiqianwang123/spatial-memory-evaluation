@@ -135,6 +135,8 @@ def _finalize(
 def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "query_count",
+        "referring_acc@1",
+        "referring_acc@5",
         "acc@0.25",
         "acc@0.5",
         "mean_center_distance_m",
@@ -271,13 +273,32 @@ def _score(
 ) -> dict[str, Any]:
     iou_hits = {threshold: 0 for threshold in IOU_THRESHOLDS}
     center_distances: list[float] = []
+    name_hits_top1 = 0
+    name_hits_topk = 0
+    name_scored = 0
     per_query = []
 
     for query in queries:
         query_id = str(query["query_id"])
         target_bbox = query.get("target_bbox_3d")
+        target_name = query.get("target_object_name")
         predictions = predictions_by_query.get(query_id, [])
         top1 = predictions[0] if predictions else None
+
+        # Name-level referring accuracy (ScanEnts3D has no 3D bbox): does the
+        # resolved object's label match the GT target object_name?
+        name_top1 = None
+        name_topk = None
+        if isinstance(target_name, str) and target_name.strip():
+            name_scored += 1
+            name_top1 = bool(top1 is not None and _name_match(top1.get("label"), target_name))
+            name_topk = any(_name_match(p.get("label"), target_name) for p in predictions)
+            if name_top1:
+                name_hits_top1 += 1
+            if name_topk:
+                name_hits_topk += 1
+
+        # IoU/center scoring only when a GT bbox is available.
         best_iou = 0.0
         center_distance = None
         if top1 is not None and isinstance(target_bbox, list):
@@ -285,14 +306,17 @@ def _score(
             if isinstance(pred_bbox, list):
                 best_iou = _bbox_iou_3d(pred_bbox, target_bbox)
             center_distance = _center_distance(top1, target_bbox)
-        for threshold in IOU_THRESHOLDS:
-            if best_iou >= threshold:
-                iou_hits[threshold] += 1
+            for threshold in IOU_THRESHOLDS:
+                if best_iou >= threshold:
+                    iou_hits[threshold] += 1
         if center_distance is not None:
             center_distances.append(center_distance)
         per_query.append(
             {
                 "query_id": query_id,
+                "target_object_name": target_name,
+                "name_match_top1": name_top1,
+                "name_match_topk": name_topk,
                 "top1_iou": best_iou,
                 "center_distance_m": center_distance,
                 "latency_ms": latency_seconds_by_query.get(query_id, 0.0) * 1000.0,
@@ -300,13 +324,30 @@ def _score(
         )
 
     latencies = [latency_seconds_by_query.get(str(q["query_id"]), 0.0) for q in queries]
+    bbox_scored = sum(1 for q in queries if isinstance(q.get("target_bbox_3d"), list))
     return {
         "query_count": len(queries),
-        **{f"acc@{threshold}": safe_div(iou_hits[threshold], len(queries)) for threshold in IOU_THRESHOLDS},
+        "referring_acc@1": safe_div(name_hits_top1, name_scored) if name_scored else None,
+        "referring_acc@5": safe_div(name_hits_topk, name_scored) if name_scored else None,
+        "name_scored_count": name_scored,
+        **{
+            f"acc@{threshold}": (safe_div(iou_hits[threshold], bbox_scored) if bbox_scored else None)
+            for threshold in IOU_THRESHOLDS
+        },
+        "bbox_scored_count": bbox_scored,
         "mean_center_distance_m": mean(center_distances),
         "mean_query_latency_ms": (mean(latencies) or 0.0) * 1000.0,
         "per_query": per_query,
     }
+
+
+def _name_match(predicted_label: Any, target_name: str) -> bool:
+    pred = str(predicted_label or "").strip().lower().replace("_", " ")
+    target = str(target_name or "").strip().lower().replace("_", " ")
+    if not pred or not target:
+        return False
+    # match if either name contains the other (handles "office chair" vs "chair")
+    return target in pred or pred in target
 
 
 def _center_distance(prediction: dict[str, Any], target_bbox: list[float]) -> float | None:
