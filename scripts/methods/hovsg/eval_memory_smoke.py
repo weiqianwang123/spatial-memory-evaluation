@@ -46,8 +46,10 @@ def main(args: argparse.Namespace) -> int:
         "method": manifest["method"]["name"],
         "dataset": manifest["dataset"],
         "validation": report.to_json(),
-        "track1_memory_construction": _eval_track1(package_dir, capabilities),
-        "track2_object_location": _eval_track2(package_dir, capabilities, args.query or ["object"], args.top_k),
+        "track1_object_location": {
+            **_eval_track1(package_dir, capabilities),
+            **_eval_track2(package_dir, capabilities, args.query or ["object"], args.top_k),
+        },
     }
 
     output = args.output
@@ -60,7 +62,7 @@ def main(args: argparse.Namespace) -> int:
 
 
 def _eval_track1(package_dir: Path, capabilities: dict[str, Any]) -> dict[str, Any]:
-    cap = capabilities["fixed_api"]["track1_memory_construction"]
+    cap = capabilities["fixed_api"]["track1_object_location"]
     if cap["status"] != "supported":
         return {"status": "invalid", "reason": cap.get("reason")}
     result = _load_entrypoint(package_dir, cap["entrypoint"])(str(package_dir), {})
@@ -82,7 +84,7 @@ def _eval_track2(
     queries: list[str],
     top_k: int,
 ) -> dict[str, Any]:
-    cap = capabilities["fixed_api"]["track2_object_location"]
+    cap = capabilities["fixed_api"]["track1_object_location"]
     if cap["status"] != "supported":
         return {"status": "invalid", "reason": cap.get("reason")}
     query_object = _load_entrypoint(package_dir, cap["entrypoint"])

@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "package_id": "example/minimal/scene0000_00/20260615-000000",
   "method": {
     "name": "example_minimal",
@@ -38,7 +38,7 @@
       "path": "memory/object_table.jsonl",
       "description": "Canonical object inventory for smoke validation.",
       "required_for": [
-        "track1_memory_construction"
+        "track1_object_location"
       ]
     }
   ],
@@ -46,12 +46,12 @@
   "raw_links": [],
   "tools": [
     {
-      "name": "list_objects",
+      "name": "query_object",
       "type": "python",
-      "path": "tools/list_objects.py",
-      "description": "Track 1 fixed API entrypoint.",
+      "path": "tools/query_object.py",
+      "description": "Track 1 object-location query fixed API entrypoint.",
       "required_for": [
-        "track1_memory_construction"
+        "track1_object_location"
       ]
     }
   ],

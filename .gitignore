@@ -17,7 +17,7 @@ results/
 outputs/
 data/
 memories/
-
+sandboxes/
 
 *.db
 *.sqlite

@@ -37,7 +37,6 @@ Method roots:
 ```text
 /home/robin_wang/ClawS-SpatialRAG
 /home/robin_wang/HOV-SG
-/home/robin_wang/DualMap
 /home/robin_wang/concept-graphs
 /home/robin_wang/DAAAM
 /home/robin_wang/Hydra
@@ -102,9 +101,8 @@ Formal runs should use the strongest shared route that all relevant methods can
 actually run, currently targeted as SAM ViT-H and YOLO-World-L.
 
 FastSAM also belongs under shared modules. Do not leave FastSAM `.pt` or
-TensorRT `.engine` files only inside `/home/robin_wang/DAAAM` or
-`/home/robin_wang/DualMap`; method adapters should load the NAS/shared path and
-pass it into the external method.
+TensorRT `.engine` files only inside an external method repo; method adapters
+should load the NAS/shared path and pass it into the external method.
 
 Current FastSAM artifacts were created on 2026-06-18 from Ultralytics assets
 v8.4.0 and TensorRT 10.16.1.11:
@@ -203,7 +201,13 @@ cd /home/robin_wang/spatial-memory-evaluation
   memories/<method>/scannetpp/036bce3393/<run-id>
 ```
 
-Track 1 fixed API:
+> Track renaming (3-track refactor): the eval entrypoints are now
+> `scripts/evaluate_track1.py` (`track1_object_location`: object-location query +
+> build cost), `scripts/evaluate_track2.py` (`track2_scanrefer`), and
+> `scripts/evaluate_track3.py` (`track3_openeqa`). The old separate
+> memory-construction vs object-location entrypoints are merged into Track 1.
+
+Track 1 (object location + build cost), fixed API:
 
 ```bash
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
@@ -213,15 +217,21 @@ Track 1 fixed API:
   --mode fixed_api
 ```
 
-Track 2 fixed API:
+Track 1 tool-LLM (methods with native retrieval tools only):
 
 ```bash
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
-  scripts/evaluate_track2.py \
+  scripts/evaluate_track1.py \
   memories/<method>/scannetpp/036bce3393/<run-id> \
   --scene-id 036bce3393 \
-  --mode fixed_api
+  --mode tool_llm \
+  --llm-command '<llm transport command>'
 ```
+
+Track 2 (ScanRefer) and Track 3 (OpenEQA) use `scripts/evaluate_track2.py` and
+`scripts/evaluate_track3.py` with the same `--mode {fixed_api,tool_llm}` switch.
+They emit a `data_unavailable` result until their datasets are acquired (see
+`path_registry.md`).
 
 Each eval writes:
 
@@ -305,82 +315,6 @@ HOV-SG eval wrapper:
   scripts/methods/hovsg/eval_memory_smoke.py \
   --package-dir memories/hovsg/scannetpp/036bce3393/$RUN_ID
 ```
-
-## DualMap
-
-Root repo:
-
-```text
-/home/robin_wang/DualMap
-```
-
-Runtime env:
-
-```text
-/home/robin_wang/miniforge3/envs/spatial-rag
-```
-
-DualMap smoke defaults:
-
-- shared profile: `smoke`
-- frame stride default: `5`
-- max frames default: `200`
-- shared OV detector: YOLO-World-S smoke fallback
-- shared SAM: `sam.vit_b`
-- shared OpenCLIP: `openclip.vit_b_32`
-- FastSAM disabled by default.
-
-Build memory:
-
-```bash
-cd /home/robin_wang/spatial-memory-evaluation
-
-RUN_ID=dualmap-smoke-$(date +%Y%m%d-%H%M%S)
-
-CUDA_VISIBLE_DEVICES=0 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
-  scripts/methods/dualmap/build_memory_smoke.py \
-  --scene-id 036bce3393 \
-  --run-id "$RUN_ID" \
-  --frame-stride 5 \
-  --max-frames 200 \
-  --cuda-visible-devices 0
-```
-
-Full sampled run:
-
-```bash
-RUN_ID=dualmap-full-stride5-$(date +%Y%m%d-%H%M%S)
-
-CUDA_VISIBLE_DEVICES=0 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
-  scripts/methods/dualmap/build_memory_smoke.py \
-  --scene-id 036bce3393 \
-  --run-id "$RUN_ID" \
-  --frame-stride 5 \
-  --max-frames 0 \
-  --cuda-visible-devices 0
-```
-
-Expected outputs:
-
-```text
-data/dualmap_layouts/scannetpp_036bce3393/$RUN_ID/
-data/dualmap_native/scannetpp_036bce3393/$RUN_ID/
-memories/dualmap/scannetpp/036bce3393/$RUN_ID/
-```
-
-DualMap eval wrapper:
-
-```bash
-/home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
-  scripts/methods/dualmap/eval_memory_smoke.py \
-  --package-dir memories/dualmap/scannetpp/036bce3393/$RUN_ID
-```
-
-Common issue:
-
-- `CUDNN_STATUS_NOT_INITIALIZED`: GPU/driver/cuDNN runtime is unhealthy for this
-  process. Do not disable cuDNN for formal runs; restart node/driver or run on a
-  healthy GPU node.
 
 ## DAAAM
 
@@ -665,27 +599,27 @@ Root repos:
 /home/robin_wang/remembr
 ```
 
-Current Track 1/2 fixed API status:
+Current Track 1 (`track1_object_location`) fixed API status:
 
 - Hydra standalone: invalid/declaration route unless a native object-memory
   package is produced.
-- ReMEmbR: invalid for Track 1/2 fixed API object memory; caption-memory control
-  semantics are separate from main object-memory methods.
+- ReMEmbR: invalid for Track 1 fixed-API object memory; caption-memory control
+  semantics are separate from main object-memory methods. ReMEmbR's native value
+  is on Track 3 (`track3_openeqa`) through its agentic `ReMEmbRAgent.query` path.
 
 Do not force these methods into a synthetic object table with an LLM wrapper just
-to satisfy fixed API. Agentic evaluation can still receive native memory/code
-when the package honestly declares its capabilities.
+to satisfy fixed API. Tool-LLM evaluation is only for methods with native
+retrieval/query tools.
 
-## Agentic Eval
+## Tool-LLM Eval
 
-Track 1/2 agentic modes:
+Tool-LLM mode (`--mode tool_llm`) is shared by Track 1/2/3. The evaluator creates a
+trace/sandbox directory containing only per-query prompts, tool specs, raw/native
+memory links, and original method source links needed by the native tool runtime.
+It does not copy fixed-API views, evaluation adapters, build code, benchmark GT, or
+raw frames.
 
-```text
-agentic_memory_only
-agentic_full_access
-```
-
-For Claude Code through Bedrock:
+For Claude through Bedrock:
 
 ```bash
 CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude \
@@ -703,17 +637,6 @@ Evaluator example:
   scripts/evaluate_track2.py \
   memories/<method>/scannetpp/036bce3393/<run-id> \
   --scene-id 036bce3393 \
-  --mode agentic_full_access \
-  --sandbox-root /tmp/<method>_track2_agentic_claude \
-  --agent-command 'CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude -p "$(cat {prompt_path})" --permission-mode bypassPermissions --output-format text --max-budget-usd 5 > {output_path}'
+  --mode tool_llm \
+  --llm-command 'CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude -p "$(cat {prompt_path})" --output-format text --max-budget-usd 5 > {output_path}'
 ```
-
-Agentic full access should include:
-
-- the memory package;
-- method adapter code;
-- `spatial_memory_evaluation/shared_modules`;
-- the external root repo source code when available.
-
-The agent may design its own interaction with the memory, but it must return the
-required evaluator JSON.

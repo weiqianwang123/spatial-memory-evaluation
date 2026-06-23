@@ -1443,7 +1443,7 @@ def _write_manifest(
     _write_json(
         package_dir / "manifest.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "package_id": f"daaam/scannetpp/{args.scene_id}/{run_id}",
             "method": {
                 "name": "daaam",
@@ -1506,7 +1506,7 @@ def _write_manifest(
                         f"Canonical DAAAM/Hydra merged OBJECTS inventory with {object_count} objects. "
                         "This is the Track 1/2 fixed-API object universe."
                     ),
-                    "required_for": ["track1_memory_construction", "track2_object_location"],
+                    "required_for": ["track1_object_location"],
                 },
                 {
                     "name": "background_object_table",
@@ -1533,7 +1533,7 @@ def _write_manifest(
                         "type": "json",
                         "path": "memory/track2_semantic_index.json",
                         "description": "Deterministic DAAAM semantic query index for Track 2.",
-                        "required_for": ["track2_object_location"],
+                        "required_for": ["track1_object_location"],
                     }
                 ]
                 if (package_dir / "memory" / "track2_semantic_index.json").exists()
@@ -1546,7 +1546,7 @@ def _write_manifest(
                         "type": "json",
                         "path": "memory/track2_label_index.json",
                         "description": "Deterministic canonical-label object index for Track 2.",
-                        "required_for": ["track2_object_location"],
+                        "required_for": ["track1_object_location"],
                     }
                 ]
                 if (package_dir / "memory" / "track2_label_index.json").exists()
@@ -1583,7 +1583,7 @@ def _write_manifest(
                     "type": "python",
                     "path": "tools/list_objects.py",
                     "description": "Return the exported DAAAM object table.",
-                    "required_for": ["track1_memory_construction"],
+                    "required_for": ["track1_object_location"],
                 }
             ]
             + (
@@ -1593,7 +1593,7 @@ def _write_manifest(
                         "type": "python",
                         "path": "tools/query_object.py",
                         "description": "Query exported DAAAM object memory with a target label.",
-                        "required_for": ["track2_object_location"],
+                        "required_for": ["track1_object_location"],
                     }
                 ]
                 if track2_status == "supported"
@@ -1634,46 +1634,41 @@ def _write_capabilities(package_dir: Path, *, track2_status: str, track2_reason:
     _write_json(
         package_dir / "capabilities.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "fixed_api": {
-                "track1_memory_construction": {
-                    "status": "supported",
-                    "entrypoint": "tools/list_objects.py:list_objects",
-                    "reason": "",
-                    "input_schema": "schemas/track1_input.schema.json",
-                    "output_schema": "schemas/object_table.schema.json",
-                },
-                "track2_object_location": {
+                "track1_object_location": {
                     "status": "supported" if track2_supported else "invalid",
                     "entrypoint": "tools/query_object.py:query_object" if track2_supported else None,
                     "reason": track2_reason if track2_reason else "",
                     "input_schema": "schemas/track2_input.schema.json" if track2_supported else None,
                     "output_schema": "schemas/object_query_result.schema.json" if track2_supported else None,
                 },
-                "track3_scanrefer": {
+                "track2_scanrefer": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": "No ScanRefer referring-expression resolver is exported.",
                 },
-                "track4_openeqa": {
+                "track3_openeqa": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": "DAAAM's LLM SceneUnderstandingAgent is not used as a fixed API in this Track 1/2 package.",
                 },
             },
             "agent_access": {
-                "mode": "agentic_full_access",
+                "mode": "tool_llm",
                 "read_manifest": True,
                 "read_schema": True,
-                "read_memory_artifacts": True,
+                "read_native_memory": True,
+                "read_fixed_api_views": False,
                 "read_evidence": True,
-                "read_adapter_code": True,
-                "read_shared_module_code": True,
+                "read_adapter_code": False,
+                "read_shared_module_code": False,
                 "read_method_root_source_code": True,
+                "read_build_code": False,
                 "read_raw_links": False,
                 "read_raw_frames": False,
                 "read_source_keyframes_or_crops": False,
-                "run_package_tools": False,
+                "run_method_native_tools": True,
                 "write_package": False,
             },
         },

@@ -54,7 +54,7 @@ REQUIRED_DIRS = ("memory", "evidence", "raw_links", "schemas", "tools")
 
 def _manifest(*, package_id: str, dataset: str, episode_id: str) -> dict[str, Any]:
     return {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "package_id": package_id,
         "method": {
             "name": "remembr",
@@ -122,24 +122,18 @@ def _manifest(*, package_id: str, dataset: str, episode_id: str) -> dict[str, An
 
 def _capabilities() -> dict[str, Any]:
     return {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "fixed_api": {
-            "track1_memory_construction": {
+            "track1_object_location": {
                 "status": "invalid",
                 "entrypoint": None,
                 "reason": (
-                    "ReMEmbR memory has no object inventory. MemoryItem stores only "
+                    "ReMEmbR memory has no object inventory and no object-location "
+                    "query/read API. MemoryItem stores only "
                     "caption/time/position(robot)/theta (remembr/memory/memory.py:5-9) "
                     "and the Milvus collection has no object/label/bbox field "
                     "(remembr/memory/milvus_memory.py:37-45), so no label+3D object "
-                    "table can be honestly exported."
-                ),
-            },
-            "track2_object_location": {
-                "status": "invalid",
-                "entrypoint": None,
-                "reason": (
-                    "ReMEmbR has no object-location query/read API. The only readers "
+                    "table can be honestly exported. The only readers "
                     "(search_by_text/search_by_position/search_by_time) return "
                     "memory_to_string caption+robot-pose+time text "
                     "(remembr/memory/milvus_memory.py:173-250); position is the robot "
@@ -147,7 +141,7 @@ def _capabilities() -> dict[str, Any]:
                     "deterministic object locations."
                 ),
             },
-            "track3_scanrefer": {
+            "track2_scanrefer": {
                 "status": "invalid",
                 "entrypoint": None,
                 "reason": (
@@ -156,13 +150,13 @@ def _capabilities() -> dict[str, Any]:
                     "expression against."
                 ),
             },
-            "track4_openeqa": {
+            "track3_openeqa": {
                 "status": "invalid",
                 "entrypoint": None,
                 "reason": (
                     "ReMEmbR's native QA path is the interactive ReMEmbRAgent.query "
                     "LangGraph agent (remembr/agents/remembr_agent.py:390). It is not "
-                    "exported as a non-interactive package entrypoint here; Track 4 / "
+                    "exported as a non-interactive package entrypoint here; Track 3 / "
                     "OC-NaVQA temporal QA is ReMEmbR's natural first track but is "
                     "evaluated via the agentic full-access path, and stays a candidate "
                     "pending a non-interactive remembr+<llm> smoke."
@@ -170,18 +164,20 @@ def _capabilities() -> dict[str, Any]:
             },
         },
         "agent_access": {
-            "mode": "agentic_full_access",
+            "mode": "tool_llm",
             "read_manifest": True,
             "read_schema": True,
-            "read_memory_artifacts": True,
+            "read_native_memory": True,
+            "read_fixed_api_views": False,
             "read_evidence": True,
-            "read_adapter_code": True,
-            "read_shared_module_code": True,
+            "read_adapter_code": False,
+            "read_shared_module_code": False,
             "read_method_root_source_code": True,
+            "read_build_code": False,
             "read_raw_links": False,
             "read_raw_frames": False,
             "read_source_keyframes_or_crops": False,
-            "run_package_tools": False,
+            "run_method_native_tools": True,
             "write_package": False,
         },
     }

@@ -7,28 +7,24 @@
   "required": ["schema_version", "fixed_api", "agent_access"],
   "properties": {
     "schema_version": {
-      "const": "0.1"
+      "const": "0.2"
     },
     "fixed_api": {
       "type": "object",
       "additionalProperties": true,
       "required": [
-        "track1_memory_construction",
-        "track2_object_location",
-        "track3_scanrefer",
-        "track4_openeqa"
+        "track1_object_location",
+        "track2_scanrefer",
+        "track3_openeqa"
       ],
       "properties": {
-        "track1_memory_construction": {
+        "track1_object_location": {
           "$ref": "#/$defs/track_capability"
         },
-        "track2_object_location": {
+        "track2_scanrefer": {
           "$ref": "#/$defs/track_capability"
         },
-        "track3_scanrefer": {
-          "$ref": "#/$defs/track_capability"
-        },
-        "track4_openeqa": {
+        "track3_openeqa": {
           "$ref": "#/$defs/track_capability"
         }
       }
@@ -40,17 +36,18 @@
         "mode",
         "read_manifest",
         "read_schema",
-        "read_memory_artifacts",
+        "read_native_memory",
+        "read_fixed_api_views",
         "read_evidence",
         "read_raw_links",
         "read_raw_frames",
         "read_source_keyframes_or_crops",
-        "run_package_tools",
+        "run_method_native_tools",
         "write_package"
       ],
       "properties": {
         "mode": {
-          "enum": ["agentic_full_access", "memory_only", "memory_plus_crops", "memory_plus_raw"]
+          "enum": ["tool_llm", "not_applicable"]
         },
         "read_manifest": {
           "type": "boolean"
@@ -58,7 +55,10 @@
         "read_schema": {
           "type": "boolean"
         },
-        "read_memory_artifacts": {
+        "read_native_memory": {
+          "type": "boolean"
+        },
+        "read_fixed_api_views": {
           "type": "boolean"
         },
         "read_evidence": {
@@ -73,6 +73,9 @@
         "read_method_root_source_code": {
           "type": "boolean"
         },
+        "read_build_code": {
+          "type": "boolean"
+        },
         "read_raw_links": {
           "type": "boolean"
         },
@@ -82,7 +85,7 @@
         "read_source_keyframes_or_crops": {
           "type": "boolean"
         },
-        "run_package_tools": {
+        "run_method_native_tools": {
           "type": "boolean"
         },
         "write_package": {

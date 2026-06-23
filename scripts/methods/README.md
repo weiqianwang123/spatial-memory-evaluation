@@ -4,7 +4,6 @@ Place future method-specific scripts under one folder per method:
 
 ```text
 scripts/methods/claws/
-scripts/methods/dualmap/
 scripts/methods/hovsg/
 scripts/methods/conceptgraphs/
 scripts/methods/daaam/
@@ -36,12 +35,11 @@ Current adapter:
 scripts/methods/shared_modules.py
 ```
 
-Current smoke profiles cover HOV-SG, DualMap, ConceptGraphs, and DAAAM. Inspect
+Current smoke profiles cover HOV-SG, ConceptGraphs, and DAAAM. Inspect
 them with:
 
 ```bash
 python scripts/package/inspect_shared_modules.py --method hovsg --profile smoke --check
-python scripts/package/inspect_shared_modules.py --method dualmap --profile smoke --check
 python scripts/package/inspect_shared_modules.py --method daaam --profile smoke --check
 ```
 
@@ -57,20 +55,6 @@ python scripts/methods/hovsg/eval_memory_smoke.py memories/hovsg/scannetpp/036bc
 ScanNet++ iPhone RGB-D frames into the ScanNet-style layout expected by HOV-SG.
 Memory build and eval scripts should consume that prepared layout instead of
 re-exporting it implicitly.
-
-Current DualMap smoke entrypoints:
-
-```bash
-python scripts/methods/dualmap/build_memory_smoke.py --scene-id 036bce3393 --run-id <run-id> --frame-stride 5 --prepare-only
-python scripts/methods/dualmap/build_memory_smoke.py --scene-id 036bce3393 --run-id <run-id> --skip-layout-export --cuda-visible-devices 0
-python scripts/methods/dualmap/eval_memory_smoke.py memories/dualmap/scannetpp/036bce3393/<run-id>
-```
-
-DualMap smoke prepare writes a ScanNet-style layout under
-`data/dualmap_layouts/scannetpp_<scene-id>/<run-id>/exported/scannetpp_<scene-id>/`.
-The build step calls DualMap `applications/runner_dataset.py`, packages native
-`map/*.pkl`, and keeps fixed API eval separate from memory construction.
-Formal runs should keep cuDNN enabled.
 
 Current DAAAM smoke entrypoints:
 
@@ -130,8 +114,9 @@ python scripts/methods/remembr/build_invalid_declaration.py --run-id 20260617-00
 ```
 
 ReMEmbR is a caption/spatio-temporal memory with no object inventory and no
-object-location read path, so its Track 1/2/3 fixed APIs are `invalid` by design
-and Track 4 is served only through the agentic `ReMEmbRAgent.query` path. The
+object-location read path, so its Track 1 (`track1_object_location`) and Track 2
+(`track2_scanrefer`) fixed APIs are `invalid` by design, and Track 3
+(`track3_openeqa`) is served only through the agentic `ReMEmbRAgent.query` path. The
 script writes a validated, declaration-only memory package (no native memory
 artifacts) under the gitignored `memories/remembr/<dataset>/<episode>/<run-id>/`.
 Because declaration packages are still generated artifacts, the package is
@@ -153,13 +138,12 @@ python scripts/methods/remembr/build_caption_control_package.py \
   --started-at 2026-06-17T00:00:00+08:00 --finished-at 2026-06-17T00:00:00+08:00
 ```
 
-This builds the **LLM-with-captions Track 1/2 control** package. Caption-only
-memory is packaged honestly as `memory/captions.jsonl` (plus the verbatim native
-caption JSON under `memory/native/` when built from a real source), but the
-package sets `manifest.method.family = "caption_control"` and
-`manifest.explicit_memory = false` and declares **all four fixed-API tracks
-`invalid`**. Each `invalid` reason points at the native capability gap in the
-ReMEmbR root repo (no object inventory for Track 1; no deterministic native
-object-location query for Track 2; an LLM caption answerer is never fixed-API
-support). See `.codex/baseline_registry.md` →
-`## LLM-With-Captions Track 1/2 Control Outcome (Task 21)`.
+This builds the **LLM-with-captions control** package. Caption-only memory is
+packaged honestly as `memory/captions.jsonl` (plus the verbatim native caption JSON
+under `memory/native/` when built from a real source), but the package sets
+`manifest.method.family = "caption_control"` and `manifest.explicit_memory = false`
+and declares **all three fixed-API tracks `invalid`** (`track1_object_location`,
+`track2_scanrefer`, `track3_openeqa`). Each `invalid` reason points at the native
+capability gap in the ReMEmbR root repo (no object inventory / no deterministic
+native object-location query; an LLM caption answerer is never fixed-API support).
+See `.codex/baseline_registry.md` → LLM-With-Captions control outcome.

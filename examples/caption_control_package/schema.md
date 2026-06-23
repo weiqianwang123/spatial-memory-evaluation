@@ -30,16 +30,15 @@ Known limitations and unsupported tracks: this is a no-explicit-memory caption
 **control** (`explicit_memory=false`), not an object-memory baseline. All fixed
 APIs are `invalid`:
 
-- Track 1 (object inventory): invalid — no native object labels + 3D positions.
-- Track 2 (object location): invalid — no deterministic native object-location
-  query API; the only answerer (`NonAgent.query`,
-  `remembr/agents/non_agent.py:40-91`) is an LLM over caption context and may not
-  be used as fixed-API support.
-- Track 3 (ScanRefer): invalid — no referring-expression resolver.
-- Track 4 (OpenEQA): invalid — caption memory has no method-native QA/retrieval
-  fixed API; ReMEmbR's native QA path is the agentic `ReMEmbRAgent`, not this
-  control.
+- Track 1 (`track1_object_location`): invalid — no native object inventory and no
+  deterministic native object-location query API; the only answerer
+  (`NonAgent.query`, `remembr/agents/non_agent.py:40-91`) is an LLM over caption
+  context and may not be used as fixed-API support.
+- Track 2 (`track2_scanrefer`): invalid — no referring-expression resolver.
+- Track 3 (`track3_openeqa`): invalid — caption memory has no method-native
+  QA/retrieval fixed API; ReMEmbR's native QA path is the agentic `ReMEmbRAgent`
+  tool-LLM route, not this fixed API.
 
-The caption artifact is preserved so that agentic Track 1/2 (full sandbox access)
+The caption artifact is preserved so that the agentic tool-LLM path (Track 3)
 can read and reason over captions later. That agentic use is explicitly separate
 from the fixed API and must never promote this control to an object-memory API.

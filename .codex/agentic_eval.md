@@ -1,447 +1,261 @@
-Beyond Fixed Queries: Benchmarking Spatial Memory as an External Resource for Embodied Agents
+# Beyond Fixed Queries: Benchmarking Spatial Memory as an External Resource for Embodied Agents
 
-1. 核心动机
-现有 spatial memory 工作已经能够从 posed RGBD sequence 中构建 object map、semantic map、scene graph 或 long horizon memory，并用于导航、问答或规划。但是，现有评测大多仍然是 method centric 的：每个方法自己定义 memory，自己设计 query interface，自己决定 agent 如何访问 memory，最后只看系统能否回答某些问题或完成某些任务。
-这种评测方式有一个关键缺陷：它无法判断一个 spatial memory 本身是否真的对 agent 有用。一个 memory 可能已经包含了正确的 object、位置、属性和关系，但由于固定接口无法表达复杂查询，系统仍然会失败。反过来，一个方法也可能为特定任务设计很强的接口，从而在 benchmark 上表现很好，但这并不代表它的 memory 具有通用可用性。
-因此，这个项目的核心不是提出一个新的 spatial memory 方法，而是提出一个新的 benchmark：把 spatial memory 作为 embodied agent 可以访问的外部认知资源来评估。我们不再只问“这个方法能不能通过固定接口回答问题”，而是问：
-当 agent 拿到一个 memory system 的 map、代码、原始输入和自带接口后，它能不能自主理解、读取、查询、验证和组合这些资源，从而完成空间问答和空间推理？
-这就是 Beyond Fixed Queries 的核心含义。
-2. 与已有工作的关系
-已有 spatial memory 方法可以分成几类。
-2.1 No Explicit Memory
-代表 baseline：
-1. Multi Frame VLM
-2. LLM with Captions
-这类方法不构建显式 spatial memory。Multi Frame VLM 直接从输入序列中采样若干帧，让 VLM 根据图像回答问题。LLM with Captions 则先把图像或视频片段转成 caption，再让 LLM 基于 caption 回答。
-这类 baseline 很重要，因为它回答一个基础问题：
-如果直接让 VLM 看多帧图像就可以回答问题，那么 explicit spatial memory 的必要性就会变弱。
-预期它们在颜色、外观、简单属性问题上可能表现不错，但在长序列、多物体一致性、精确定位和复杂空间关系上会受限。
-2.2 Caption Retrieval Memory
-代表方法：
-1. ReMEmbR  https://arxiv.org/abs/2409.13682
-这类方法把机器人经历压缩成文本 memory，并结合位置和时间做 retrieval。它适合 long horizon QA，但缺少显式 object graph 和精确 3D grounding。
-它适合作为 caption based episodic memory baseline，用来比较“文本化经历”与“显式空间结构”的差异。
-2.3 Object Centric Memory
-代表方法：
-1. ConceptGraphs  https://arxiv.org/abs/2309.16650
-这类方法把场景表示成 object instances。每个 object 可以包含类别、位置、视觉特征、语言描述和开放词表语义。
-它们适合 object location query 和 referring query，但 object merging、空间关系、room structure 和 agent access 的评估仍然不充分。
-2.4 Hierarchical Scene Graph Memory
-代表方法：
-1. HOV SG  arxiv.org/pdf/2403.17846
-2. Hydra  https://www.roboticsproceedings.org/rss18/p050.pdf
-这类方法把场景组织成 object、room、region、floor 等层级结构。它们更适合空间推理和导航，但多数方法仍然通过预定义接口被使用和评测。
-2.5 Online Semantic Memory
-代表方法：
-1. DualMap  arxiv.org/pdf/2506.01950
-这类方法强调在线构建、轻量化、query efficiency 和自然语言导航。它适合作为在线 spatial memory baseline，尤其适合比较 memory size、time per frame 和 query latency。
-2.6 Tool Based Scene Graph Memory
-代表方法：
-1. DAAAM https://arxiv.org/pdf/2512.00565
-DAAAM 构建 4D scene graph，并通过 tool calling agent 进行问答。它很适合作为 highly engineered tool based memory baseline。第一版可以只使用它的 spatial 和 descriptive 能力，暂时不评估 temporal QA。
-2.7 Retrieval Based Spatial Memory
-代表方法：
-1. SpatialRAG
-这类方法代表 practical RAG style spatial memory。它适合和 LLM agent 结合，但 spatial structure 可能不如 scene graph 显式，geometric consistency 也不一定稳定。
-3. Benchmark 的核心设定
-3.1 目标
-这个 benchmark 不提出新的 memory representation，而是提出新的 evaluation protocol。
-目标是系统评估：
-1. memory 是否能从 posed RGBD sequence 中在线构建
-2. memory 是否准确、紧凑、低冗余
-3. memory 是否能支持 object location query
-4. memory 是否能支持 fine grained referring query
-5. memory 是否能支持 general spatial QA
-6. agent 是否能自主使用 memory system 中的 map、代码、接口和原始输入
-7. 不同 memory paradigm 对 agentic spatial reasoning 的作用有什么差异
-3.2 输入
-每个方法接收相同输入：
-1. RGBD sequence
-2. camera poses
-3. camera intrinsics
-4. timestamps
-5. 可选 shared detector 或 segmenter 输出
-第一版主要使用离线给定的 posed RGBD sequence，不优先做 active exploration。
-3.3 输出
-每个方法需要导出一个 Full Memory Package。
-它可以保留原方法的原生格式，但需要把所有可用资源打包给 agent。
-Full Memory Package 包括：
-1. 构建好的 map 或 memory
-2. object map、scene graph、semantic map、region map、relation graph、database 等
-3. 原始 RGBD frames、poses、intrinsics、timestamps
-4. keyframes、object crops、visual evidence
-5. 方法原始代码
-6. 方法自带 query interface
-7. visualization tools
-8. schema 说明文档
-9. data loading scripts
-10. helper functions
-不允许提供：
-1. GT annotations
-2. benchmark answers
-3. test labels
-4. 为测试问题手写的规则
-5. 在线设置中未来时刻的信息
-3.4 Full Agent Access
-本 benchmark 采用统一的 Full Agent Access 设定。
-也就是说，不再人为限制 agent 只能调用固定 API，而是把 memory system 能提供的全部非 GT 信息提供给 agent。
-agent 可以自己决定：
-1. 调用方法自带接口
-2. 读取 map 文件
-3. 读取 object table 或 scene graph
-4. 检查 keyframes 或 object crops
-5. 阅读代码和 schema
-6. 写 Python 或 SQL 查询
-7. 组合 memory、原始输入和代码结果进行推理
-8. 输出答案和 supporting evidence
-这个设定直接测试：
-一个 spatial memory system 是否足够清楚、完整、可读取、可查询、可验证，能够被通用 agent 当作外部认知资源使用。
-4. Evaluation Tracks
-4.1 Track A：Memory Construction
-目标：
-评估 memory 是否能从 posed RGBD sequence 中在线增量构建。
-推荐数据集：
-1. ScanNet++
-核心问题：
-1. memory 有没有覆盖场景里的 object
-2. object location 是否准确
-3. memory 是否重复太多
-4. memory 是否轻量
-5. 每帧更新是否高效
-指标：
-1. Detector Coverable Object Memory Recall
-2. False Memory Ratio
-3. Memory Redundancy Ratio
-4. Object Localization Error
-5. Memory Size
-6. Time Per Frame
-4.2 Track B：Basic Object Location Query
-目标：
-评估 memory 是否能回答基础物体位置问题。
-示例：
-where is the chair
-推荐数据集：
-1. ScanNet++
-输出：
-1. object id
-2. 3D position
-3. supporting evidence
-指标：
-1. Top 1 Object Accuracy
-2. Top K Object Recall
-3. Position Error
-4. Room Correctness
-5. Query Latency
-6. Evidence Correctness
-4.3 Track C：Fine Grained Referring Query
-目标：
-评估 memory 是否能回答更具体的 object query。
-示例：
-where is the red table near the window
-推荐数据集：
-1. ScanRefer on ScanNet
-这一部分测试 memory 是否能处理：
-1. 颜色
-2. 材质
-3. 属性
-4. 空间关系
-5. object disambiguation
-指标：
-1. Top 1 Accuracy
-2. Top K Recall
-3. 3D IoU
-4. Center Distance
-5. Query Latency
-6. Attribute Grounding Accuracy
-7. Evidence Correctness
-4.4 Track D：General Spatial QA
-目标：
-评估 agent 是否能使用 Full Memory Package 回答更开放的空间问题。
-推荐数据集：
-1. OpenEQA
-问题类型：
-1. object attribute
-2. object color
-3. object material
-4. object state
-5. spatial relation
-6. room level reasoning
-7. functional reasoning
-8. general scene understanding
-示例：
-what color is the chair
-what is next to the table
-where can I sit
-is there anything blocking the door
-指标：（最后不一定都用，太多metric会有点混乱，可以选有代表性的）
-1. LLM Match
-2. Category Accuracy
-3. Supporting Evidence Correctness
-4. Memory Usage Rate
-5. Raw Input Fallback Rate
-6. Code Usage Rate
-7. Query Cost
-8. End to End Latency
-9. Failure Mode Distribution
-4.5 Track E：Long Horizon Spatial QA
-目标：
-测试 memory 在 long horizon robot experience 中是否仍然有用。
-推荐数据集：
-1. OC NaVQA static subset
-第一版保留：
-1. spatial questions
-2. descriptive questions
-第一版剔除：
-1. when questions
-2. how long questions
-3. before or after questions
-4. last seen questions
-5. duration questions
-原因：
-第一版聚焦 spatial memory，而不是 spatio temporal memory。Temporal QA 可以作为后续 extension。
-5. Baseline 选择
-第一版 benchmark 应该覆盖以下 memory paradigm。
-5.1 Multi Frame VLM
-类型：
-No explicit memory baseline
-作用：
-直接让 VLM 看多帧图像回答问题，用来判断是否真的需要 explicit spatial memory。
-预期优势：
-1. 实现简单
-2. 对颜色和外观问题可能有效
-3. 不需要复杂建图
-预期弱点：
-1. 长时序不稳定
-2. object identity 难以保持
-3. 缺少 3D grounding
-4. 精确定位能力弱
-5. token 和 latency 成本高
-5.2 LLM with Captions
-类型：
-Weak textual memory baseline
-作用：
-把图像或视频片段转成 caption，再让 LLM 回答。它可以作为 ReMEmbR 之前的简单 caption baseline。
-5.3 ReMEmbR
-类型：
-Caption retrieval memory
-作用：
-代表 long horizon caption based episodic memory。它不是 explicit scene graph，但可以作为非结构化 memory baseline。
-5.4 ConceptGraphs
-类型：
-Object centric graph memory
-作用：
-代表 open vocabulary object graph memory，适合 object query 和 referring query 对比。
-5.5 HOV SG
-类型：
-Hierarchical scene graph memory
-作用：
-代表 floor、room、object 层次化 open vocabulary scene graph。
-5.6 Hydra
-类型：
-Traditional real time scene graph memory
-作用：
-代表传统实时层次化 3D scene graph 系统，适合 construction efficiency 和 graph memory 对比。
-5.7 DualMap
-类型：
-Online open vocabulary semantic memory
-作用：
-代表在线构建、轻量化和自然语言 query 的路线。
-5.8 DAAAM
-类型：
-Tool based 4D scene graph memory
-作用：
-代表高度工程化的 tool calling scene graph memory。第一版主要用它的 spatial 和 descriptive 能力。
-5.9 SpatialRAG
-类型：
-Retrieval based spatial memory
-作用：
-代表 practical RAG style spatial memory baseline。
-6. 核心指标
-6.1 Memory Quality
-评估 memory 本身。
-指标：
-1. Object Recall
-2. False Memory Ratio
-3. Redundancy Ratio
-4. Localization Error
-5. Memory Size
-6. Time Per Frame
-6.2 Query Quality
-评估 memory 是否能被有效查询。
-指标：
-1. Top 1 Accuracy
-2. Top K Recall
-3. Position Error
-4. Query Latency
-5. Evidence Correctness
-6.3 Agentic Usability
-评估 memory 是否真的适合 agent 使用。
-指标：（这些指标可以一开始dubug用，最后选有代表性的就可以）
-1. Answer Accuracy
-2. Supporting Evidence Correctness
-3. Memory Usage Rate
-4. Raw Input Fallback Rate
-5. Code Usage Rate
-6. Tool Call Count
-7. Token Cost
-8. End to End Latency
-其中最关键的是：
-Memory Usage Rate
-衡量 agent 的答案有多少主要依赖 memory 得到。
-Raw Input Fallback Rate
-衡量 agent 有多少问题需要回到原始 RGBD frames 或 keyframes 才能回答。
-如果这个值很高，说明 memory 本身没有充分保存可用信息。
-Code Usage Rate
-衡量 agent 有多少问题需要阅读代码或写查询脚本。
-如果这个值很高，说明 memory 虽然可能信息完整，但使用成本较高。
-Evidence Correctness
-衡量 agent 是否真的使用了正确 object、relation、region、keyframe 或 crop。
-这个指标可以避免 agent 靠语言先验猜对答案。
-7. Failure Mode Analysis
-每个失败样本需要分类。建议类别：
-1. memory 中缺少目标 object
-2. object 位置错误
-3. object attribute 错误
-4. spatial relation 缺失
-5. memory 中存在重复 object，导致 agent 选错
-6. memory schema 太难理解
-7. agent 没有找到正确 evidence
-8. agent 找到 evidence 但推理错误
-9. agent 主要依赖 raw input 才找到答案
-10. final answer 格式错误
-11. evaluator 判断存在歧义
-这个分析很重要，因为 benchmark 的目标不是只给方法排序，而是诊断 spatial memory 对 agent 到底哪里有用、哪里不够用。
-8. Additional Step：Agent Designed Memory Baseline
-在完成主要 benchmark 后，可以加入一个更有意思的 baseline：
-让 agent 根据部分训练用例和评价体系，自己设计 memory representation。
-8.1 动机
-当前 spatial memory 方法大多是高度模块化、工程化的系统：
-1. segmentation
-2. tracking
-3. object merging
-4. scene graph construction
-5. relation extraction
-6. query interface
-7. QA module
-但如果 memory 最终是服务于 agent，那么一个自然问题是：
-memory 的形式是否也可以由 agent 根据任务和评价体系自己设计？
-这可以作为一个非常有意思的 baseline，而不是传统意义上的 hand designed spatial memory 方法。
-8.2 设置
-给 agent 提供：
-1. 部分 training scenes
-2. 部分 training queries
-3. benchmark metrics
-4. 可用原始输入
-5. 可用 detector 或 segmenter
-6. 若干示例 memory package
-7. 代码执行环境
-agent 需要输出：
-1. memory schema
-2. memory construction script
-3. query script
-4. README
-5. memory export format
-6. evidence format
-然后在 held out scenes 和 held out queries 上测试。
-8.3 约束
-为避免泄漏，需要限制：
-1. agent 不能访问 test answers
-2. agent 不能访问 test GT labels
-3. agent 不能针对 test query 写死规则
-4. 所有方法使用相同原始输入
-5. 所有方法使用相同计算预算
-6. 生成的 memory 必须可保存、可复现
-7. query 过程必须输出 evidence
-8.4 可能的 variants
-1. Prompt Only Memory Designer
-agent 只根据 benchmark spec 设计 memory schema，不看训练样本。
-2. Few Example Memory Designer
-agent 可以看少量训练用例和错误反馈。
-3. Coding Agent Memory Designer
-agent 可以写完整 memory construction 和 query code。
-4. Iterative Agent Memory Designer
-agent 可以在 training split 上反复提交、看分数、修改 memory 设计。
-8.5 评价意义
-这个 baseline 可以回答一个更深的问题：
-如果 spatial memory 是为 agent 服务的，那么 memory representation 是否应该由 agent 和任务共同决定？
-如果 agent designed memory 表现好，说明现有人工设计的 scene graph 不是唯一答案。
-如果表现不好，也有价值，说明当前 agent 还不能自动设计稳定、几何一致、可泛化的 spatial memory。
-9. 推荐实现计划
-Phase 1：Benchmark Specification
-先确定：
-1. input format
-2. Full Memory Package 格式
-3. Full Agent Access 规则
-4. metrics
-5. dataset split
-6. evidence 格式
-7. failure mode taxonomy
-Phase 2：Memory Construction Evaluation
-在 ScanNet++ 上实现 Track A。
-优先跑：
-1. HOV SG
-2. DualMap
-3. ConceptGraphs
-4. SpatialRAG
-目标：
-先评估 memory 本身，不接 OpenEQA。
-Phase 3：Object Query Evaluation
-实现 Track B 和 Track C。
-使用：
-1. ScanNet++ 做 basic object location
-2. ScanRefer 做 fine grained referring query
-目标：
-评估 memory 是否支持 object level query 和 attribute based query。
-Phase 4：OpenEQA Agent Evaluation
-实现 Track D。
-让同一个 agent 使用不同 baseline 的 Full Memory Package 回答 OpenEQA 问题。
-目标：
-评估 memory 是否真的能被 agent 使用，而不是只看方法自带接口。
-Phase 5：OC NaVQA Static Subset
-实现 Track E。
-只做：
-1. spatial questions
-2. descriptive questions
-目标：
-测试 long horizon setting。
-Phase 6：Agent Designed Memory Baseline
-给 agent 部分训练用例和评价体系，让 agent 自己设计 memory schema、construction code 和 query code。
-目标：
-测试 agent 是否能提出比人工模块化系统更适合自身使用的 memory representation。
-10. 预期贡献
-Contribution 1
-提出一个 agent centric spatial memory benchmark。
-Contribution 2
-提出 Full Agent Access 评测设定，把 map、代码、原始输入和方法自带接口全部开放给 agent。
-Contribution 3
-系统评估 memory quality、query efficiency、QA accuracy、evidence correctness 和 agentic usability。
-Contribution 4
-比较多种 memory paradigm，包括 Multi Frame VLM、caption memory、object graph、hierarchical graph、online semantic map、tool based scene graph 和 retrieval based spatial memory。
-Contribution 5
-提出 Agent Designed Memory Baseline，探索 agent 是否可以根据任务和评价体系自行设计 memory representation。
-11. 第一版 Scope
-第一版包含：
-1. online posed RGBD memory construction
-2. object location query
-3. fine grained referring query
-4. general spatial QA
-5. long horizon static spatial QA
-6. Full Agent Access evaluation
-7. memory size
-8. time per frame
-9. query latency
-10. evidence correctness
-11. agent designed memory baseline
-第一版暂时不做：
-1. temporal QA
-2. dynamic object tracking
-3. downstream navigation
-4. downstream manipulation
-5. full mobile manipulation planning
-12. 核心 Claim
-这个 benchmark 想证明：
-Spatial memory 的评测不应该只依赖固定 query interface。一个真正有用的 spatial memory 应该能作为 agent 的外部资源被读取、查询、验证和组合。
-进一步地，它还探索：
-如果 spatial memory 是为 agent 服务的，那么 memory 的形式是否也可以由 agent 根据任务和评价体系自动设计。
-最终目标不是简单给现有方法排名，而是重新定义：
-什么样的 spatial memory 对 embodied agent 才是真的有用。
+Last updated: 2026-06-23 (refactor: 3-track agentic benchmark + agent-designed memory baseline)
+
+## 0. 这次重构改了什么
+
+旧版本是 method-centric 的多 track 评测，强调每个方法导出固定 API，然后人工
+对齐接口。新版本把重心转向 **agentic 评测** 和 **agent-designed memory**：
+
+- Track 数量从 5 个收敛成 3 个，去冗余：
+  - 旧 Track A（memory construction 质量）和旧 Track B（object location query）
+    合并成 **新 Track 1：Object-Level Location Query**。Track 1 只评 object
+    location 查询准确率，外加构建侧的 memory size / time-per-frame / peak memory。
+    不再单独报告 object recall / false-memory ratio / redundancy ratio /
+    localization error 这些 inventory 质量指标。
+  - 旧 Track C（ScanRefer referring）变成 **新 Track 2：Instance-Level Referring Query**。
+  - 旧 Track D（OpenEQA general QA）变成 **新 Track 3：General Spatial QA**，
+    同时在 ScanNet 和 HM3D 上做。
+- 旧 Track E（OC-NaVQA long-horizon）和 SG3D **从主线移除**，作为
+  零样本迁移目标延后处理（见 §6）。
+- 不再强行适配古早（非 agent）方法去重建统一 fixed API。已经是 agent 形态的方法
+  （DAAAM、ReMEmbR 等）直接开放它们的原生 tools 给 LLM；fixed-API 评测只用于
+  deterministic 对照，对没有原生能力的方法直接判 `invalid`。
+- 重心从“给现有方法排名”转向 **agent-designed memory baseline**：让 coding agent
+  在共享模块、测试用例和评价体系下，自己写 memory 构建和 tool 接口，再在我们的
+  benchmark 上评测，最后零样本迁移到 SG3D / NaVQA（见 §7）。
+
+## 1. 核心动机
+
+现有 spatial memory 工作已经能够从 posed RGBD sequence 中构建 object map、semantic
+map、scene graph 或 long-horizon memory，并用于导航、问答或规划。但现有评测大多仍是
+method-centric 的：每个方法自己定义 memory，自己设计 query interface，自己决定 agent
+如何访问 memory，最后只看系统能否回答某些问题。
+
+这种评测方式有一个关键缺陷：它无法判断一个 spatial memory 本身是否真的对 agent 有用。
+一个 memory 可能已经包含正确的 object、位置、属性和关系，但因为固定接口无法表达复杂
+查询而失败；反过来，一个方法也可能为特定任务设计很强的接口，在 benchmark 上表现很好，
+却并不代表它的 memory 具有通用可用性。
+
+因此本项目的核心不是提出一个新的 spatial memory 方法，而是提出一个新的 benchmark：
+把 spatial memory 当作 embodied agent 可访问的外部认知资源来评估。我们不再只问
+“这个方法能不能通过固定接口回答问题”，而是问：
+
+> 当 agent 拿到一个 memory system 的 map、原生接口和（受控的）原始资源后，它能不能
+> 自主理解、检索、验证和组合这些资源，从而完成空间问答和空间推理？
+
+这就是 *Beyond Fixed Queries* 的核心含义。
+
+进一步地，如果 memory 是为 agent 服务的，那么 memory 的形式是否也应该由 agent 根据
+任务和评价体系自己设计？这是本项目的第二个核心问题，对应 agent-designed memory
+baseline。
+
+## 2. 与已有工作的关系
+
+| 类别 | 代表方法 | 在本 benchmark 中的角色 |
+|---|---|---|
+| No explicit memory | Multi-frame VLM, LLM-with-captions | 控制组（`explicit_memory=false`）。回答“是否真的需要显式 spatial memory”。 |
+| Caption retrieval memory | ReMEmbR | 非结构化 episodic memory；原生 retrieval tools 用于 agentic eval。 |
+| Object-centric memory | ConceptGraphs, ClawS/SpatialRAG, DualMap | open-vocabulary object map，object/referring query 主力对照。 |
+| Hierarchical scene graph | HOV-SG, Hydra | floor/room/object 层次结构；多数靠预定义接口被使用。 |
+| Tool-based scene graph | DAAAM | 4D scene graph + tool-calling agent，highly-engineered tool-based memory 代表。 |
+
+设计目标：用同一套 protocol，公平比较这些差异很大的 memory paradigm，而不是让每个方法
+各自定义胜负标准。
+
+与近期 benchmark 的关系：NaVQA（长视频、偏室外大场景）和 SG3D（task-relevant
+grounding）是相关工作，但都不完全符合我们的需求。我们聚焦 **室内场景** 的 **分层评测**
+（object → instance → general），用更细的 track 定位问题、扩大测试规模，弥补早期
+NaVQA 子集太小、层次不清的问题。NaVQA / SG3D 留作零样本迁移目标。
+
+## 3. Benchmark 核心设定
+
+### 3.1 目标
+
+本 benchmark 不提出新的 memory representation，而是提出新的 evaluation protocol，
+系统评估：
+
+1. memory 能否从 posed RGBD sequence 在线构建，且紧凑、低开销（size / time-per-frame / peak）；
+2. memory 能否支持 object-level location query；
+3. memory 能否支持 instance-level fine-grained referring query；
+4. agent 能否使用 memory 系统的原生 tools 回答 general spatial QA；
+5. 不同 memory paradigm 对 agentic spatial reasoning 的作用差异；
+6. agent 能否根据任务和评价体系，自己设计出可用、可泛化的 memory。
+
+### 3.2 输入
+
+每个方法接收相同输入：RGB-D sequence、camera poses、intrinsics、timestamps，可选的
+shared detector/segmenter 输出。第一版只用离线给定的 posed RGBD sequence，不做 active
+exploration。
+
+### 3.3 评测的两种访问形态
+
+本 benchmark 用统一的两层访问形态，对所有 track 一致：
+
+- **Fixed API（deterministic 对照）**：方法把原生能力暴露成声明式 Python entrypoint
+  （见 `memory_package_spec.md`）。evaluator 直接调用，得到 deterministic 分数。
+  只在方法 *原生* 支持时才标 `supported`；不支持就标 `invalid`，不允许用 LLM wrapper
+  或手写规则假装支持。
+- **Tool-LLM（agentic 主路径）**：evaluator 每次只给一个问题，LLM 通过方法 **原生**
+  retrieval/query tools 访问 raw/native memory，再输出答案。这是不同 memory 形式之间
+  的主要公平比较路径。对没有原生 LLM/tool 接口的方法（如当前 ScanNet++ 上的 HOV-SG），
+  不强行纳入 tool-LLM eval，标 `not_applicable`。
+
+> 删除项：旧的“full-access coding-agent 一次性回答所有问题”设定已删除。它会混淆三件
+> 事——memory 本身的可用性、原生 tool 的能力、coding agent 临时写 adapter 的能力。
+> coding agent 的角色被收敛进 §7 的 agent-designed memory baseline，那里它的目标是
+> **设计 memory**，而不是临时给某个方法补接口。
+
+### 3.4 允许 / 不允许提供给评测的资源
+
+允许：构建好的 map/memory、原生 query interface 与 retrieval tools、schema 说明、
+build log、（在 tool-LLM 下受控暴露的）方法原始 source code、memory 自带的 evidence。
+
+不允许：GT annotations、benchmark answers、test labels、为测试问题手写的规则、在线
+设置中未来时刻的信息、evaluator 侧转换出的 fixed-API 视图作为 agentic 主输入（除非它
+本身就是方法原生 memory）。
+
+## 4. Evaluation Tracks
+
+分层 eval：object → instance → general，逐层定位 memory 的能力边界。
+
+### Track 1：Object-Level Location Query（合并自旧 Track A + B）
+
+- **目标**：评估 memory 能否回答基础物体位置问题（“where is the chair?”），同时记录
+  memory 构建侧的开销。
+- **数据集**：ScanNet++（当前 scene `036bce3393`，可扩展）。
+- **查询**：category-level，由场景 GT object inventory 自动派生（每个 canonical label
+  一个 query）。GT inventory 只用于把预测对齐到目标 object，不再作为单独报告的 inventory
+  质量指标。
+- **fixed API**：`query_object(package_dir, query) -> {predictions:[...]}`。evaluator 传入
+  `target_label` + 自然语言 query；方法优先做 exact/normalized-label 匹配。
+- **指标**：
+  - 查询质量：`success@1`、`success@5`、`recall@1`、`recall@5`、`mrr`、
+    `mean_first_hit_distance_m`、query latency（mean / median / p95 / QPS）。
+  - 构建开销：`native_memory_size_bytes`（主 memory-size 指标）、`package_size_bytes`、
+    `memory_artifact_size_bytes`、`frame_count`、`time_per_frame_seconds`、
+    `peak_ram_bytes`、`peak_vram_bytes`。
+- **invalid 条件**：没有可比较的 object-location query API 或没有 object-level memory。
+
+### Track 2：Instance-Level Referring Query（旧 Track C）
+
+- **目标**：评估 memory 能否回答更具体的 referring expression（“the red table near
+  the window”），测试颜色、材质、属性、空间关系、object disambiguation。
+- **数据集**：ScanRefer on ScanNet。
+- **fixed API**：`resolve_referring_expression(package_dir, query) -> {predictions:[...]}`。
+- **指标**：target top-1 / top-k、3D IoU、center distance、attribute/relation evidence
+  correctness、query latency。
+- **invalid 条件**：没有原生 referring resolver 或能力等价的 object query API。
+
+### Track 3：General Spatial QA（旧 Track D）
+
+- **目标**：评估 agent 能否用 memory 系统回答开放空间问题。
+- **数据集**：OpenEQA，在 **ScanNet 和 HM3D** 上都做。
+- **问题类型**：object attribute / color / material / state、spatial relation、room-level
+  reasoning、functional reasoning、general scene understanding。
+- **fixed API**：`answer_question(package_dir, query) -> {answer, evidence}`，只在方法
+  原生有 QA/retrieval API 时 supported；不允许用通用 object-table-to-LLM 答案器假装支持。
+- **指标**（最终选有代表性的子集）：LLM-Match、category accuracy、supporting-evidence
+  correctness、memory usage rate、raw-input fallback rate、tool-call count、token cost、
+  end-to-end latency、failure-mode distribution。
+
+### Deferred：Long-Horizon / Task Grounding（旧 Track E + SG3D）
+
+OC-NaVQA static subset、ReMEmbR temporal questions（when / how-long / before-after /
+last-seen / duration）、SG3D task grounding 全部从主线移除。它们将作为 **零样本迁移
+目标**：当我们的 agentic baseline（尤其 agent-designed baseline）在自有 benchmark 上
+效果可接受时，直接零样本迁移到 SG3D / NaVQA 上观察效果（见 §6、§7）。
+
+## 5. 核心指标分组
+
+- **Memory Quality / Cost（Track 1 构建侧）**：memory size、time-per-frame、peak RAM/VRAM。
+- **Query Quality（Track 1/2）**：top-1 / top-k、position error / 3D IoU、query latency、
+  evidence correctness。
+- **Agentic Usability（Track 1/2/3 tool-LLM）**：answer accuracy、supporting-evidence
+  correctness、memory usage rate、raw-input fallback rate、tool-call count、token cost、
+  end-to-end latency。
+  - 最关键：**Memory Usage Rate**（答案多少依赖 memory）、**Raw-Input Fallback Rate**
+    （多少要回到 raw frames，越高说明 memory 保存得越不够）、**Evidence Correctness**
+    （是否用了正确的 object/relation/region/keyframe，避免靠语言先验猜对）。
+
+## 6. Failure Mode Analysis
+
+每个失败样本归类（用于诊断而非仅排名）：(1) memory 缺目标 object；(2) 位置错误；
+(3) 属性错误；(4) 空间关系缺失；(5) 重复 object 致选错；(6) schema 难懂；(7) 没找到
+正确 evidence；(8) 找到 evidence 但推理错；(9) 主要靠 raw input 才答对；(10) 答案格式
+错误；(11) evaluator 判断歧义。
+
+## 7. 重点：Agent-Designed Memory Baseline
+
+这是本项目重心。详见 `.codex/agent_designed_baseline.md`，这里只给愿景。
+
+### 7.1 动机
+
+当前 spatial memory 方法大多是高度模块化、工程化的系统（segmentation → tracking →
+object merging → scene graph → relation extraction → query interface → QA）。但如果
+memory 最终是服务 agent 的，一个自然的问题是：**memory 的形式能否由 agent 根据任务和
+评价体系自己设计？**
+
+### 7.2 设置
+
+给 coding agent 提供：
+
+1. shared modules 的介绍与可调用接口（detector / segmenter / CLIP / VLM / embeddings）；
+2. 部分 training scenes 和 training queries（不含 test answers）；
+3. benchmark 的指标定义和 memory package 契约；
+4. 可用原始输入（受控）；
+5. 若干示例 memory package；
+6. 代码执行环境。
+
+agent 需要输出：memory schema、memory construction script、query/tool 接口、README、
+memory export format、evidence format。产物必须是一个能过 validator 的
+`agent_designed` memory package（+ 构建/查询代码）。
+
+### 7.3 评测闭环
+
+agent 产出的 package 流经 **同一套 Track 1/2/3 evaluator**：先在我们自己的 held-out
+scenes / held-out queries 上评测，再 **零样本迁移到 SG3D / NaVQA**。
+
+### 7.4 约束（防泄漏）
+
+agent 不能访问 test answers / GT labels；不能针对 test query 写死规则；所有方法用相同
+原始输入和计算预算；生成的 memory 必须可保存、可复现；query 必须输出 evidence。
+
+### 7.5 Variants（递进）
+
+1. **Prompt-Only**：只看 benchmark spec 设计 schema，不看训练样本。
+2. **Few-Example**：可看少量训练用例和错误反馈。
+3. **Coding Agent**：写完整 construction + query code。
+4. **Iterative**：在 training split 上反复提交、看分、改设计。
+
+### 7.6 评价意义
+
+如果 agent-designed memory 表现好，说明人工设计的 scene graph 不是唯一答案；如果不好，
+也有价值——说明当前 agent 还无法自动设计稳定、几何一致、可泛化的 spatial memory。
+
+## 8. 实现 Roadmap（概要，细节见 `agentic_eval_plan.md`）
+
+- Phase 0：冻结 3-track + agent-designed 契约（validator / spec / 示例 package）。
+- Phase 1：Track 1（object location + accounting），fixed_api + tool_llm。
+- Phase 2：Track 2（ScanRefer），先 fixed_api 再 tool_llm。
+- Phase 3：Track 3（OpenEQA on ScanNet + HM3D），fixed_api + tool_llm，LLM judge 隔离。
+- Phase 4：Agent-Designed Memory Baseline harness（workspace → build → eval → iterate）。
+- Phase 5：零样本迁移到 SG3D / NaVQA（含 long-horizon / temporal extension）。
+
+## 9. 预期贡献
+
+1. agent-centric spatial-memory benchmark，分层 object → instance → general。
+2. 统一的 Fixed-API + Tool-LLM 评测协议，把方法原生 tools 公平开放给 LLM。
+3. 系统评估 memory quality / query efficiency / QA accuracy / evidence correctness /
+   agentic usability。
+4. 比较多种 memory paradigm（no-memory control、caption memory、object graph、
+   hierarchical graph、tool-based scene graph）。
+5. **Agent-Designed Memory Baseline**：探索 agent 是否能根据任务与评价体系自行设计
+   memory，并零样本迁移到 SG3D / NaVQA。
+
+## 10. 核心 Claim
+
+Spatial memory 的评测不应只依赖固定 query interface。一个真正有用的 spatial memory
+应该能作为 agent 的外部资源被检索、验证和组合。更进一步：如果 memory 是为 agent 服务
+的，那么 memory 的形式也可以由 agent 根据任务和评价体系自动设计。最终目标不是给现有
+方法排名，而是重新定义：什么样的 spatial memory 对 embodied agent 才是真的有用。

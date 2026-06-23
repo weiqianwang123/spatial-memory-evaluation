@@ -22,8 +22,20 @@ checkpoint、prepared intermediate、memory package、result output 和工具环
 |---|---|---|---|
 | NAS root | `/data/mondo-training-dataset` | shared heavy data | never commit |
 | semantic mapping data root | `/data/mondo-training-dataset/semantic_mapping` | spatial-memory datasets/checkpoints/modules | never commit |
-| ScanNet++ root | `/data/mondo-training-dataset/semantic_mapping/scannetpp` | ScanNet++ dataset root | never commit |
-| current ScanNet++ scene | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393` | current HOV-SG smoke/full scene | never commit |
+| ScanNet++ root | `/data/mondo-training-dataset/semantic_mapping/scannetpp` | ScanNet++ dataset root (Track 1) | never commit |
+| current ScanNet++ scene | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393` | current Track 1 smoke/full scene | never commit |
+| ScanNet scans | `/data/mondo-training-dataset/semantic_mapping/scannet/scans` | ScanNet scans (ScanRefer geometry source candidate for Track 2) | never commit |
+| OpenEQA ScanNet DBs | `/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_dbs` | OpenEQA ScanNet episode DBs (Track 3); currently 1 episode `scannet-v0__002-scannet-scene0709_00.db` | never commit |
+| OpenEQA frames | `/data/mondo-training-dataset/semantic_mapping/openeqa_frames/scannet-v0` | OpenEQA ScanNet frames (Track 3) | never commit |
+| OpenEQA ScanNet RGB-D | `/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd` | OpenEQA ScanNet posed RGB-D (Track 3) | never commit |
+
+### Track 2/3 datasets still to acquire
+
+| Dataset | Target purpose | Status (2026-06-23) | Acquisition note |
+|---|---|---|---|
+| ScanRefer annotations | Track 2 instance-level referring | **missing** | Need ScanRefer referring expressions aligned to ScanNet `scans`. Track 2 `data.py` emits a `data_unavailable` stub until present. |
+| HM3D / OpenEQA-HM3D | Track 3 general QA (HM3D half) | **missing** | Need HM3D scenes + OpenEQA HM3D episodes. Track 3 currently only has the ScanNet half. |
+| OC-NaVQA / SG3D | Phase 5 zero-shot transfer | missing; deferred | Not main-line; acquire when transfer phase starts. |
 | current scene RGB | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393/iphone/rgb.mkv` | source RGB video for HOV-SG prepare | never commit |
 | current scene depth | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393/iphone/depth.bin` | source depth stream for HOV-SG prepare | never commit |
 | current scene poses/intrinsics | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393/iphone/pose_intrinsic_imu.json` | source poses/intrinsics for HOV-SG prepare | never commit |

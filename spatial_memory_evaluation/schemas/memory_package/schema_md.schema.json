@@ -8,7 +8,7 @@
   "required": ["schema_version", "document", "required_topics"],
   "properties": {
     "schema_version": {
-      "const": "0.1"
+      "const": "0.2"
     },
     "document": {
       "const": "schema.md"

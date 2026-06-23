@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 from spatial_memory_evaluation.shared_modules import get_shared_module_registry
 
 
-METHODS = ("hovsg", "dualmap", "conceptgraphs", "daaam")
+METHODS = ("hovsg", "conceptgraphs", "daaam")
 
 
 def parse_args() -> argparse.Namespace:

@@ -168,8 +168,8 @@ class SharedModuleRegistry:
                 name="Segment Anything",
                 role="smoke shared mask proposal fallback",
                 version="vit_b",
-                status="present_local",
-                checkpoint=Path("/home/robin_wang/DualMap/sam_b.pt"),
+                status="nas_snapshot",
+                checkpoint=self.root / "sam" / "vit_b" / "sam_b.pt",
                 notes="Smoke fallback until SAM ViT-H is centralized.",
             ),
             "yolo_world.v8s": ModuleSpec(
@@ -178,10 +178,10 @@ class SharedModuleRegistry:
                 name="YOLO-World",
                 role="smoke open-vocabulary detector fallback",
                 version="yolov8s-world",
-                status="present_local",
-                checkpoint=Path("/home/robin_wang/DualMap/yolov8s-world.pt"),
+                status="nas_snapshot",
+                checkpoint=self.root / "yolo" / "yolo_world" / "yolov8s-world.pt",
                 notes=(
-                    "Only YOLO-World checkpoint currently found locally. Use for smoke runs until "
+                    "Smoke fallback under shared modules. Use for smoke runs until "
                     "the stronger shared formal checkpoint is centralized."
                 ),
             ),
@@ -194,8 +194,8 @@ class SharedModuleRegistry:
                 status="missing_local",
                 checkpoint=self.root / "yolo" / "yolo_world" / "yolov8l-world.pt",
                 notes=(
-                    "Formal target: DualMap's native config and ConceptGraphs streamlined path both "
-                    "reference yolov8l-world.pt. It was not found locally during the 2026-06-17 audit; "
+                    "Formal target for detector-backed methods that can consume YOLO-World-L. "
+                    "It was not found locally during the 2026-06-17 audit; "
                     "download or symlink it before formal runs."
                 ),
             ),
@@ -325,13 +325,6 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("sam.vit_b", True),
             ("openclip.vit_b_32", True),
         ],
-        "dualmap": [
-            ("detector_class_list.canonical", True),
-            ("yolo_world.v8s", True),
-            ("sam.vit_b", True),
-            ("openclip.vit_b_32", True),
-            ("fastsam.s_pt", False),
-        ],
         "conceptgraphs": [
             ("detector_class_list.canonical", True),
             ("yolo_world.v8s", True),
@@ -354,13 +347,6 @@ _METHOD_PROFILES: dict[str, dict[str, list[tuple[str, bool]]]] = {
             ("detector_class_list.canonical", True),
             ("sam.vit_h", True),
             ("openclip.vit_h_14", True),
-        ],
-        "dualmap": [
-            ("detector_class_list.canonical", True),
-            ("yolo_world.v8l", True),
-            ("sam.vit_h", True),
-            ("openclip.vit_h_14", True),
-            ("fastsam.s_pt", False),
         ],
         "conceptgraphs": [
             ("detector_class_list.canonical", True),

@@ -1,3 +1,17 @@
+"""Track 1: object-level location query + build-cost accounting.
+
+This merges the old Track 1 (memory construction) and old Track 2 (object
+location query) into one track. It scores category-level object-location queries
+against the exported memory and, in the same summary, reports the build-cost
+half: native memory size, package size, frame count, time per frame, and peak
+RAM/VRAM from build accounting.
+
+Modes:
+- ``fixed_api``: call the package's declared ``track1_object_location`` entrypoint
+  (``query_object``-style) per query.
+- ``tool_llm``: per-query LLM + method-native retrieval tools.
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,18 +21,14 @@ from typing import Any
 
 from spatial_memory_evaluation.common.jsonl import read_jsonl
 from spatial_memory_evaluation.common.labels import load_aliases
-from spatial_memory_evaluation.common.matching import inventory_metrics
+from spatial_memory_evaluation.common.matching import match_objects, mean, median, safe_div
 from spatial_memory_evaluation.common.package_io import (
-    copy_agent_context_paths,
-    copy_package_to_sandbox,
-    default_agent_context_paths,
     dir_size_bytes,
     fixed_api_capability,
     invalid_result,
     linked_raw_size_bytes,
     load_entrypoint,
     load_package,
-    run_agent_command,
 )
 from spatial_memory_evaluation.common.reporting import (
     evaluation_output_paths,
@@ -28,10 +38,12 @@ from spatial_memory_evaluation.common.reporting import (
     write_evaluation_outputs,
 )
 from spatial_memory_evaluation.output_paths import timestamped_result_dir
+from spatial_memory_evaluation.tool_llm import run_tool_llm_query
 
 
-TRACK_KEY = "track1_memory_construction"
+TRACK_KEY = "track1_object_location"
 SPLITS = ("detector_coverable",)
+K_VALUES = (1, 5)
 
 
 def evaluate_track1(
@@ -40,11 +52,8 @@ def evaluate_track1(
     benchmark_dir: Path,
     mode: str,
     output: Path | None,
-    agent_command: str | None = None,
-    agent_output: Path | None = None,
-    sandbox_root: Path | None = None,
-    agent_extra_paths: list[Path] | None = None,
-    agent_include_source_code: bool = True,
+    llm_command: str | None = None,
+    max_tool_iterations: int = 3,
 ) -> dict[str, Any]:
     manifest, capabilities = load_package(package_dir)
     method = str(manifest["method"]["name"])
@@ -52,22 +61,15 @@ def evaluate_track1(
         output = timestamped_result_dir(method, f"track1-{mode}") / "eval_summary.json"
 
     if mode == "fixed_api":
-        result = _run_fixed_api(package_dir, manifest, capabilities, method)
-    elif mode in ("agentic_memory_only", "agentic_full_access"):
-        result = _run_agentic(
+        result = _run_fixed_api(package_dir, manifest, capabilities, benchmark_dir, method)
+    elif mode == "tool_llm":
+        result = _run_tool_llm(
             package_dir=package_dir,
+            manifest=manifest,
             benchmark_dir=benchmark_dir,
             output=output,
-            agent_command=agent_command,
-            agent_output=agent_output,
-            sandbox_root=sandbox_root,
-            context_paths=default_agent_context_paths(
-                manifest=manifest,
-                method=method,
-                repo_root=Path(__file__).resolve().parents[2],
-                explicit_paths=agent_extra_paths or [],
-                include_source_code=agent_include_source_code and mode == "agentic_full_access",
-            ),
+            llm_command=llm_command,
+            max_tool_iterations=max_tool_iterations,
         )
     else:
         raise ValueError(f"unknown Track 1 mode: {mode}")
@@ -76,7 +78,7 @@ def evaluate_track1(
     build_runtime_seconds = _build_runtime_seconds(package_dir, manifest)
     base_summary: dict[str, Any] = {
         "status": result["status"],
-        "track": "track1_memory_construction",
+        "track": TRACK_KEY,
         "mode": mode,
         "package_dir": str(package_dir),
         "method": method,
@@ -90,11 +92,19 @@ def evaluate_track1(
         "peak_ram_bytes": memory_size.get("peak_ram_bytes"),
         "peak_vram_bytes": memory_size.get("peak_vram_bytes"),
     }
+
     if result["status"] == "ok":
         aliases = load_aliases(benchmark_dir / "label_aliases.json")
-        predictions = result["objects"]
+        predictions_by_query = result["predictions_by_query"]
+        latencies = result.get("latency_seconds_by_query", {})
         full_splits = {
-            split: inventory_metrics(read_jsonl(benchmark_dir / f"{split}.jsonl"), predictions, aliases)
+            split: _score_split(
+                gt_objects=read_jsonl(benchmark_dir / f"{split}.jsonl"),
+                queries=read_jsonl(benchmark_dir / f"queries_{split}.jsonl"),
+                predictions_by_query=predictions_by_query,
+                latency_seconds_by_query=latencies,
+                aliases=aliases,
+            )
             for split in SPLITS
         }
         summary = {
@@ -104,9 +114,12 @@ def evaluate_track1(
         details = {
             **base_summary,
             "memory_size": memory_size,
-            "fixed_api_runtime_seconds": result.get("api_runtime_seconds"),
             "splits": full_splits,
         }
+        if result.get("tool_traces_by_query") is not None:
+            details["tool_traces_by_query"] = result.get("tool_traces_by_query")
+        if result.get("query_errors_by_query") is not None:
+            details["query_errors_by_query"] = result.get("query_errors_by_query")
     else:
         summary = {**base_summary, "result": result}
         details = {**base_summary, "memory_size": memory_size, "result": result}
@@ -127,15 +140,14 @@ def evaluate_track1(
 
 def _track1_summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     keys = (
-        "gt_count",
-        "prediction_count",
-        "tp",
-        "fp",
-        "fn",
-        "precision",
-        "recall",
-        "f1",
-        "mean_center_error_m",
+        "query_count",
+        "success@1",
+        "success@5",
+        "recall@1",
+        "recall@5",
+        "mrr",
+        "mean_first_hit_distance_m",
+        "mean_query_latency_ms",
     )
     return {key: metrics.get(key) for key in keys}
 
@@ -144,6 +156,7 @@ def _run_fixed_api(
     package_dir: Path,
     manifest: dict[str, Any],
     capabilities: dict[str, Any],
+    benchmark_dir: Path,
     method: str,
 ) -> dict[str, Any]:
     cap = fixed_api_capability(capabilities, TRACK_KEY)
@@ -157,170 +170,198 @@ def _run_fixed_api(
             explicit_memory=manifest.get("explicit_memory"),
             method_family=method_meta.get("family"),
         )
-    func = load_entrypoint(package_dir, str(cap["entrypoint"]))
-    started = time.perf_counter()
-    result = func(str(package_dir), {})
-    runtime = time.perf_counter() - started
-    objects = result.get("objects") if isinstance(result, dict) else None
-    if not isinstance(objects, list):
-        return {"status": "error", "message": "Track 1 entrypoint did not return an objects list"}
-    return {"status": "ok", "objects": objects, "api_runtime_seconds": runtime}
+    query_object = load_entrypoint(package_dir, str(cap["entrypoint"]))
+    predictions_by_query: dict[str, list[dict[str, Any]]] = {}
+    latency_seconds_by_query: dict[str, float] = {}
+    for split in SPLITS:
+        for query in read_jsonl(benchmark_dir / f"queries_{split}.jsonl"):
+            query_id = str(query["query_id"])
+            target_label = query.get("target_label") or query.get("canonical_label")
+            started = time.perf_counter()
+            result = query_object(
+                str(package_dir),
+                {
+                    "query": query["query"],
+                    "target_label": target_label,
+                    "canonical_label": query.get("canonical_label"),
+                    "top_k": int(query["top_k"]),
+                },
+            )
+            latency_seconds_by_query[query_id] = time.perf_counter() - started
+            predictions = result.get("predictions") if isinstance(result, dict) else None
+            predictions_by_query[query_id] = predictions if isinstance(predictions, list) else []
+    return {
+        "status": "ok",
+        "predictions_by_query": predictions_by_query,
+        "latency_seconds_by_query": latency_seconds_by_query,
+    }
 
 
-def _run_agentic(
+def _run_tool_llm(
     *,
     package_dir: Path,
+    manifest: dict[str, Any],
     benchmark_dir: Path,
     output: Path,
-    agent_command: str | None,
-    agent_output: Path | None,
-    sandbox_root: Path | None,
-    context_paths: list[Path],
+    llm_command: str | None,
+    max_tool_iterations: int,
 ) -> dict[str, Any]:
-    if agent_output is not None:
-        return _load_agent_objects(agent_output)
-    if not agent_command:
-        return {
-            "status": "error",
-            "message": "agentic_memory_only requires --agent-output or --agent-command",
-        }
-    sandbox_root = sandbox_root or (output.parent / "agent_sandbox")
-    sandbox_root.mkdir(parents=True, exist_ok=True)
-    sandbox_package = copy_package_to_sandbox(package_dir, sandbox_root)
-    copied_context_paths = copy_agent_context_paths(context_paths, sandbox_root / "source_context")
-    prompt_path = sandbox_root / "track1_prompt.md"
-    agent_output_path = sandbox_root / "track1_agent_output.json"
-    prompt_path.write_text(_track1_prompt(sandbox_package, copied_context_paths), encoding="utf-8")
-    run_agent_command(
-        agent_command=agent_command,
-        prompt_path=prompt_path,
-        sandbox_dir=sandbox_root,
-        output_path=agent_output_path,
-    )
-    return _load_agent_objects(agent_output_path)
+    if not llm_command:
+        return {"status": "error", "message": "tool_llm mode requires --llm-command"}
+
+    work_dir = output.parent / "tool_llm_traces"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    predictions_by_query: dict[str, list[dict[str, Any]]] = {}
+    latency_seconds_by_query: dict[str, float] = {}
+    tool_traces_by_query: dict[str, Any] = {}
+    query_errors_by_query: dict[str, Any] = {}
+
+    for split in SPLITS:
+        for query in read_jsonl(benchmark_dir / f"queries_{split}.jsonl"):
+            query_id = str(query["query_id"])
+            try:
+                query_result = run_tool_llm_query(
+                    package_dir=package_dir,
+                    manifest=manifest,
+                    query={
+                        "query_id": query["query_id"],
+                        "scene_id": query["scene_id"],
+                        "split": query["split"],
+                        "canonical_label": query["canonical_label"],
+                        "target_label": query.get("target_label") or query["canonical_label"],
+                        "query": query["query"],
+                        "top_k": query["top_k"],
+                    },
+                    llm_command=llm_command,
+                    work_dir=work_dir,
+                    max_tool_iterations=max_tool_iterations,
+                )
+            except Exception as exc:
+                query_result = {
+                    "status": "error",
+                    "message": f"{type(exc).__name__}: {exc}",
+                    "predictions": [],
+                    "latency_seconds": 0.0,
+                    "trace": [],
+                }
+
+            if query_result.get("status") == "invalid":
+                return {
+                    "status": "invalid",
+                    "reason_code": query_result.get("reason_code"),
+                    "message": query_result.get("message"),
+                }
+            predictions = query_result.get("predictions")
+            predictions_by_query[query_id] = predictions if isinstance(predictions, list) else []
+            latency_seconds_by_query[query_id] = float(query_result.get("latency_seconds") or 0.0)
+            tool_traces_by_query[query_id] = query_result.get("trace", [])
+            if query_result.get("status") != "ok":
+                query_errors_by_query[query_id] = {
+                    "status": query_result.get("status"),
+                    "message": query_result.get("message"),
+                }
+
+    return {
+        "status": "ok",
+        "predictions_by_query": predictions_by_query,
+        "latency_seconds_by_query": latency_seconds_by_query,
+        "tool_traces_by_query": tool_traces_by_query,
+        "query_errors_by_query": query_errors_by_query,
+    }
 
 
-def _load_agent_objects(path: Path) -> dict[str, Any]:
-    text = path.read_text(encoding="utf-8")
-    value = _load_agent_json_value(text, path)
-    if isinstance(value, dict) and "objects" not in value and isinstance(value.get("result"), str):
-        value = _load_agent_json_value(value["result"], path)
-    objects = value.get("objects") if isinstance(value, dict) else None
-    if not isinstance(objects, list):
-        return {"status": "error", "message": f"agent output missing objects list: {path}"}
-    return {"status": "ok", "objects": objects}
+def _score_split(
+    *,
+    gt_objects: list[dict[str, Any]],
+    queries: list[dict[str, Any]],
+    predictions_by_query: dict[str, list[dict[str, Any]]],
+    latency_seconds_by_query: dict[str, float],
+    aliases: dict[str, str],
+) -> dict[str, Any]:
+    gt_by_id = {str(obj["gt_id"]): obj for obj in gt_objects}
+    totals = {k: {"matched_targets": 0, "target_count": 0, "success_count": 0} for k in K_VALUES}
+    reciprocal_ranks: list[float] = []
+    first_hit_distances: list[float] = []
+    per_query = []
+
+    for query in queries:
+        query_id = str(query["query_id"])
+        targets = [gt_by_id[gt_id] for gt_id in query["target_gt_ids"] if gt_id in gt_by_id]
+        predictions = predictions_by_query.get(query_id, [])
+        query_row = {"query_id": query_id, "target_count": len(targets)}
+        first_rank = None
+        first_distance = None
+        for k in K_VALUES:
+            matches, _, _, _ = match_objects(targets, predictions[:k], aliases)
+            matched_count = len({match.gt_id for match in matches})
+            totals[k]["matched_targets"] += matched_count
+            totals[k]["target_count"] += len(targets)
+            if matched_count > 0:
+                totals[k]["success_count"] += 1
+                if first_rank is None:
+                    first_rank = _first_hit_rank(targets, predictions[:k], aliases)
+                    first_distance = min(match.distance_m for match in matches)
+            query_row[f"recall@{k}"] = safe_div(matched_count, len(targets))
+            query_row[f"success@{k}"] = matched_count > 0
+        if first_rank is not None:
+            reciprocal_ranks.append(1.0 / first_rank)
+        if first_distance is not None:
+            first_hit_distances.append(first_distance)
+        query_row["first_hit_rank"] = first_rank
+        query_row["first_hit_distance_m"] = first_distance
+        query_row["latency_ms"] = latency_seconds_by_query.get(query_id, 0.0) * 1000.0
+        per_query.append(query_row)
+
+    latencies = [latency_seconds_by_query.get(str(query["query_id"]), 0.0) for query in queries]
+    return {
+        "query_count": len(queries),
+        **{
+            f"recall@{k}": safe_div(totals[k]["matched_targets"], totals[k]["target_count"])
+            for k in K_VALUES
+        },
+        **{
+            f"success@{k}": safe_div(totals[k]["success_count"], len(queries))
+            for k in K_VALUES
+        },
+        "mrr": mean(reciprocal_ranks),
+        "mean_first_hit_distance_m": mean(first_hit_distances),
+        "mean_query_latency_ms": (mean(latencies) or 0.0) * 1000.0,
+        "median_query_latency_ms": (median(latencies) or 0.0) * 1000.0,
+        "p95_query_latency_ms": percentile(latencies, 95) * 1000.0,
+        "total_query_runtime_seconds": sum(latencies),
+        "queries_per_second": safe_div(len(queries), sum(latencies)),
+        "per_query": per_query,
+    }
 
 
-def _load_agent_json_value(text: str, path: Path) -> Any:
-    stripped = text.strip()
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        pass
-    for candidate in _json_object_candidates(stripped):
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-    preview = stripped[:300].replace("\n", "\\n")
-    raise ValueError(f"could not parse agent JSON output from {path}; preview={preview!r}")
+def _first_hit_rank(
+    targets: list[dict[str, Any]],
+    predictions: list[dict[str, Any]],
+    aliases: dict[str, str],
+) -> int | None:
+    for index in range(len(predictions)):
+        matches, _, _, _ = match_objects(targets, predictions[: index + 1], aliases)
+        if matches:
+            return index + 1
+    return None
 
 
-def _json_object_candidates(text: str) -> list[str]:
-    candidates = []
-    start = None
-    depth = 0
-    in_string = False
-    escaped = False
-    for index, char in enumerate(text):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-            continue
-        if char == "{":
-            if depth == 0:
-                start = index
-            depth += 1
-        elif char == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start is not None:
-                candidates.append(text[start : index + 1])
-                start = None
-    return candidates
+def percentile(values: list[float], percentile_value: float) -> float:
+    if not values:
+        return 0.0
+    values = sorted(values)
+    index = (len(values) - 1) * percentile_value / 100.0
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    if lower == upper:
+        return values[lower]
+    fraction = index - lower
+    return values[lower] * (1.0 - fraction) + values[upper] * fraction
 
 
-def _track1_prompt(package_dir: Path, context_paths: list[Path]) -> str:
-    context_text = "\n".join(f"- {path}" for path in context_paths) if context_paths else "- none"
-    access_label = "agentic full-access-to-code" if context_paths else "agentic memory-only access"
-    return f"""You are evaluating a spatial memory package with {access_label}.
-
-Package directory: {package_dir}
-Source-code context copied into this sandbox:
-{context_text}
-
-Your job:
-Infer the object inventory represented by this memory package. You may design
-your own temporary Python scripts, small query functions, or command-line tools
-inside the sandbox to inspect and interact with the memory. You are not limited
-to package-provided fixed APIs.
-
-Allowed resources:
-- The copied memory package: manifest.json, capabilities.json, schema.md,
-  memory/, evidence/, package tools, and build_log.json.
-- The copied source-code context, if present. This may include evaluation
-  adapter code, shared module code, and original method root source code. Use it
-  to understand native memory formats, object fields, coordinate conventions,
-  and query utilities.
-
-Forbidden resources/actions:
-- Do not use benchmark GT annotations, benchmark answers, or test labels.
-- Do not follow raw_links or read raw scene frames unless they were explicitly
-  copied into the sandbox for a declared ablation.
-- Do not use external filesystem paths outside the sandbox.
-- Do not use internet or external services.
-- Do not modify the copied package as your answer source. Temporary scripts and
-  scratch files in the sandbox are fine.
-- Do not hard-code answers for specific query ids or scenes.
-
-Memory artifact priority:
-- Inspect manifest.json, schema.md, and build_log.json before choosing artifacts.
-- If the package contains `memory/object_table.jsonl`, treat it as the primary
-  Track 1 object inventory unless schema.md explicitly says otherwise.
-- If the package also contains debug/evidence tables such as
-  `memory/background_object_table.jsonl`, use them only as supporting evidence
-  unless schema.md says they are part of the Track 1 fixed object universe.
-
-Output requirements:
-- Return only raw JSON. The first character must be `{{` and the last character
-  must be `}}`.
-- Do not include Markdown, code fences, headings, or explanations outside JSON.
-- `objects` should contain every object you believe the memory represents for
-  the detector-coverable shared-OV object inventory.
-- Prefer object ids, labels, positions, bboxes, and evidence directly from the
-  memory package. Use the original method code only to parse or understand the
-  memory, not to reconstruct memory from raw inputs.
-
-Return JSON with this exact shape:
-
-{{
-  "objects": [
-    {{
-      "object_id": "string",
-      "label": "chair",
-      "position_3d": [0.0, 0.0, 0.0],
-      "bbox_3d": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-      "evidence": []
-    }}
-  ]
-}}
-"""
+# ---------------------------------------------------------------------------
+# Build-cost accounting (the construction half of Track 1).
+# ---------------------------------------------------------------------------
 
 
 def _memory_size_summary(package_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -376,11 +417,7 @@ def _first_value(*sources: dict[str, Any], key: str) -> Any:
     return None
 
 
-def _first_int(
-    *sources: dict[str, Any],
-    key: str,
-    fallback: int | None = None,
-) -> int | None:
+def _first_int(*sources: dict[str, Any], key: str, fallback: int | None = None) -> int | None:
     value = _first_value(*sources, key=key)
     if value is None:
         return fallback
@@ -392,11 +429,7 @@ def _first_int(
         return fallback
 
 
-def _first_float(
-    *sources: dict[str, Any],
-    key: str,
-    fallback: float | None = None,
-) -> float | None:
+def _first_float(*sources: dict[str, Any], key: str, fallback: float | None = None) -> float | None:
     value = _first_value(*sources, key=key)
     if value is None:
         return fallback

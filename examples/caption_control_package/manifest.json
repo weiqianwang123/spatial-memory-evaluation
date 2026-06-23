@@ -77,7 +77,7 @@
   "notes": "LLM-with-captions Track 1/2 control. Caption-only memory packaged as captions/provenance; not an object-memory fixed API. The external ReMEmbR repo was read-only and was not modified.",
   "package_id": "remembr_captions/example/seq0/remembr_captions-seq0",
   "raw_links": [],
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "tools": [],
   "vocabulary": {
     "captioner": "Llama-3-VILA1.5-8b",

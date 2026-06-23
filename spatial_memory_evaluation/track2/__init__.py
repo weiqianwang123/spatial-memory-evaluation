@@ -1,1 +1,1 @@
-"""Track 2: category-level object location query evaluation."""
+"""Track 2: ScanRefer instance-level referring-expression query evaluation."""

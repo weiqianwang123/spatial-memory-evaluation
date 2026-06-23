@@ -19,5 +19,6 @@ Native artifact formats: `memory/object_table.jsonl` is UTF-8 JSONL with one
 object per line. Each object includes `object_id`, `label`, `position_3d`,
 `bbox_3d`, `confidence`, and `evidence`.
 
-Known limitations and unsupported tracks: this fixture only supports Track 1.
-Track 2, Track 3, and Track 4 are intentionally invalid.
+Known limitations and unsupported tracks: this fixture only supports Track 1
+(`track1_object_location`). Track 2 (`track2_scanrefer`) and Track 3
+(`track3_openeqa`) are intentionally invalid.

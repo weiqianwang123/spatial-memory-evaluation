@@ -1,10 +1,10 @@
 # Minimal Memory Package Spec
 
-Last updated: 2026-06-15
+Last updated: 2026-06-23 (refactor: 3-track keys + agent_designed family)
 
-This spec fixes the first-version package format used by all fixed-API and
-agentic evaluators. Every method or control baseline must export one minimal
-memory package before it can be evaluated.
+This spec fixes the package format used by fixed-API evaluators and by the
+per-query LLM/tool agentic evaluators. Every method, control baseline, or
+agent-designed memory must export one minimal memory package before evaluation.
 
 Implementation files:
 
@@ -20,18 +20,40 @@ python -m spatial_memory_evaluation.memory_package_validator <package_dir>
 python scripts/package/validate_memory_package.py <package_dir>
 ```
 
+## Track Keys (after the 3-track refactor)
+
+The benchmark has exactly three tracks. The capability keys are stable strings
+used by `capabilities.json`, the validator, and the evaluators:
+
+| Track | Capability key | What it tests | Dataset |
+|---|---|---|---|
+| Track 1 | `track1_object_location` | object-level location query + build cost | ScanNet++ |
+| Track 2 | `track2_scanrefer` | instance-level referring query | ScanRefer / ScanNet |
+| Track 3 | `track3_openeqa` | general spatial QA | OpenEQA (ScanNet + HM3D) |
+
+Migration note (old → new):
+
+- old `track1_memory_construction` + old `track2_object_location`
+  → merged into `track1_object_location`.
+- old `track3_scanrefer` → `track2_scanrefer`.
+- old `track4_openeqa` → `track3_openeqa`.
+
+Packages written for the old 5-track / 4-key layout must be regenerated.
+
 ## Goals
 
-- Give every method a common package boundary while preserving its native memory
-  format.
+- Give every method a common package boundary while preserving its native memory.
 - Make supported and unsupported fixed APIs explicit through `capabilities.json`.
-- Let evaluators produce `invalid` for unsupported tracks instead of guessing,
-  silently falling back, or returning empty predictions.
-- Give agentic evaluation a self-contained folder it can copy into a sandbox.
+- Let evaluators produce `invalid` for unsupported tracks instead of guessing.
+- Give per-query agentic/tool eval a self-contained folder with raw/native memory
+  and declared method-native tools. Agentic/tool eval must not depend on
+  evaluator-created fixed-API conversion views unless those views are also
+  method-native artifacts.
+- Support an `agent_designed` family: memory whose schema/build/query code was
+  produced by a coding agent under the same contract (see
+  `agent_designed_baseline.md`).
 
 ## Package Path
-
-Packages live under:
 
 ```text
 memories/<method>/<dataset>/<scene-or-episode>/<run-id>/
@@ -40,13 +62,15 @@ memories/<method>/<dataset>/<scene-or-episode>/<run-id>/
 Examples:
 
 ```text
-memories/claws/scannetpp/036bce3393/20260615-153000/
-memories/dualmap/openeqa/scene0709_00/20260615-153000/
-memories/remembr/oc-navqa/sequence_0/20260615-153000/
+memories/claws/scannetpp/036bce3393/20260623-153000/
+memories/daaam/scannetpp/036bce3393/20260623-153000/
+memories/agent_designed/scannetpp/036bce3393/iter03-20260623-153000/
+memories/remembr/openeqa-scannet/scene0709_00/20260623-153000/
 ```
 
-`run-id` should normally be a timestamp in `YYYYMMDD-HHMMSS` format. It may be a
-stable hash only if the package is deterministic and already documented.
+`run-id` is normally a `YYYYMMDD-HHMMSS` timestamp; a stable hash is allowed only
+if the package is deterministic and documented. For iterative agent-designed runs
+prefix with the iteration, e.g. `iter03-<timestamp>`.
 
 ## Directory Layout
 
@@ -64,27 +88,25 @@ tools/
 build_log.json
 ```
 
-Recommended:
+Recommended: `README.md`, `checksums.json`, `environment.txt`.
 
-```text
-README.md
-checksums.json
-environment.txt
-```
+For methods with native query/retrieval tools, distinguish:
 
-The package must be self-describing enough that a fixed evaluator or sandboxed
-agent can understand what artifacts exist, what they mean, and which tracks are
-supported without inspecting the original method repo.
+- `memory/native/`: method-native artifacts used by agentic/tool eval.
+- fixed-API conversion views (e.g. `memory/object_table.jsonl`): deterministic
+  evaluator-facing views used only by fixed API, unless the method natively stores
+  that artifact.
+- `tools/`: fixed-API thin entrypoints, not automatically agentic tools.
 
 ## Manifest
 
-`manifest.json` describes the method, dataset, inputs, artifacts, and leakage
+`manifest.json` describes method, dataset, inputs, artifacts, and leakage
 constraints. Required top-level fields:
 
 ```json
 {
-  "schema_version": "0.1",
-  "package_id": "claws/scannetpp/036bce3393/20260615-153000",
+  "schema_version": "0.2",
+  "package_id": "claws/scannetpp/036bce3393/20260623-153000",
   "method": {
     "name": "claws",
     "display_name": "ClawS SpatialRAG",
@@ -142,45 +164,26 @@ constraints. Required top-level fields:
 }
 ```
 
+`schema_version` is bumped to `0.2` for the 3-track refactor.
+
 ### Build Accounting
 
-The same accounting fields must appear in `manifest.json.build` and
-`build_log.json`. `build_log.json` is the authoritative build-run record; the
-manifest mirrors the stable fields so evaluators can read them without parsing
-method-specific logs.
+Same accounting fields appear in `manifest.json.build` and `build_log.json`
+(`build_log.json` is authoritative; manifest mirrors stable fields). Required:
 
-Required build accounting fields:
+- `frame_count`, `build_runtime_seconds`, `time_per_frame_seconds`
+- `native_memory_size_bytes`, `native_memory_artifacts`, `memory_artifact_size_bytes`,
+  `package_size_bytes`
+- `peak_ram_bytes`, `peak_ram_unavailable_reason`, `peak_vram_bytes`,
+  `peak_vram_unavailable_reason`
 
-- `frame_count`
-- `build_runtime_seconds`
-- `time_per_frame_seconds`
-- `native_memory_size_bytes`
-- `native_memory_artifacts`
-- `memory_artifact_size_bytes`
-- `package_size_bytes`
-- `peak_ram_bytes`
-- `peak_ram_unavailable_reason`
-- `peak_vram_bytes`
-- `peak_vram_unavailable_reason`
+Rules: `native_memory_size_bytes` is the primary memory-size metric (original
+method artifact). `package_size_bytes` reported separately. Size accounting must
+not include GT/query files. Peaks filled only when measured; if `null`, the
+unavailable reason must be non-empty. `time_per_frame_seconds =
+build_runtime_seconds / frame_count` when `frame_count > 0`, else `null`.
 
-Rules:
-
-- `native_memory_size_bytes` is the size of the original method artifact and is
-  the primary memory-size metric.
-- `native_memory_artifacts` records each native artifact path, whether it
-  exists, and its individual size.
-- `package_size_bytes` is the wrapper/package size and must be reported
-  separately.
-- `memory_artifact_size_bytes` is the package `memory/` directory size, useful
-  for debugging export inflation.
-- Size accounting must not include GT/query files or benchmark annotations.
-- `peak_ram_bytes` and `peak_vram_bytes` should only be filled when measured
-  reliably. If either is `null`, the corresponding unavailable reason must be a
-  non-empty string.
-- `time_per_frame_seconds = build_runtime_seconds / frame_count` when
-  `frame_count > 0`; otherwise it is `null`.
-- `runtime_seconds` is legacy compatibility only. New readers must prefer
-  `build_runtime_seconds`.
+Track 1 reads these accounting fields to report the build-cost half of the track.
 
 ### Method Family
 
@@ -192,19 +195,24 @@ Use one of:
 - `vector_db`
 - `raw_frame_control`
 - `caption_control`
+- `agent_designed`
 - `other`
 
-Controls such as Multi-frame VLM and LLM-with-captions must set
-`explicit_memory` to `false`. Multi-frame VLM uses `raw_frame_control`;
-LLM-with-captions uses `caption_control`. Both must declare every fixed-API
-track `invalid` (the validator rejects any `supported` fixed API for control
-families) and are evaluated control-only / agentic-only. A minimal raw-frame
-control declaration fixture lives at `examples/multiframe_vlm_control/`.
+`agent_designed`: memory whose schema, construction code, and query interface were
+authored by a coding agent under the agent-designed baseline. It is a real
+explicit-memory family (`explicit_memory=true` unless the agent intentionally
+designed a no-memory control) and may declare any track `supported` when it
+provides the required entrypoint, exactly like a hand-built method.
+
+Controls (`raw_frame_control` for Multi-frame VLM, `caption_control` for
+LLM-with-captions) must set `explicit_memory=false` and declare every fixed-API
+track `invalid` (validator rejects any `supported` fixed API for control
+families). They are evaluated control-only / agentic-only.
 
 ### Artifact Records
 
-Each artifact record in `memory_artifacts`, `evidence_artifacts`, `raw_links`,
-or `tools` uses package-relative paths:
+Each record in `memory_artifacts` / `evidence_artifacts` / `raw_links` / `tools`
+uses package-relative paths and may declare which tracks it supports:
 
 ```json
 {
@@ -212,61 +220,64 @@ or `tools` uses package-relative paths:
   "type": "jsonl",
   "path": "memory/object_table.jsonl",
   "description": "Canonical object inventory exported from native memory.",
-  "required_for": ["track1_memory_construction", "track2_object_location"]
+  "required_for": ["track1_object_location"]
 }
 ```
 
-Do not store absolute artifact paths unless they are external raw-data links in
-`raw_links`. If an absolute path is included, it must be read-only input data and
-must not contain GT answers.
+`required_for` values must be valid track keys. Do not store absolute artifact
+paths unless they are external raw-data links in `raw_links` (read-only, no GT).
+
+### Raw Native Memory vs Fixed-API Views
+
+- `memory/native/` is preferred for raw/native artifacts copied into the package.
+- `raw_links/` records external provenance; agentic/tool eval must not require
+  following raw links.
+- Agentic/tool eval defaults to raw/native artifacts + method-native tools. It must
+  not use evaluator-created fixed-API views as primary memory unless
+  `manifest.memory_artifacts[].native=true` or schema states the view is native.
+- Fixed-API evaluators may use conversion views (deterministic scoring only).
 
 ## Capabilities
 
-`capabilities.json` is the evaluator contract. It says what the fixed API can
-and cannot do, and what the agent may access.
-
-Required top-level fields:
+`capabilities.json` is the evaluator contract.
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "fixed_api": {
-    "track1_memory_construction": {
+    "track1_object_location": {
       "status": "supported",
-      "entrypoint": "tools/list_objects.py:list_objects",
+      "entrypoint": "tools/query_object.py:query_object",
       "reason": "",
       "input_schema": "schemas/track1_input.schema.json",
-      "output_schema": "schemas/object_table.schema.json"
+      "output_schema": "schemas/object_query_result.schema.json"
     },
-    "track2_object_location": {
-      "status": "invalid",
-      "entrypoint": null,
-      "reason": "No native object-location query API is exported."
-    },
-    "track3_scanrefer": {
+    "track2_scanrefer": {
       "status": "invalid",
       "entrypoint": null,
       "reason": "No referring-expression resolver is exported."
     },
-    "track4_openeqa": {
+    "track3_openeqa": {
       "status": "invalid",
       "entrypoint": null,
       "reason": "No native QA or retrieval API is exported."
     }
   },
   "agent_access": {
-    "mode": "agentic_full_access",
+    "mode": "tool_llm",
     "read_manifest": true,
     "read_schema": true,
-    "read_memory_artifacts": true,
+    "read_native_memory": true,
+    "read_fixed_api_views": false,
     "read_evidence": true,
-    "read_adapter_code": true,
-    "read_shared_module_code": true,
+    "read_adapter_code": false,
+    "read_shared_module_code": false,
     "read_method_root_source_code": true,
+    "read_build_code": false,
     "read_raw_links": false,
     "read_raw_frames": false,
     "read_source_keyframes_or_crops": false,
-    "run_package_tools": false,
+    "run_method_native_tools": true,
     "write_package": false
   }
 }
@@ -274,364 +285,192 @@ Required top-level fields:
 
 ### Fixed API Status
 
-Allowed values:
-
 - `supported`: evaluator may call the Python entrypoint.
 - `invalid`: method/package does not support this track by design.
 
-Do not use `partial` in `capabilities.json`. If a track is not ready for the
-fixed evaluator, mark it `invalid` and explain why.
+Do not use `partial`. If a track is not ready, mark it `invalid` and explain why.
 
 ### Python Entrypoint
-
-First-version fixed APIs use Python entrypoints only:
 
 ```text
 relative/path.py:function_name
 ```
 
-Rules:
+Rules: path relative to package root; importable without changing cwd outside the
+package; must not write into the package; may read package artifacts; receives and
+returns JSON-serializable data.
 
-- Path is relative to the package root.
-- Function must be importable without changing cwd outside the package.
-- Function must not write into the package.
-- Function may read package artifacts.
-- Function receives JSON-serializable input and returns JSON-serializable output.
-
-Recommended function signatures:
+Recommended signatures (renamed to the new track keys):
 
 ```python
-def list_objects(package_dir: str, query: dict) -> dict: ...
-def query_object(package_dir: str, query: dict) -> dict: ...
-def resolve_referring_expression(package_dir: str, query: dict) -> dict: ...
-def answer_question(package_dir: str, query: dict) -> dict: ...
+def query_object(package_dir: str, query: dict) -> dict: ...                 # track1
+def resolve_referring_expression(package_dir: str, query: dict) -> dict: ...  # track2
+def answer_question(package_dir: str, query: dict) -> dict: ...               # track3
 ```
 
-The evaluator will pass `package_dir` as the copied package path or original
-package path depending on mode.
+`package_dir` is the copied or original package path depending on mode.
+
+### Agentic/Tool Access
+
+`agent_access` describes what an LLM/tool-loop evaluator may use. The formal
+agentic setting is **per-query LLM + declared tools**, not a coding agent.
+
+Modes:
+
+- `tool_llm`: method has native retrieval/query tools over raw/native memory. The
+  LLM gets one query at a time and may only request declared tool calls or return
+  final JSON. Requires `read_native_memory`, `run_method_native_tools`, and
+  `read_method_root_source_code` true; requires raw-frame / fixed-API-view /
+  adapter-code / build-code access false.
+- `not_applicable`: method has no natural LLM/tool-memory interface (e.g. HOV-SG on
+  the current ScanNet++ package). Do not force agentic/tool eval; use fixed API.
+  Must not declare method-native tool calls.
+
+Optional `agent_tools` array documents each native tool with input/output schema
+and which artifacts it reads.
 
 ## Track Contracts
 
-### Track 1: Memory Construction / Object Inventory
-
-Capability key:
-
-```text
-fixed_api.track1_memory_construction
-```
-
-Supported packages must provide either:
-
-- a Python entrypoint that returns an object table; or
-- a Python entrypoint that reads `memory/object_table.jsonl` and returns it.
-
-Canonical object output:
-
-```json
-{
-  "status": "ok",
-  "objects": [
-    {
-      "object_id": "obj_0001",
-      "label": "chair",
-      "aliases": ["seat"],
-      "position_3d": [1.2, 0.4, 2.0],
-      "bbox_3d": null,
-      "confidence": 0.82,
-      "source_artifacts": ["memory/object_table.jsonl"],
-      "evidence": [
-        {
-          "source_type": "crop",
-          "source_path": "evidence/crops/obj_0001.jpg",
-          "frame_id": "000123",
-          "notes": "object crop used by the method"
-        }
-      ]
-    }
-  ]
-}
-```
-
-DSG/caption methods may declare Track 1 `invalid` if they cannot honestly export
-object-level inventory.
-
-### Track 2: Basic Object Location Query
-
-Capability key:
-
-```text
-fixed_api.track2_object_location
-```
+### Track 1: Object-Level Location Query (`track1_object_location`)
 
 Input:
 
 ```json
-{
-  "query_id": "q_0001",
-  "query": "where is the chair?",
-  "scene_id": "036bce3393",
-  "top_k": 5
-}
+{ "query_id": "q_0001", "query": "where is the chair?",
+  "target_label": "chair", "canonical_label": "chair",
+  "scene_id": "036bce3393", "top_k": 5 }
 ```
 
 Output:
 
 ```json
-{
-  "status": "ok",
-  "predictions": [
-    {
-      "object_id": "obj_0001",
-      "label": "chair",
-      "position_3d": [1.2, 0.4, 2.0],
-      "score": 0.91,
-      "evidence": []
-    }
-  ]
-}
+{ "status": "ok", "predictions": [
+  { "object_id": "obj_0001", "label": "chair",
+    "position_3d": [1.2, 0.4, 2.0], "bbox_3d": null,
+    "score": 0.91, "evidence": [] } ] }
 ```
 
-### Track 3: ScanRefer Referring Query
+Supported packages provide a `query_object`-style entrypoint that prefers
+exact/normalized-label match on `target_label`. The build-cost half of Track 1 is
+read from build accounting, not from the entrypoint.
 
-Capability key:
+Packages with no object-level memory or no comparable object-location API declare
+Track 1 `invalid`.
 
-```text
-fixed_api.track3_scanrefer
-```
+### Track 2: ScanRefer Referring Query (`track2_scanrefer`)
 
 Input:
 
 ```json
-{
-  "query_id": "scanrefer_0001",
-  "dataset": "scanrefer",
+{ "query_id": "scanrefer_0001", "dataset": "scanrefer",
   "scene_id": "scene0000_00",
-  "utterance": "the red chair next to the table",
-  "top_k": 10
-}
+  "utterance": "the red chair next to the table", "top_k": 10 }
 ```
 
 Output:
 
 ```json
-{
-  "status": "ok",
-  "predictions": [
-    {
-      "object_id": "obj_0012",
-      "bbox_3d": null,
-      "score": 0.73,
-      "evidence": []
-    }
-  ]
-}
+{ "status": "ok", "predictions": [
+  { "object_id": "obj_0012", "bbox_3d": null, "score": 0.73, "evidence": [] } ] }
 ```
 
-Methods without a native or package-exported referring-expression resolver should
-declare Track 3 `invalid`.
+Methods without a native or package-exported referring-expression resolver declare
+Track 2 `invalid`.
 
-### Track 4: OpenEQA General Spatial QA
-
-Capability key:
-
-```text
-fixed_api.track4_openeqa
-```
+### Track 3: OpenEQA General Spatial QA (`track3_openeqa`)
 
 Input:
 
 ```json
-{
-  "question_id": "openeqa_0001",
-  "question": "What is next to the sofa?",
-  "episode_id": "scannet-v0/002-scannet-scene0709_00"
-}
+{ "question_id": "openeqa_0001", "question": "What is next to the sofa?",
+  "episode_id": "scannet-v0/002-scannet-scene0709_00" }
 ```
 
 Output:
 
 ```json
-{
-  "status": "ok",
-  "answer": "a coffee table",
-  "evidence": [
-    {
-      "source_type": "memory_object",
-      "source_path": "memory/object_table.jsonl",
-      "object_id": "obj_0007",
-      "notes": "object relation or proximity supports the answer"
-    }
-  ]
-}
+{ "status": "ok", "answer": "a coffee table", "evidence": [
+  { "source_type": "memory_object", "source_path": "memory/object_table.jsonl",
+    "object_id": "obj_0007", "notes": "proximity supports the answer" } ] }
 ```
 
-Only method-native QA/retrieval APIs count as fixed API support. A generic
-object-table-to-LLM answerer does not make Track 4 supported.
+Only method-native QA/retrieval APIs count as fixed-API support. A generic
+object-table-to-LLM answerer does not make Track 3 supported. OpenEQA covers both
+ScanNet and HM3D episodes; `episode_id` carries the dataset prefix.
 
 ## Agent Access Policy
 
-The default agentic setting is package-plus-source-code access. The sandbox
-receives the memory package, evaluation adapter code, shared module code, and
-the original method root repo source code recorded in `manifest.method.repo_path`.
-The agent may design temporary parsers, query scripts, or small interfaces to
-interact with the memory, rather than being limited to fixed APIs.
-
-Raw/source frames remain disabled by default:
-
-```json
-{
-  "mode": "agentic_full_access",
-  "read_manifest": true,
-  "read_schema": true,
-  "read_memory_artifacts": true,
-  "read_evidence": true,
-  "read_adapter_code": true,
-  "read_shared_module_code": true,
-  "read_method_root_source_code": true,
-  "read_raw_links": false,
-  "read_raw_frames": false,
-  "read_source_keyframes_or_crops": false,
-  "write_package": false
-}
-```
-
-Agentic modes:
-
-- `agentic_full_access`: agent may read manifest, schema, memory artifacts,
-  evidence, package docs, package tools, evaluation adapters, shared module
-  code, and original method root source code. It may create temporary scripts in
-  the sandbox to parse/query memory artifacts. This is the default agentic mode.
-- `agentic_memory_only`: legacy/ablation mode where the agent reads only the
-  memory package and package docs.
-- `memory_plus_crops`: agent may additionally read package-local sampled
-  keyframes or source crops.
-- `memory_plus_raw`: agent may additionally read raw RGB-D links if allowed.
-
-Source frames, sampled keyframes, and source crops remain ablations. Evidence
-must be method-exported memory evidence, such as object crops, thumbnails,
-relation visualizations, or retrieval traces. It must not be a general dump of
+The formal agentic setting is per-query LLM tool calling. The evaluator
+trace/sandbox contains only: the current prompt, `tool_specs.json`, links/copies to
+raw/native memory artifacts, and links/copies to original method source required by
+the native tool runtime. It must not expose evaluator adapters, shared-module
+adapter code, fixed-API conversion views, benchmark GT/answers, raw frames, or
+memory build code. Evidence must be method-exported memory evidence, not a dump of
 raw/source frames.
-
-The implementation copies the memory package and source-code context into the
-sandbox. The agent works on copies and must not modify the source package.
-Source-code context copies should exclude `.git`, generated data, checkpoints,
-caches, memories, and result artifacts, but keep original method source,
-configs, scripts, schema, README, and docs.
 
 ## Required Schema Documentation
 
-`schema.md` must explain:
-
-- coordinate frame and units;
-- object id format;
-- timestamp format;
-- relation representation, if any;
-- confidence/score meaning;
-- native artifact formats that are not obvious;
-- known limitations and unsupported tracks.
-
-Keep it short and practical. The goal is to let a fixed evaluator or sandboxed
-agent read it quickly.
+`schema.md` must explain: coordinate frame and units; object id format; timestamp
+format; relation representation (if any); confidence/score meaning; non-obvious
+native artifact formats; known limitations and unsupported tracks. Keep it short.
 
 ## Required Build Log
 
-`build_log.json` records how the package was produced:
-
-```json
-{
-  "status": "ok",
-  "started_at": "2026-06-15T15:30:00+08:00",
-  "finished_at": "2026-06-15T15:45:00+08:00",
-  "runtime_seconds": 900.0,
-  "command": "python scripts/export_memory_package.py ...",
-  "config_paths": ["configs/claws_current_scene_method_kwargs.json"],
-  "source_outputs": [],
-  "warnings": []
-}
-```
-
-If export fails, write a build log with `status: "error"` outside the package
-result directory and do not mark the package valid.
+`build_log.json` records how the package was produced (status, timestamps, runtime,
+command, config paths, accounting fields, warnings). If export fails, write a build
+log with `status: "error"` outside the package result directory and do not mark the
+package valid.
 
 ## Invalid Results
 
-Fixed evaluators must write an invalid result when a package declares a track
-unsupported:
-
 ```json
-{
-  "status": "invalid",
-  "reason_code": "unsupported_fixed_api",
-  "required_api": "track4_openeqa.answer_question",
-  "method": "dualmap",
-  "package_path": "memories/dualmap/openeqa/scene0709_00/20260615-153000",
-  "message": "Package does not declare a native OpenEQA fixed API."
-}
+{ "status": "invalid", "reason_code": "unsupported_fixed_api",
+  "required_api": "track3_openeqa", "method": "hovsg",
+  "package_path": "memories/hovsg/...",
+  "message": "Package does not declare a native OpenEQA fixed API." }
 ```
 
-`invalid` is a valid benchmark outcome. It means the method does not expose that
-fixed API. Runtime failures are `error`, not `invalid`.
-
-For a no-explicit-memory control (`explicit_memory=false` or a
-`raw_frame_control`/`caption_control` family), the evaluator emits a distinct
-invalid result so the control can never be confused with an object-memory
-baseline that merely failed to implement a track:
+For a no-explicit-memory control:
 
 ```json
-{
-  "status": "invalid",
-  "reason_code": "control_no_explicit_memory",
-  "required_api": "track2_object_location",
-  "method": "multiframe_vlm",
-  "control": true,
-  "explicit_memory": false,
-  "method_family": "raw_frame_control",
-  "package_path": "memories/multiframe_vlm/...",
-  "message": "Control-only: no fixed object-location query API. ..."
-}
+{ "status": "invalid", "reason_code": "control_no_explicit_memory",
+  "required_api": "track1_object_location", "method": "multiframe_vlm",
+  "control": true, "explicit_memory": false,
+  "method_family": "raw_frame_control", "package_path": "memories/multiframe_vlm/...",
+  "message": "Control-only: no fixed object-location query API. ..." }
 ```
 
-The `reason_code` is `control_no_explicit_memory` (not `unsupported_fixed_api`),
-and the message states there is no explicit object memory (Track 1/3/4) or no
-fixed object-location API (Track 2). The readable report marks the row as a
-no-explicit-memory control.
+`invalid` is a valid benchmark outcome. Runtime failures are `error`, not `invalid`.
 
 ## Validation Rules
 
-The first validator should check:
-
-- required files exist;
-- `manifest.json` and `capabilities.json` parse as JSON;
-- package paths in artifacts are relative and exist when required;
-- `method.name`, `dataset.name`, and `package_id` are present;
-- every Track 1-4 capability has `status`;
-- `supported` fixed APIs have a non-empty Python entrypoint;
-- `invalid` fixed APIs have a non-empty reason;
-- `agent_access.write_package` is false;
-- `agentic_full_access` and `memory_only` packages have raw-frame and
-  source-keyframe/crop access disabled;
-- `agentic_full_access` packages declare adapter, shared module, and method root
-  source-code access;
-- `allowed_access` leakage flags are false unless explicitly justified.
-
-The validator should not require every method to support every track.
+The validator checks: required files/dirs exist; `manifest.json` and
+`capabilities.json` parse; artifact paths are relative and exist when required;
+`method.name`, `dataset.name`, `package_id` present; every Track 1-3 capability has
+`status`; `supported` fixed APIs have a Python entrypoint; `invalid` fixed APIs have
+a reason; `agent_access.write_package` is false; `tool_llm` packages disable
+raw-frame / source-crop / fixed-API-view / adapter-code / shared-module-code /
+build-code access and enable native memory + method source + native tools;
+`not_applicable` packages do not declare native tool access; leakage flags false
+unless justified. The validator does not require every method to support every
+track.
 
 ## Method Family Defaults
 
-Suggested default capabilities before method-specific overrides:
+| Family | Track 1 | Track 2 | Track 3 |
+|---|---|---|---|
+| `object_map` | supported if query entrypoint exists | invalid by default | invalid by default |
+| `scene_graph` | invalid unless object query exists | invalid by default | invalid unless native QA exists |
+| `caption_memory` | invalid by default | invalid by default | supported only if native QA/retrieval API exists |
+| `agent_designed` | supported if agent built a query entrypoint | per agent design | per agent design |
+| `raw_frame_control` | invalid | invalid | invalid fixed API; agentic only |
+| `caption_control` | invalid | invalid | invalid fixed API; agentic/control only |
 
-| Family | Track 1 | Track 2 | Track 3 | Track 4 |
-|---|---|---|---|---|
-| `object_map` | supported if object table exists | supported if query entrypoint exists | invalid by default | invalid by default |
-| `scene_graph` | invalid unless object export exists | invalid unless object query exists | invalid by default | invalid unless native QA exists |
-| `caption_memory` | invalid by default | invalid by default | invalid by default | supported only if native QA/retrieval API exists |
-| `raw_frame_control` | invalid | invalid | invalid | invalid fixed API; agentic only |
-| `caption_control` | invalid | invalid | invalid | invalid fixed API; agentic/control only |
-
-These are defaults, not hard rules. A package can declare support when it
-provides the required Python entrypoint and output schema.
+These are defaults, not hard rules. A package declares support when it provides the
+required Python entrypoint and output schema.
 
 ## Versioning
 
-Use `schema_version: "0.1"` for the first implementation. Any breaking change to
-required fields or output schemas should bump the version and update this file.
+Use `schema_version: "0.2"` for the 3-track refactor. Any breaking change to
+required fields, track keys, or output schemas should bump the version and update
+this file.

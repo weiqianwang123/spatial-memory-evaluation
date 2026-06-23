@@ -3,7 +3,7 @@
 This is a **no-explicit-memory control**, not a spatial-memory baseline. It
 exists to bound how well a VLM answers from raw sampled frames *without* any
 explicit object memory, so it can be compared against object-memory methods. It
-must never be read as a Track 1/2 object-memory baseline.
+must never be read as a Track 1 object-memory baseline.
 
 Coordinate frame and units: there is no reconstructed world frame. Inputs are
 raw sampled camera frames plus per-frame pose/time text. Where pose text is
@@ -29,17 +29,17 @@ the VLM reads at query time, with `frame_id`, `timestamp`, and optional
 `pose_text`. It is an ablation/control input, not exported memory, and is
 disabled for object-memory fixed APIs.
 
-Known limitations and unsupported tracks: Track 1 (object inventory), Track 2
-(object-location query), Track 3 (ScanRefer referring query), and Track 4
-(OpenEQA QA) fixed APIs are all **invalid** by design:
+Known limitations and unsupported tracks: Track 1 (`track1_object_location`),
+Track 2 (`track2_scanrefer`), and Track 3 (`track3_openeqa`) fixed APIs are all
+**invalid** by design:
 
 - Track 1 invalid: no explicit object memory (no labels + 3D positions built at
-  memory-construction time).
-- Track 2 invalid: no fixed object-location query API over memory artifacts.
-- Track 3 invalid: no referring-expression resolver over object memory.
-- Track 4 invalid: any answer comes from raw frames, not exported memory.
+  memory-construction time) and no fixed object-location query API over memory
+  artifacts; the VLM only reads raw frames at query time.
+- Track 2 invalid: no referring-expression resolver over object memory.
+- Track 3 invalid: any answer comes from raw frames, not exported memory.
 
 `manifest.explicit_memory` is `false` and `method.family` is
 `raw_frame_control`. The raw sampled frames are an ablation/control input only;
-they must never enter the main Track 1/2 fixed object-memory API table. This
+they must never enter the main Track 1 fixed object-memory API table. This
 control is evaluated agentic/control-only.

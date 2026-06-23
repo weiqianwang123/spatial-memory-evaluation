@@ -1,6 +1,14 @@
 # Shared Modules Registry
 
-Last updated: 2026-06-17
+Last updated: 2026-06-23
+
+> Track renaming note (3-track refactor): the benchmark now has three tracks —
+> `track1_object_location` (object-level location query + build cost, merged from
+> the old memory-construction + object-location tracks), `track2_scanrefer`, and
+> `track3_openeqa`. Below, older phrasing like "Track 1/2 formal eval" and "Track 2
+> fixed API" refers to the shared-OV-detector object-memory runs that now live
+> under **Track 1**. Detector/vocabulary fairness policy is unchanged; only the
+> track label moved.
 
 本文件记录各 baseline 方法会用到的 detector、segmenter、vision-language
 encoder、captioner、LLM 和 vector store。目标是让不同方法在可比实验中共享相同
@@ -23,7 +31,7 @@ translate it into that method's native CLI/Hydra/config overrides.
   `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`，它由
   `spatial_memory_evaluation/common/labels.py` 的
   `DEFAULT_DETECTOR_COVERABLE_LABELS` 生成并校验。
-- Track 1/2 formal eval 必须使用 shared strongest open-vocabulary detector setup。DualMap、ConceptGraphs 等 detector-backed 方法默认使用同一个 shared OV detector；HOV-SG 这类无 detector 的方法记录 shared SAM/CLIP open-vocabulary prompt route。closed-detector、method-native detector/checkpoint 或不同 prompt list 只能作为 `module_ablation`。
+- Track 1/2 formal eval 必须使用 shared strongest open-vocabulary detector setup。ConceptGraphs 等 detector-backed 方法默认使用同一个 shared OV detector；HOV-SG 这类无 detector 的方法记录 shared SAM/CLIP open-vocabulary prompt route。closed-detector、method-native detector/checkpoint 或不同 prompt list 只能作为 `module_ablation`。
 - checkpoint 统一存到一个共享目录，不放在各方法 repo 内部。建议路径：
   `/data/mondo-training-dataset/semantic_mapping/modules/<module>/<version>/`。
 - Python/C++ runtime dependencies are not checkpoints. For DAAAM in particular,
@@ -75,16 +83,15 @@ before formal runs.
 
 | Module | Role | Methods using it | Preferred shared version | Current known checkpoint / source | Status | Notes |
 |---|---|---|---|---|---|---|
-| SAM | segmentation / mask proposal | HOV-SG, DualMap, ConceptGraphs, DAAAM | `vit_h` if all methods can run it | target: `sam_vit_h_4b8939.pth` | missing | HOV-SG default config points to `checkpoints/sam_vit_h_4b8939.pth`, but it was not found locally/NAS common paths. |
-| SAM | segmentation / mask proposal | HOV-SG, DualMap, ConceptGraphs, DAAAM | fallback common version: `vit_b` | `/home/robin_wang/DualMap/sam_b.pt` | present | Historical HOV-SG run used `models.sam.type=vit_b` with this checkpoint. Use this as smoke fallback until `vit_h` is centralized. |
-| FastSAM | fast segmentation | DualMap optional, DAAAM native-fast route | DAAAM native target: `FastSAM-x-640x480.engine`; smoke/debug fallback: `FastSAM-s.pt` / `FastSAM-s-640x480.engine` | `/data/mondo-training-dataset/semantic_mapping/modules/fastsam/{x,s}/...` | shared target, artifacts may be missing | FastSAM belongs under shared modules, not external method repos. DAAAM native FastSAM/TensorRT is a recorded native-fast route/ablation; shared SAM route remains available for cross-method consistency. |
+| SAM | segmentation / mask proposal | HOV-SG, ConceptGraphs, DAAAM | `vit_h` if all methods can run it | target: `sam_vit_h_4b8939.pth` | missing | HOV-SG default config points to `checkpoints/sam_vit_h_4b8939.pth`, but it was not found locally/NAS common paths. |
+| SAM | segmentation / mask proposal | HOV-SG, ConceptGraphs, DAAAM | fallback common version: `vit_b` | `/data/mondo-training-dataset/semantic_mapping/modules/sam/vit_b/sam_b.pt` | present | Historical HOV-SG run used `models.sam.type=vit_b`. Use this shared NAS copy as smoke fallback until `vit_h` is centralized. |
+| FastSAM | fast segmentation | DAAAM native-fast route | DAAAM native target: `FastSAM-x-640x480.engine`; smoke/debug fallback: `FastSAM-s.pt` / `FastSAM-s-640x480.engine` | `/data/mondo-training-dataset/semantic_mapping/modules/fastsam/{x,s}/...` | shared target, artifacts may be missing | FastSAM belongs under shared modules, not external method repos. DAAAM native FastSAM/TensorRT is a recorded native-fast route/ablation; shared SAM route remains available for cross-method consistency. |
 | SAM2 | video/image segmentation | DAAAM optional | TBD | not centralized | unverified | Do not mix with SAM results unless explicitly running an ablation. |
-| OV prompt/evaluation label list | detector prompts / label normalization / evaluator split | HOV-SG, DualMap, ConceptGraphs, future detector-backed methods | shared detector-coverable prompt/eval list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | Used as the shared OV detector prompt/evaluation list and Track 1/2 detector-coverable split; check with `python scripts/package/sync_detector_class_list.py --check`. |
-| YOLO / Ultralytics | object detection | ClawS SpatialRAG, DualMap | YOLO11 if both can run | not centralized | unverified | ClawS references YOLO11/Ultralytics; DualMap uses YOLO/YOLO-World variants. Need exact checkpoint discovery. |
-| YOLO-World | open-vocabulary detection | DualMap, ConceptGraphs streamlined path | formal: `yolov8l-world.pt`; smoke fallback: `yolov8s-world.pt` | formal target: `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt`; smoke fallback: `/home/robin_wang/DualMap/yolov8s-world.pt` | formal missing, smoke present local | Strongest shared OV detector target is YOLO-World-L because DualMap config and ConceptGraphs streamlined path reference `yolov8l-world.pt`. Only YOLO-World-S was found locally on 2026-06-17, so S is smoke-only. |
+| OV prompt/evaluation label list | detector prompts / label normalization / evaluator split | HOV-SG, ConceptGraphs, future detector-backed methods | shared detector-coverable prompt/eval list | `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt` | present | Used as the shared OV detector prompt/evaluation list and Track 1/2 detector-coverable split; check with `python scripts/package/sync_detector_class_list.py --check`. |
+| YOLO / Ultralytics | object detection | ClawS SpatialRAG, ConceptGraphs if using YOLO route | YOLO11 or YOLO-World depending on native method route | not centralized | unverified | ClawS references YOLO11/Ultralytics; ConceptGraphs streamlined path can use YOLO-World. Need exact checkpoint discovery. |
+| YOLO-World | open-vocabulary detection | ConceptGraphs streamlined path | formal: `yolov8l-world.pt`; smoke fallback: `yolov8s-world.pt` | formal target: `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt`; smoke fallback: `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8s-world.pt` | formal missing, smoke present | Strongest shared OV detector target is YOLO-World-L when the active detector-backed methods can consume it. YOLO-World-S is smoke-only. |
 | GroundingDINO | open-vocabulary grounding | ConceptGraphs legacy path | strongest common checkpoint | not centralized | unverified | Should be fixed before ConceptGraphs exporter is claimed reproducible. |
-| OpenCLIP | vision-language feature encoder | HOV-SG, DualMap, ConceptGraphs, DAAAM | `ViT-H-14` if all methods can run | HOV-SG default: `laion2b_s32b_b79k`; smoke fallback: `ViT-B-32/laion2b_s34b_b79k` | partial | For fair CLIP-based object query, model type, pretrained tag, templates, and normalization must match. |
-| MobileCLIP | lightweight vision-language encoder | DualMap optional | TBD | not centralized | unverified | Treat as method override unless all methods adopt it. |
+| OpenCLIP | vision-language feature encoder | HOV-SG, ConceptGraphs, DAAAM | `ViT-H-14` if all methods can run | HOV-SG default: `laion2b_s32b_b79k`; smoke fallback: `ViT-B-32/laion2b_s34b_b79k` | partial | For fair CLIP-based object query, model type, pretrained tag, templates, and normalization must match. |
 | ByteTrack | object tracking | ClawS SpatialRAG | method-native | package dependency | method-specific | Tracking module is not shared yet unless another method uses ByteTrack. |
 | BotSort | object tracking | DAAAM | method-native | package dependency | method-specific | Tracking module is method-specific unless shared later. |
 | VLM description / verification | object description, QA, captioning | ClawS optional, DAAAM, ConceptGraphs optional, ReMEmbR controls | TBD | model API or local VLM not centralized | unverified | Must separate memory construction VLM from evaluator/LLM judge to avoid leakage/confounds. |
@@ -102,7 +109,6 @@ before formal runs.
 | Method | Detector | Segmenter | Feature / Embedding | Caption / VLM | Tracking | Storage / Graph |
 |---|---|---|---|---|---|---|
 | ClawS SpatialRAG | YOLO11 / Ultralytics | none or method-native masks if enabled | vector embedding + sqlite-vec | optional VLM description / verification | ByteTrack | SQLite + sqlite-vec spatial DB |
-| DualMap | YOLO / YOLO-World | SAM, optional FastSAM | OpenCLIP or MobileCLIP | none by default | none found | local/global object maps |
 | HOV-SG | none | SAM automatic masks | OpenCLIP | none by default | none | object point clouds + hierarchy graph |
 | ConceptGraphs | GroundingDINO/RAM/Tag2Text or YOLO-World streamlined | SAM / MobileSAM | OpenCLIP | optional LLaVA captions | none | object map + optional scene graph JSON |
 | DAAAM | DAM / VLM grounding stack | FastSAM/SAM/SAM2 | CLIP ReID/features | VLM grounding / QA agent | BotSort | Hydra / Dynamic Scene Graph |
@@ -116,15 +122,15 @@ before formal runs.
 - `spatial_memory_evaluation/shared_modules/registry.py` is the runtime source
   of truth for smoke/formal module profiles.
 - `scripts/methods/shared_modules.py` is the current internal adapter layer.
-  It injects registry values into HOV-SG and DualMap runners without editing
+  It injects registry values into HOV-SG and DAAAM runners without editing
   those external repos.
-- HOV-SG, DualMap, ConceptGraphs, and DAAAM smoke/formal routes now share the same OV prompt/evaluation label list:
+- HOV-SG, ConceptGraphs, and DAAAM smoke/formal routes now share the same OV prompt/evaluation label list:
   `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`.
 - DAAAM adapter route lives in `scripts/methods/daaam/`: shared modules are
   translated into DAAAM `run_pipeline.py` arguments/config overrides without
-  modifying `/home/robin_wang/DAAAM`. Track 2 fixed API uses only the exported
-  deterministic DAAAM semantic index when available; DAAAM's LLM
-  `SceneUnderstandingAgent` is not a Track 2 fixed API.
+  modifying `/home/robin_wang/DAAAM`. Track 1 (`track1_object_location`) fixed API
+  uses only the exported deterministic DAAAM semantic index when available; DAAAM's
+  LLM `SceneUnderstandingAgent` is the tool-LLM path, not a fixed API.
 - DAAAM preflight intentionally separates env issues from artifact issues:
   missing `spark_dsg` / `daaam` means install or select a proper DAAAM conda/env,
   while missing SAM/YOLO/FastSAM/ReID files means centralize or symlink the model
@@ -160,9 +166,8 @@ before formal runs.
     eval-repo bugs, so no DSG / Track 1/2 memory can be produced until they are
     resolved in the DAAAM env.
 - Track 1/2 formal runs are shared open-vocabulary detector runs. Detector-backed methods must use the shared strongest OV detector route and declare `vocabulary_mode=open_vocabulary`; closed-detector or method-native detector/checkpoint variants are recorded only as `module_ablation`.
-- HOV-SG smoke defaults to `SAM vit_b` with
-  `/home/robin_wang/DualMap/sam_b.pt`, because this exact config appears in
-  prior successful HOV-SG Hydra runs.
+- HOV-SG smoke defaults to `SAM vit_b` with the shared NAS checkpoint
+  `/data/mondo-training-dataset/semantic_mapping/modules/sam/vit_b/sam_b.pt`.
 - Formal shared SAM target remains `SAM vit_h` with `sam_vit_h_4b8939.pth`,
   but the checkpoint still needs to be centralized.
 - Do not compare methods using different SAM/CLIP/YOLO checkpoints as if they
@@ -179,9 +184,9 @@ before formal runs.
 
 1. Locate or download `sam_vit_h_4b8939.pth` and place it under the canonical
    shared module directory.
-2. Download or symlink `yolov8l-world.pt` into `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/`; keep `/home/robin_wang/DualMap/yolov8s-world.pt` as smoke fallback only.
+2. Download or symlink `yolov8l-world.pt` into `/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/`; keep the shared NAS `yolov8s-world.pt` as smoke fallback only.
 3. Discover exact OpenCLIP checkpoints and prompt templates used by HOV-SG,
-   DualMap, ConceptGraphs, and DAAAM.
+   ConceptGraphs and DAAAM.
 4. Decide whether smoke runs use weaker shared modules (`SAM vit_b`,
    `OpenCLIP ViT-B-32`) while formal runs use stronger modules.
 5. Record module metadata in every memory package manifest/build log.

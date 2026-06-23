@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 
 REQUIRED_FILES = (
     "manifest.json",
@@ -35,19 +35,23 @@ METHOD_FAMILIES = {
     "vector_db",
     "raw_frame_control",
     "caption_control",
+    "agent_designed",
     "other",
 }
 CONTROL_FAMILIES = {"raw_frame_control", "caption_control"}
 
+# 3-track benchmark (refactor 2026-06-23). Old keys retired:
+#   track1_memory_construction + track2_object_location -> track1_object_location
+#   track3_scanrefer -> track2_scanrefer
+#   track4_openeqa   -> track3_openeqa
 TRACK_KEYS = (
-    "track1_memory_construction",
-    "track2_object_location",
-    "track3_scanrefer",
-    "track4_openeqa",
+    "track1_object_location",
+    "track2_scanrefer",
+    "track3_openeqa",
 )
 
 FIXED_API_STATUSES = {"supported", "invalid"}
-AGENT_ACCESS_MODES = {"agentic_full_access", "memory_only", "memory_plus_crops", "memory_plus_raw"}
+AGENT_ACCESS_MODES = {"tool_llm", "not_applicable"}
 
 REQUIRED_SCHEMA_MD_TOPICS = (
     ("coordinate_frame", ("coordinate", "坐标")),
@@ -450,12 +454,13 @@ def _validate_agent_access(agent_access: Mapping[str, Any], report: ValidationRe
     bool_keys = (
         "read_manifest",
         "read_schema",
-        "read_memory_artifacts",
+        "read_native_memory",
+        "read_fixed_api_views",
         "read_evidence",
         "read_raw_links",
         "read_raw_frames",
         "read_source_keyframes_or_crops",
-        "run_package_tools",
+        "run_method_native_tools",
         "write_package",
     )
     for key in bool_keys:
@@ -465,6 +470,7 @@ def _validate_agent_access(agent_access: Mapping[str, Any], report: ValidationRe
         "read_adapter_code",
         "read_shared_module_code",
         "read_method_root_source_code",
+        "read_build_code",
     )
     for key in code_access_keys:
         if key in agent_access:
@@ -473,31 +479,48 @@ def _validate_agent_access(agent_access: Mapping[str, Any], report: ValidationRe
     if agent_access.get("write_package") is not False:
         report.error("capabilities.json.agent_access.write_package", "must be false")
 
-    if mode in {"agentic_full_access", "memory_only"}:
-        for key in (
-            "read_raw_links",
-            "read_raw_frames",
-            "read_source_keyframes_or_crops",
-        ):
-            if agent_access.get(key) is not False:
-                report.error(
-                    f"capabilities.json.agent_access.{key}",
-                    f"{mode} mode must disable raw/source-frame access",
-                )
+    for key in ("read_raw_links", "read_raw_frames", "read_source_keyframes_or_crops"):
+        if agent_access.get(key) is not False:
+            report.error(
+                f"capabilities.json.agent_access.{key}",
+                f"{mode} mode must disable raw/source-frame access",
+            )
 
-    if mode == "agentic_full_access":
-        for key in code_access_keys:
-            if agent_access.get(key) is not True:
-                report.error(
-                    f"capabilities.json.agent_access.{key}",
-                    "agentic_full_access mode must enable source-code context access",
-                )
-
-    if mode == "memory_plus_crops" and agent_access.get("read_raw_frames") is True:
+    if agent_access.get("read_fixed_api_views") is not False:
         report.error(
-            "capabilities.json.agent_access.read_raw_frames",
-            "memory_plus_crops must not enable raw-frame access",
+            "capabilities.json.agent_access.read_fixed_api_views",
+            "formal tool_llm eval must not expose evaluator-created fixed-API views",
         )
+
+    for key in ("read_adapter_code", "read_shared_module_code", "read_build_code"):
+        if agent_access.get(key) is not False:
+            report.error(
+                f"capabilities.json.agent_access.{key}",
+                "formal tool_llm eval must not expose evaluator adapter/shared/build code",
+            )
+
+    if mode == "tool_llm":
+        if agent_access.get("read_native_memory") is not True:
+            report.error(
+                "capabilities.json.agent_access.read_native_memory",
+                "tool_llm mode must expose raw/native memory",
+            )
+        if agent_access.get("run_method_native_tools") is not True:
+            report.error(
+                "capabilities.json.agent_access.run_method_native_tools",
+                "tool_llm mode must enable method-native tool calls",
+            )
+        if agent_access.get("read_method_root_source_code") is not True:
+            report.error(
+                "capabilities.json.agent_access.read_method_root_source_code",
+                "tool_llm mode must expose original method source needed by native tools",
+            )
+    elif mode == "not_applicable":
+        if agent_access.get("run_method_native_tools") is not False:
+            report.error(
+                "capabilities.json.agent_access.run_method_native_tools",
+                "not_applicable mode must not declare method-native tool calls",
+            )
 
 
 def _validate_build_log(build_log: Mapping[str, Any], report: ValidationReport) -> None:

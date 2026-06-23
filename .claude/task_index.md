@@ -1,8 +1,19 @@
 # Claude Task Index
 
+> 2026-06-23 refactor: the benchmark collapsed to **three tracks** —
+> `track1_object_location` (object-location query + build cost, merged from the old
+> memory-construction + object-location tracks), `track2_scanrefer`,
+> `track3_openeqa` — plus the agent-designed memory baseline (the new centerpiece).
+> OC-NaVQA / SG3D are deferred zero-shot transfer targets. Task rows below that
+> mention the old 5-track / "Track 4" naming are historical; read
+> `.codex/agentic_eval_plan.md` and `.codex/agent_designed_baseline.md` for the
+> current plan before starting any new task.
+
 This directory contains focused PR-sized tasks for Claude agents. Tasks 01-11
-were completed and retired; the active queue now starts from the remaining
-Track 1/2 fixed API work, then agentic evaluation, then Track 3/4 design.
+were completed and retired. Historically the active queue ran Track 1/2 fixed API
+work, then agentic evaluation, then Track 3/4 design; under the 3-track refactor
+the next work is method packages on the new contract, then the ScanRefer/OpenEQA
+evaluators, then the agent-designed harness (Phase 4).
 
 ## Global Rules
 

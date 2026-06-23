@@ -1,6 +1,28 @@
+"""Track 1 (object-level location query) benchmark data.
+
+After the 3-track refactor, Track 1 merges the old memory-construction inventory
+and the old object-location queries into one benchmark directory:
+
+```text
+benchmarks/track1/scannetpp/<scene-id>/
+  all_annotated.jsonl          # GT object inventory (every annotated object)
+  detector_coverable.jsonl     # GT objects whose label is in the shared OV list
+  queries_all_annotated.jsonl  # one "where is the <label>?" query per label
+  queries_detector_coverable.jsonl
+  label_aliases.json
+  metadata.json
+```
+
+The GT inventory is only used to align predictions to target objects when scoring
+the location queries; Track 1 no longer reports inventory recall / false-memory /
+redundancy / localization error as separate metrics (those moved out in the
+refactor). It keeps the object-location query metrics plus build-cost accounting.
+"""
+
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -15,6 +37,8 @@ from spatial_memory_evaluation.common.labels import (
 
 DEFAULT_SCENE_ID = "036bce3393"
 DEFAULT_SCANNETPP_ROOT = Path("/data/mondo-training-dataset/semantic_mapping/scannetpp")
+DEFAULT_TOP_K = 10
+SPLITS = ("all_annotated", "detector_coverable")
 
 
 def build_track1_data(
@@ -22,6 +46,7 @@ def build_track1_data(
     scannetpp_root: Path,
     scene_id: str,
     output_dir: Path,
+    top_k: int = DEFAULT_TOP_K,
     aliases: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     aliases = aliases or DEFAULT_LABEL_ALIASES
@@ -37,10 +62,15 @@ def build_track1_data(
         for obj in all_objects
         if obj["canonical_label"] in DEFAULT_DETECTOR_COVERABLE_LABELS
     ]
+    objects_by_split = {"all_annotated": all_objects, "detector_coverable": coverable}
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    write_jsonl(output_dir / "all_annotated.jsonl", all_objects)
-    write_jsonl(output_dir / "detector_coverable.jsonl", coverable)
+    query_counts: dict[str, int] = {}
+    for split, objects in objects_by_split.items():
+        write_jsonl(output_dir / f"{split}.jsonl", objects)
+        queries = _queries_for_split(split, objects, scene_id=scene_id, top_k=top_k)
+        write_jsonl(output_dir / f"queries_{split}.jsonl", queries)
+        query_counts[split] = len(queries)
     write_default_alias_file(output_dir / "label_aliases.json")
 
     summary = {
@@ -48,10 +78,40 @@ def build_track1_data(
         "annotation_path": str(annotation_path),
         "all_annotated_count": len(all_objects),
         "detector_coverable_count": len(coverable),
+        "query_counts": query_counts,
+        "top_k": top_k,
         "output_dir": str(output_dir),
     }
     write_json(output_dir / "metadata.json", summary)
     return summary
+
+
+def _queries_for_split(
+    split: str,
+    gt_objects: list[dict[str, Any]],
+    *,
+    scene_id: str,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for obj in gt_objects:
+        grouped[str(obj["canonical_label"])].append(obj)
+    queries = []
+    for index, label in enumerate(sorted(grouped)):
+        targets = grouped[label]
+        queries.append(
+            {
+                "query_id": f"{scene_id}_{split}_{index:04d}_{label.replace(' ', '_')}",
+                "scene_id": scene_id,
+                "split": split,
+                "canonical_label": label,
+                "target_label": label,
+                "query": f"where is the {label}?",
+                "top_k": top_k,
+                "target_gt_ids": [str(obj["gt_id"]) for obj in targets],
+            }
+        )
+    return queries
 
 
 def _gt_object(scene_id: str, group: Mapping[str, Any], aliases: Mapping[str, str]) -> dict[str, Any]:

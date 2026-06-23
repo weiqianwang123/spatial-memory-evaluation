@@ -13,14 +13,18 @@ if str(REPO_ROOT) not in sys.path:
 from spatial_memory_evaluation.track1.data import (
     DEFAULT_SCANNETPP_ROOT,
     DEFAULT_SCENE_ID,
+    DEFAULT_TOP_K,
     build_track1_data,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build Track 1 object-inventory benchmark data.")
+    parser = argparse.ArgumentParser(
+        description="Build Track 1 object-location benchmark data (GT inventory + queries)."
+    )
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument("--scannetpp-root", type=Path, default=DEFAULT_SCANNETPP_ROOT)
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -37,6 +41,7 @@ def main() -> int:
         scannetpp_root=args.scannetpp_root,
         scene_id=args.scene_id,
         output_dir=output_dir,
+        top_k=args.top_k,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

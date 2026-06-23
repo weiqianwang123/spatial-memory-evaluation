@@ -14,9 +14,16 @@ For the agentic spatial-memory benchmark direction, read:
 1. `agentic_eval.md`
 2. `agentic_eval_plan.md`
 3. `memory_package_spec.md`
-4. `baseline_registry.md`
-5. `path_registry.md`
-6. `modules.md`
+4. `agent_designed_baseline.md`
+5. `baseline_registry.md`
+6. `path_registry.md`
+7. `modules.md`
+
+The benchmark has three tracks: `track1_object_location` (object-level location
+query + build cost), `track2_scanrefer` (instance-level referring), and
+`track3_openeqa` (general spatial QA on ScanNet + HM3D). The agent-designed
+memory baseline is the project's centerpiece. OC-NaVQA and SG3D are deferred
+zero-shot transfer targets, not main-line tracks.
 
 ## Core Workflow
 
@@ -52,8 +59,10 @@ metadata explicit enough that another agent can understand:
 - which shared modules/checkpoints were used to build it,
 - how to reproduce or inspect the memory.
 
-Track support is declared in `capabilities.json`; a method is allowed to declare
-`invalid` for a track when its memory form genuinely cannot answer that API.
+Track support is declared in `capabilities.json` under the three keys
+`track1_object_location`, `track2_scanrefer`, `track3_openeqa`; a method is
+allowed to declare `invalid` for a track when its memory form genuinely cannot
+answer that API.
 
 ## Shared Modules
 

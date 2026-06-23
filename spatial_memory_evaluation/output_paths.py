@@ -8,7 +8,6 @@ from typing import Any, Mapping, Optional
 
 METHOD_ALIASES = {
     "claws_spatial_rag": "claws",
-    "dualmap": "dualmap",
     "hovsg": "hovsg",
 }
 

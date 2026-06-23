@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "0.1"
+      "const": "0.2"
     },
     "package_id": {
       "type": "string",
@@ -47,6 +47,7 @@
             "vector_db",
             "raw_frame_control",
             "caption_control",
+            "agent_designed",
             "other"
           ]
         },
@@ -246,10 +247,9 @@
             "type": "array",
             "items": {
               "enum": [
-                "track1_memory_construction",
-                "track2_object_location",
-                "track3_scanrefer",
-                "track4_openeqa"
+                "track1_object_location",
+                "track2_scanrefer",
+                "track3_openeqa"
               ]
             }
           }

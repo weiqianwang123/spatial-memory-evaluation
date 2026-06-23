@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "package_id": "multiframe_vlm/example/scene0000_00/20260617-000000",
   "method": {
     "name": "multiframe_vlm",

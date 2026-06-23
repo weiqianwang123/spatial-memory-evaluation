@@ -11,10 +11,9 @@
   "control": true,
   "explicit_memory": false,
   "fixed_api": {
-    "track1_memory_construction": "invalid",
-    "track2_object_location": "invalid",
-    "track3_scanrefer": "invalid",
-    "track4_openeqa": "invalid"
+    "track1_object_location": "invalid",
+    "track2_scanrefer": "invalid",
+    "track3_openeqa": "invalid"
   },
   "warnings": [],
   "accounting_version": "0.1",

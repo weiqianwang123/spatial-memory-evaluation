@@ -15,7 +15,9 @@ from spatial_memory_evaluation.track1.evaluator import evaluate_track1
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate Track 1 object-memory construction.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate Track 1 object-level location query + build cost."
+    )
     parser.add_argument("package_dir", type=Path)
     parser.add_argument(
         "--benchmark-dir",
@@ -24,29 +26,17 @@ def parse_args() -> argparse.Namespace:
         help="Default: benchmarks/track1/scannetpp/<scene-id>",
     )
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
-    parser.add_argument(
-        "--mode",
-        choices=("fixed_api", "agentic_memory_only", "agentic_full_access"),
-        default="fixed_api",
-    )
+    parser.add_argument("--mode", choices=("fixed_api", "tool_llm"), default="fixed_api")
     parser.add_argument("--output", type=Path, default=None)
-    parser.add_argument("--agent-command", default=None)
-    parser.add_argument("--agent-output", type=Path, default=None)
-    parser.add_argument("--sandbox-root", type=Path, default=None)
     parser.add_argument(
-        "--agent-extra-path",
-        action="append",
-        type=Path,
+        "--llm-command",
         default=None,
-        help="optional file/directory to copy into the agent sandbox; repeatable",
+        help=(
+            "Command template for --mode tool_llm. Placeholders: "
+            "{prompt_path}, {sandbox_dir}, {output_path}."
+        ),
     )
-    parser.add_argument(
-        "--no-agent-include-source-code",
-        action="store_false",
-        dest="agent_include_source_code",
-        default=True,
-        help="do not copy scripts/methods adapters, shared_modules, or the method root repo source tree",
-    )
+    parser.add_argument("--max-tool-iterations", type=int, default=3)
     return parser.parse_args()
 
 
@@ -58,11 +48,8 @@ def main() -> int:
         benchmark_dir=benchmark_dir,
         mode=args.mode,
         output=args.output,
-        agent_command=args.agent_command,
-        agent_output=args.agent_output,
-        sandbox_root=args.sandbox_root,
-        agent_extra_paths=args.agent_extra_path or [],
-        agent_include_source_code=args.agent_include_source_code,
+        llm_command=args.llm_command,
+        max_tool_iterations=args.max_tool_iterations,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

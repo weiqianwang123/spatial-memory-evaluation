@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Track 1 Object Location Query Result",
+  "type": "object",
+  "required": ["status", "predictions"],
+  "properties": {
+    "status": {
+      "const": "ok"
+    },
+    "predictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "object_id": {"type": ["string", "null"]},
+          "label": {"type": ["string", "null"]},
+          "position_3d": {"type": ["array", "null"]},
+          "bbox_3d": {"type": ["array", "null"]},
+          "score": {"type": ["number", "null"]},
+          "evidence": {"type": "array"}
+        }
+      }
+    }
+  }
+}

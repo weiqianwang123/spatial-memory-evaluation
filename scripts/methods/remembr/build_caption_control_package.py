@@ -63,18 +63,15 @@ REMEMBR_REPO = Path("/home/robin_wang/remembr")
 # Reasons are phrased against the *native* capability gap so an invalid fixed-API
 # result is specific and actionable, not a vague "not implemented".
 TRACK1_INVALID_REASON = (
-    "Caption memory has no native object-level inventory. ReMEmbR MemoryItem "
+    "Caption memory has no native object-level inventory and no deterministic "
+    "native object-location query API. ReMEmbR MemoryItem "
     "(remembr/memory/memory.py:5-9) stores only caption/time/position/theta with "
     "no object field, so there is no native source of object labels + 3D positions "
-    "to export as an object table."
-)
-TRACK2_INVALID_REASON = (
-    "No deterministic native object-location query API over caption memory. "
-    "TextMemory/MilvusMemory.memory_to_string (remembr/memory/text_memory.py:40, "
-    "remembr/memory/milvus_memory.py:231) return caption+pose+time strings, not "
-    "object-level locations. The only answerer, NonAgent.query "
-    "(remembr/agents/non_agent.py:40-91), is an LLM over caption context and is "
-    "excluded from fixed-API support by design."
+    "to export as an object table. TextMemory/MilvusMemory.memory_to_string "
+    "(remembr/memory/text_memory.py:40, remembr/memory/milvus_memory.py:231) "
+    "return caption+pose+time strings, not object-level locations. The only "
+    "answerer, NonAgent.query (remembr/agents/non_agent.py:40-91), is an LLM over "
+    "caption context and is excluded from fixed-API support by design."
 )
 TRACK3_INVALID_REASON = (
     "No referring-expression resolver. Caption memory cannot ground a ScanRefer "
@@ -83,7 +80,7 @@ TRACK3_INVALID_REASON = (
 TRACK4_INVALID_REASON = (
     "No method-native QA/retrieval fixed API in caption memory. NonAgent.query is "
     "a no-retrieval LLM caption-context answerer; ReMEmbR's native QA path is the "
-    "agentic ReMEmbRAgent (Track 4), not this control."
+    "agentic ReMEmbRAgent tool-LLM Track 3 path, not this control."
 )
 
 # Small deterministic stand-in so the committed example builds with no external
@@ -210,10 +207,9 @@ def main(args: argparse.Namespace) -> int:
             "control": True,
             "explicit_memory": False,
             "fixed_api": {
-                "track1_memory_construction": "invalid",
-                "track2_object_location": "invalid",
-                "track3_scanrefer": "invalid",
-                "track4_openeqa": "invalid",
+                "track1_object_location": "invalid",
+                "track2_scanrefer": "invalid",
+                "track3_openeqa": "invalid",
             },
             "warnings": [],
         },
@@ -428,7 +424,7 @@ def _write_manifest(
     write_json(
         package_dir / "manifest.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "package_id": f"{args.method}/{args.dataset}/{scene_or_episode}/{run_id}",
             "method": {
                 "name": args.method,
@@ -507,42 +503,39 @@ def _write_capabilities(package_dir: Path) -> None:
     write_json(
         package_dir / "capabilities.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "fixed_api": {
-                "track1_memory_construction": {
+                "track1_object_location": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": TRACK1_INVALID_REASON,
                 },
-                "track2_object_location": {
-                    "status": "invalid",
-                    "entrypoint": None,
-                    "reason": TRACK2_INVALID_REASON,
-                },
-                "track3_scanrefer": {
+                "track2_scanrefer": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": TRACK3_INVALID_REASON,
                 },
-                "track4_openeqa": {
+                "track3_openeqa": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": TRACK4_INVALID_REASON,
                 },
             },
             "agent_access": {
-                "mode": "agentic_full_access",
+                "mode": "tool_llm",
                 "read_manifest": True,
                 "read_schema": True,
-                "read_memory_artifacts": True,
+                "read_native_memory": True,
+                "read_fixed_api_views": False,
                 "read_evidence": True,
-                "read_adapter_code": True,
-                "read_shared_module_code": True,
+                "read_adapter_code": False,
+                "read_shared_module_code": False,
                 "read_method_root_source_code": True,
+                "read_build_code": False,
                 "read_raw_links": False,
                 "read_raw_frames": False,
                 "read_source_keyframes_or_crops": False,
-                "run_package_tools": False,
+                "run_method_native_tools": True,
                 "write_package": False,
             },
         },

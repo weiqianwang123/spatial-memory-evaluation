@@ -856,7 +856,7 @@ def _write_manifest(
     _write_json(
         package_dir / "manifest.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "package_id": f"hovsg/scannetpp/{args.scene_id}/{run_id}",
             "method": {
                 "name": "hovsg",
@@ -895,7 +895,7 @@ def _write_manifest(
                     "type": "jsonl",
                     "path": "memory/object_table.jsonl",
                     "description": f"HOV-SG object inventory with {object_count} objects.",
-                    "required_for": ["track1_memory_construction", "track2_object_location"],
+                    "required_for": ["track1_object_location"],
                 }
             ]
             + (
@@ -942,14 +942,14 @@ def _write_manifest(
                     "type": "python",
                     "path": "tools/list_objects.py",
                     "description": "Return the exported object table.",
-                    "required_for": ["track1_memory_construction"],
+                    "required_for": ["track1_object_location"],
                 },
                 {
                     "name": "query_object",
                     "type": "python",
                     "path": "tools/query_object.py",
                     "description": "Smoke object query over exported labels and object sizes.",
-                    "required_for": ["track2_object_location"],
+                    "required_for": ["track1_object_location"],
                 },
             ],
             "build": {
@@ -986,46 +986,41 @@ def _write_capabilities(package_dir: Path) -> None:
     _write_json(
         package_dir / "capabilities.json",
         {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "fixed_api": {
-                "track1_memory_construction": {
-                    "status": "supported",
-                    "entrypoint": "tools/list_objects.py:list_objects",
-                    "reason": "",
-                    "input_schema": "schemas/track1_input.schema.json",
-                    "output_schema": "schemas/object_table.schema.json",
-                },
-                "track2_object_location": {
+                "track1_object_location": {
                     "status": "supported",
                     "entrypoint": "tools/query_object.py:query_object",
                     "reason": "",
                     "input_schema": "schemas/track2_input.schema.json",
                     "output_schema": "schemas/object_query_result.schema.json",
                 },
-                "track3_scanrefer": {
+                "track2_scanrefer": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": "No ScanRefer referring-expression resolver is exported.",
                 },
-                "track4_openeqa": {
+                "track3_openeqa": {
                     "status": "invalid",
                     "entrypoint": None,
                     "reason": "No native OpenEQA QA or retrieval API is exported.",
                 },
             },
             "agent_access": {
-                "mode": "agentic_full_access",
+                "mode": "not_applicable",
                 "read_manifest": True,
                 "read_schema": True,
-                "read_memory_artifacts": True,
+                "read_native_memory": True,
+                "read_fixed_api_views": False,
                 "read_evidence": True,
-                "read_adapter_code": True,
-                "read_shared_module_code": True,
-                "read_method_root_source_code": True,
+                "read_adapter_code": False,
+                "read_shared_module_code": False,
+                "read_method_root_source_code": False,
+                "read_build_code": False,
                 "read_raw_links": False,
                 "read_raw_frames": False,
                 "read_source_keyframes_or_crops": False,
-                "run_package_tools": False,
+                "run_method_native_tools": False,
                 "write_package": False,
             },
         },
