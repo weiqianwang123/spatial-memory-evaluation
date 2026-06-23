@@ -35,6 +35,13 @@ The package contract is defined in
   minimal memory package.
 - `examples/minimal_memory_package/`: small valid package fixture for smoke
   tests.
+- `examples/multiframe_vlm_control/`: no-explicit-memory raw-frame control
+  fixture (`raw_frame_control` family, `explicit_memory=false`, all fixed APIs
+  `invalid`).
+- `examples/caption_control_package/`: LLM-with-captions Track 1/2 control
+  fixture (`caption_control` family, `explicit_memory=false`, all fixed APIs
+  `invalid`). Rebuilt by
+  `scripts/methods/remembr/build_caption_control_package.py`.
 - `benchmarks/`: generated Track 1 and Track 2 benchmark files.
 - `scripts/package/`: package-level utilities.
 - `scripts/methods/`: future method-specific scripts, grouped by method.
@@ -111,6 +118,13 @@ query runtime, and QPS.
 Both tracks support `--mode fixed_api` and `--mode agentic_memory_only`. If a
 package honestly declares an unsupported fixed API, the result is `invalid` for
 that method/track rather than coerced into an approximate score.
+
+No-explicit-memory controls (e.g. Multi-frame VLM, LLM-with-captions;
+`explicit_memory=false`) are control-only / agentic-only for Track 1/2. Their
+fixed-API result is a distinct `invalid` with
+`reason_code=control_no_explicit_memory` and `control=true`, so a control can
+never be read as an object-memory baseline. Raw frames / captions are ablation
+inputs and never enter the Track 1/2 fixed object-memory API table.
 
 Formal fair-comparison runs should use the shared detector vocabulary in
 `spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`, which is

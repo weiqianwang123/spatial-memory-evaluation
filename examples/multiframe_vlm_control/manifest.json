@@ -1,0 +1,71 @@
+{
+  "schema_version": "0.1",
+  "package_id": "multiframe_vlm/example/scene0000_00/20260617-000000",
+  "method": {
+    "name": "multiframe_vlm",
+    "display_name": "Multi-frame VLM (no-explicit-memory control)",
+    "family": "raw_frame_control",
+    "repo_path": "/home/robin_wang/remembr",
+    "commit": null,
+    "version": null
+  },
+  "dataset": {
+    "name": "example",
+    "split": "control",
+    "scene_id": "scene0000_00",
+    "episode_id": null
+  },
+  "input": {
+    "modality": [
+      "rgb",
+      "pose",
+      "timestamp"
+    ],
+    "frame_count": 4,
+    "rgbd_root": null,
+    "poses_path": null,
+    "intrinsics_path": null,
+    "timestamp_path": null,
+    "coordinate_frame": "raw sampled camera frames; no reconstructed world frame; meters where pose text is present"
+  },
+  "explicit_memory": false,
+  "memory_artifacts": [],
+  "evidence_artifacts": [],
+  "raw_links": [
+    {
+      "name": "sampled_frames_ablation",
+      "type": "ablation_frame_index",
+      "path": "raw_links/sampled_frames.jsonl",
+      "description": "ABLATION/CONTROL ONLY: index of raw sampled frames + pose/time text the VLM reads at query time. This is not exported spatial memory; it must never feed a fixed Track 1/2 object-memory API.",
+      "required_for": []
+    }
+  ],
+  "tools": [],
+  "build": {
+    "command": "static control fixture (no memory build)",
+    "config_paths": [],
+    "environment": null,
+    "started_at": "2026-06-17T00:00:00+08:00",
+    "finished_at": "2026-06-17T00:00:00+08:00",
+    "runtime_seconds": 0.0,
+    "accounting_version": "0.1",
+    "frame_count": 4,
+    "build_runtime_seconds": 0.0,
+    "time_per_frame_seconds": 0.0,
+    "native_memory_size_bytes": 0,
+    "native_memory_artifacts": [],
+    "memory_artifact_size_bytes": 0,
+    "package_size_bytes": 0,
+    "peak_ram_bytes": null,
+    "peak_ram_unavailable_reason": "no memory is built for a raw-frame control",
+    "peak_vram_bytes": null,
+    "peak_vram_unavailable_reason": "no memory is built for a raw-frame control"
+  },
+  "allowed_access": {
+    "contains_gt_annotations": false,
+    "contains_benchmark_answers": false,
+    "contains_test_labels": false,
+    "contains_question_specific_rules": false
+  },
+  "notes": "No-explicit-memory control: a VLM answers from raw sampled frames + pose/time text (ReMEmbR VLMNonAgent path), with no object inventory, no 3D object positions, and no object-location query API. explicit_memory=false; raw frames are an ablation/control input only and never enter the Track 1/2 fixed object-memory API table. Track 1/2/3/4 fixed APIs are invalid by design; this control is compared agentic/control-only."
+}

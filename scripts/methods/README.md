@@ -122,7 +122,7 @@ DAAAM dependency policy:
   If it reports a missing checkpoint path, place or symlink that artifact under
   `/data/mondo-training-dataset/semantic_mapping/modules/`.
 
-Current ReMEmbR entrypoint:
+Current ReMEmbR invalid-declaration entrypoint:
 
 ```bash
 python scripts/methods/remembr/build_invalid_declaration.py
@@ -137,3 +137,29 @@ artifacts) under the gitignored `memories/remembr/<dataset>/<episode>/<run-id>/`
 Because declaration packages are still generated artifacts, the package is
 produced on demand rather than committed; see `.codex/baseline_registry.md`
 (ReMEmbR section) for the root-repo evidence behind the decision.
+
+Current ReMEmbR caption-control entrypoint:
+
+```bash
+# Build from a native ReMEmbR caption JSON (read-only input):
+python scripts/methods/remembr/build_caption_control_package.py \
+  --captions-json /home/robin_wang/remembr/data/captions/<seq>/captions/captions_<captioner>_<secs>_secs.json \
+  --dataset oc-navqa --episode-id <seq> --run-id remembr-captions-<date>
+
+# Rebuild the committed offline example fixture (synthetic captions, deterministic):
+python scripts/methods/remembr/build_caption_control_package.py \
+  --synthetic --output-dir examples/caption_control_package \
+  --dataset example --episode-id seq0 \
+  --started-at 2026-06-17T00:00:00+08:00 --finished-at 2026-06-17T00:00:00+08:00
+```
+
+This builds the **LLM-with-captions Track 1/2 control** package. Caption-only
+memory is packaged honestly as `memory/captions.jsonl` (plus the verbatim native
+caption JSON under `memory/native/` when built from a real source), but the
+package sets `manifest.method.family = "caption_control"` and
+`manifest.explicit_memory = false` and declares **all four fixed-API tracks
+`invalid`**. Each `invalid` reason points at the native capability gap in the
+ReMEmbR root repo (no object inventory for Track 1; no deterministic native
+object-location query for Track 2; an LLM caption answerer is never fixed-API
+support). See `.codex/baseline_registry.md` →
+`## LLM-With-Captions Track 1/2 Control Outcome (Task 21)`.

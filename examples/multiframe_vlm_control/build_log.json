@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "started_at": "2026-06-17T00:00:00+08:00",
+  "finished_at": "2026-06-17T00:00:00+08:00",
+  "runtime_seconds": 0.0,
+  "command": "static control fixture (no memory build)",
+  "config_paths": [],
+  "source_outputs": [],
+  "warnings": [
+    "No-explicit-memory control: no object memory is constructed; raw sampled frames are an ablation/control input only."
+  ],
+  "accounting_version": "0.1",
+  "frame_count": 4,
+  "build_runtime_seconds": 0.0,
+  "time_per_frame_seconds": 0.0,
+  "native_memory_size_bytes": 0,
+  "native_memory_artifacts": [],
+  "memory_artifact_size_bytes": 0,
+  "package_size_bytes": 0,
+  "peak_ram_bytes": null,
+  "peak_ram_unavailable_reason": "no memory is built for a raw-frame control",
+  "peak_vram_bytes": null,
+  "peak_vram_unavailable_reason": "no memory is built for a raw-frame control"
+}

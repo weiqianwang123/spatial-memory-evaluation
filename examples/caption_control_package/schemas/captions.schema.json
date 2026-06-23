@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "caption": {
+      "type": "string"
+    },
+    "caption_id": {
+      "type": "string"
+    },
+    "file_end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "file_start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "position": {
+      "items": {
+        "type": "number"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "theta": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "time": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "caption_id",
+    "caption",
+    "time",
+    "position",
+    "theta"
+  ],
+  "title": "Caption memory row",
+  "type": "object"
+}

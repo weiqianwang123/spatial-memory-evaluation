@@ -1,0 +1,37 @@
+{
+  "status": "ok",
+  "started_at": "2026-06-17T00:00:00+08:00",
+  "finished_at": "2026-06-17T00:00:00+08:00",
+  "build_runtime_seconds": 0.0,
+  "runtime_seconds": 0.0,
+  "command": "scripts/methods/remembr/build_caption_control_package.py --synthetic --output-dir examples/caption_control_package --method remembr_captions --dataset example --episode-id seq0 --started-at 2026-06-17T00:00:00+08:00 --finished-at 2026-06-17T00:00:00+08:00",
+  "config_paths": [],
+  "source_outputs": [],
+  "caption_count": 3,
+  "control": true,
+  "explicit_memory": false,
+  "fixed_api": {
+    "track1_memory_construction": "invalid",
+    "track2_object_location": "invalid",
+    "track3_scanrefer": "invalid",
+    "track4_openeqa": "invalid"
+  },
+  "warnings": [],
+  "accounting_version": "0.1",
+  "frame_count": 3,
+  "time_per_frame_seconds": 0.0,
+  "native_memory_size_bytes": 647,
+  "native_memory_artifacts": [
+    {
+      "path": "examples/caption_control_package/memory/captions.jsonl",
+      "exists": true,
+      "size_bytes": 647
+    }
+  ],
+  "memory_artifact_size_bytes": 647,
+  "package_size_bytes": 10988,
+  "peak_ram_bytes": null,
+  "peak_vram_bytes": null,
+  "peak_ram_unavailable_reason": "not measured by this package builder; use an external profiler for reliable peak RSS",
+  "peak_vram_unavailable_reason": "not measured by this package builder; GPU memory sampling is not reliable in this wrapper"
+}

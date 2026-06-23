@@ -90,8 +90,8 @@ shared OV detector route；non-shared detector/method-native detector variants �
 | DAAAM | `export`: adapter exports `object_table.jsonl` from DSG OBJECTS + BACKGROUND_OBJECTS via root-repo object readers | `candidate/supported-per-package`: adapter exports a deterministic native semantic index from DAAAM scene-understanding embeddings; package declares Track 2 `supported` only if that index builds, otherwise `invalid` | `invalid`: no ScanRefer-specific resolver found | `candidate`: `SceneUnderstandingAgent.answer_query(...)` is a native LLM QA agent; needs evaluator-safe non-interactive call + judge isolation | Track 1 package exporter implemented in `scripts/methods/daaam/build_memory_smoke.py`; Track 2 fixed API uses only non-LLM native semantic index, never `SceneUnderstandingAgent`; Track 3 invalid; Track 4 deferred |
 | Hydra standalone | `candidate`: DSG OBJECTS nodes carry `semantic_label` + centroid and are enumerable (`graph.getLayer(DsgLayers::OBJECTS)`), but labels are external input, not Hydra-generated; needs smoke test | `invalid`: no natural-language object query API found | `invalid`: no referring resolver found | `invalid`: no natural-language QA API found | Track 1 only if DSG object export is clean AND label-space fairness is decided; Track 2/3/4 invalid |
 | ReMEmbR | `invalid` (Task 19 finalized): caption memory has no object inventory — `MemoryItem` fields are `caption`/`time`/`position`/`theta` only (`remembr/memory/memory.py:5-9`) and the Milvus collection stores `text_embedding`/`position`(robot)/`theta`/`time`/`caption` with no object/label/bbox field (`remembr/memory/milvus_memory.py:37-45`) | `invalid` (Task 19 finalized): the only read paths are `search_by_text`/`search_by_position`/`search_by_time`, which return `memory_to_string` caption+robot-pose+time strings (`remembr/memory/milvus_memory.py:231-250`); no object-level 3D location output and `position` is the robot pose, not an object position | `invalid`: no object referring resolver | `native` via `ReMEmbRAgent.query` (`remembr/agents/remembr_agent.py:390`) LangGraph agent + retrieval tools `retrieve_from_text`/`retrieve_from_position`/`retrieve_from_time` (`remembr/agents/remembr_agent.py:168,183,199`) | Track 1/2/3 `invalid` for fixed object-level APIs (Task 19 minimal invalid package generated on demand by `scripts/methods/remembr/build_invalid_declaration.py`; the package itself stays under the gitignored `memories/` tree); Track 4 native via the retrieval agent but still `candidate` pending a non-interactive `remembr+<llm>` smoke; primary comparison path is agentic |
-| Multi-frame VLM | `control-only` | `control-only` | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Keep as raw-frame ablation, `explicit_memory=false`; not a fixed memory API |
-| LLM with captions | `control-only` | `control-only` | `control-only` | `control-only`: `NonAgent.query` exists but is a no-retrieval caption-context control | Keep as caption ablation, `explicit_memory=false`; not a fixed memory API |
+| Multi-frame VLM | `control-only`: no explicit object inventory built at build time | `control-only`: no native object-location query API over memory | `control-only` | `control-only`: `VLMNonAgent.query` exists but uses raw frames, not exported memory; constructor bug (`'gpt-4' in 'llm_type'`) blocks instantiation until fixed/smoke-tested | Raw-frame ablation, `family=raw_frame_control`, `explicit_memory=false`; never a fixed memory API. Track 1/2 fixed-API eval emits `reason_code=control_no_explicit_memory`. Fixture: `examples/multiframe_vlm_control/` |
+| LLM with captions | `control-only`: no native object inventory built at build time | `control-only`: no native object-location query API over memory (LLM caption answerer excluded) | `control-only` | `control-only`: `NonAgent.query` exists but is a no-retrieval caption-context control | Caption ablation, `family=caption_control`, `explicit_memory=false`; never a fixed memory API. Track 1/2 fixed-API eval emits `reason_code=control_no_explicit_memory`. Reproducible package: `scripts/methods/remembr/build_caption_control_package.py` (fixture `examples/caption_control_package/`). See `## LLM-With-Captions Track 1/2 Control Outcome (Task 21)`. |
 
 ## ClawS SpatialRAG
 
@@ -850,8 +850,25 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 ### Multi-frame VLM control — control-only
 
 - `VLMNonAgent` over raw sampled frames (`VideoMemory`), no exported memory.
-- Recommendation: **control-only on all tracks, `explicit_memory=false`.** Not a
-  spatial-memory fixed-API baseline. Also blocked by a real constructor bug
+- Recommendation: **control-only / agentic-only on all tracks,
+  `explicit_memory=false`.** It is a no-explicit-memory control, never a Track
+  1/2 object-memory fixed-API baseline:
+  - Track 1 fixed API is invalid because there is no explicit object inventory
+    with labels and 3D positions generated at build time.
+  - Track 2 fixed API is invalid because there is no deterministic native
+    object-location query API over memory artifacts.
+  - Raw sampled frames may only be stored as a separate ablation/control package
+    with `manifest.explicit_memory = false`; raw-frame access must never enter
+    the main Track 1/2 fixed API table.
+- Package/evaluator semantics: a multi-frame VLM package uses
+  `method.family = raw_frame_control`. The validator already forces
+  `explicit_memory = false` and rejects any `supported` fixed API for control
+  families. The Track 1/2 fixed-API evaluators emit a distinct invalid result
+  for it — `reason_code = control_no_explicit_memory`, `control = true`,
+  `method_family = raw_frame_control` — so its outcome can never be read as an
+  object-memory baseline that merely failed a track. A minimal declaration
+  fixture lives at `examples/multiframe_vlm_control/`.
+- Also blocked by a real constructor bug
   (`if 'gpt-4' in 'llm_type':` in `agents/vlm_non_agent.py:77` tests a string
   literal, so it always raises `NotImplementedError`); fix + smoke test before
   claiming the control is runnable. Tracking only — do not edit the external repo
@@ -864,6 +881,9 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 - Recommendation: **control-only on all tracks, `explicit_memory=false`.** Not a
   spatial-memory fixed-API baseline; keep as a no-explicit-memory caption
   ablation.
+- See `## LLM-With-Captions Track 1/2 Control Outcome (Task 21)` below for the
+  definitive Track 1/2 outcome, the native capability gap behind each `invalid`
+  reason, and the reproducible caption-control package declaration.
 
 ### Summary classification
 
@@ -876,6 +896,93 @@ above stay `candidate`/`export`/`invalid`/`control-only` — none are promoted t
 - Deferred decisions for the human: DAAAM formal shared-OV label projection
   quality after smoke; Hydra external-label fairness + evaluation surface;
   promotion of any remaining `candidate` to `supported` after smoke tests.
+
+## LLM-With-Captions Track 1/2 Control Outcome (Task 21)
+
+This section is the definitive Track 1/2 outcome for the LLM-with-captions
+control. It exists so caption-only memory is never misreported as fixed
+object-memory support.
+
+- Scope: caption-memory controls only. The DAAAM DSG object adapter (see
+  `## DAAAM` above and `scripts/methods/daaam/`) is a separate task and is not
+  touched here.
+
+### Where the caption control actually lives (root-repo evidence)
+
+- The LLM-with-captions control is implemented entirely in the **ReMEmbR root
+  repo** (`/home/robin_wang/remembr`), not in DAAAM. The DAAAM repo has zero
+  caption-control Python code: `grep -rIn 'NonAgent|VLMNonAgent|TextMemory|class
+  .*Caption' /home/robin_wang/DAAAM --include=*.py` is empty. DAAAM only
+  references ReMEmbR/OC-NaVQA in data docs (`DAAAM/README.md`, `DAAAM/RUNNING.md`,
+  `DAAAM/data/DATA.md`), which is documentation, not a caption baseline.
+- ReMEmbR routes a plain LLM model id to `NonAgent`
+  (`remembr/scripts/eval.py:245`), which fills the prompt with the full caption
+  context and calls the LLM once with no retrieval tools
+  (`remembr/agents/non_agent.py:40-91`, context at `:61`).
+- Caption memory schema is caption/pose/time only: `MemoryItem`
+  (`remembr/memory/memory.py:5-9`) has `caption`, `time`, `position`, `theta`
+  and no object field. `TextMemory.memory_to_string`
+  (`remembr/memory/text_memory.py:40-50`) and `MilvusMemory.memory_to_string`
+  (`remembr/memory/milvus_memory.py:231`) return caption+pose+time strings.
+- Caption JSON is produced by `remembr/scripts/preprocess_captions.py:112-139`
+  (VILA captions; `theta` is a constant `3.14` placeholder, `:114`).
+
+### Track-by-track fixed-API outcome (and why)
+
+All four fixed-API tracks are `invalid`. Each `invalid` reason points at a
+specific native capability gap, not at an adapter limitation:
+
+- Track 1 (object inventory): `invalid` — no native object-level inventory.
+  `MemoryItem` has no object field, so there is no native source of object
+  labels + 3D positions to export as an object table.
+- Track 2 (object location): `invalid` — no deterministic native
+  object-location query API over caption memory. `memory_to_string` returns
+  caption strings, not object locations, and the only answerer
+  (`NonAgent.query`) is an LLM over caption context. **An LLM caption answerer
+  must not be used as fixed-API support.**
+- Track 3 (ScanRefer): `invalid` — no referring-expression resolver.
+- Track 4 (OpenEQA): `invalid` — caption memory has no method-native QA/retrieval
+  fixed API. ReMEmbR's native QA path is the agentic `ReMEmbRAgent.query`
+  retrieval agent (its only native fixed-API track is Track 4 in the agentic
+  sense), which is the ReMEmbR baseline, not this caption control.
+
+### Caption package / control declaration
+
+- A reproducible caption-control package declaration is implemented in
+  `scripts/methods/remembr/build_caption_control_package.py`. It packages caption
+  memory honestly (`memory/captions.jsonl` plus optional verbatim native caption
+  JSON under `memory/native/`) while declaring every fixed API `invalid`.
+- The package sets `manifest.method.family = "caption_control"` and
+  `manifest.explicit_memory = false`. The validator
+  (`spatial_memory_evaluation/memory_package_validator.py:424-433`) then blocks
+  any `supported` fixed API for such a package on two independent grounds
+  (`explicit_memory=false` and `caption_control` family), so the control can
+  never be promoted to an object-memory API by editing `capabilities.json` alone.
+- A committed, offline-buildable example fixture lives at
+  `examples/caption_control_package/` (synthetic captions, deterministic build).
+  It validates clean and is the canonical caption-control shape.
+
+### Readable invalid summary/report behavior
+
+- Running the Track 1/2 fixed-API evaluators on the caption-control package
+  yields `status: invalid` with the no-explicit-memory control markers
+  (`reason_code: control_no_explicit_memory`, `control: true`,
+  `explicit_memory: false`, `method_family: caption_control`) and a `message`
+  carrying the native-gap reason above (with the ReMEmbR file:line citations).
+  The rendered `eval_report.md` shows this under a `## Result` table. This is the
+  same control semantics as the Multi-frame VLM raw-frame control
+  (`raw_frame_control`); both controls report identically so caption-only memory
+  is never read as an object-memory baseline that merely failed a track. This is
+  a valid benchmark outcome, not a program error.
+
+### How this control enters agentic Track 1/2 later
+
+- The caption artifact is preserved so a later **agentic** Track 1/2 run, with
+  full sandbox access (`agent_access.mode = agentic_full_access`), can read
+  `memory/captions.jsonl` and the copied ReMEmbR source and attempt the task by
+  reasoning over captions. That agentic use is explicitly separate from the fixed
+  API and must keep `explicit_memory=false`; it never promotes the control to an
+  object-memory fixed API on any track.
 
 ## Next Checks Before Full Evaluate Plan
 
