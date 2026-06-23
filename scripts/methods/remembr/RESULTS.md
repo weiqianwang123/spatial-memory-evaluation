@@ -45,14 +45,57 @@ python scripts/evaluate_track1.py "$PKG" --scene-id 036bce3393 --mode tool_llm \
   --output "$(pwd)/results/remembr/track1-tool_llm/remembr-track1-036bce3393/eval_summary.json"
 ```
 
-## Track 2 — ScanRefer (pending data)
+## Track 2 — ScanRefer / ScanEnts3D (deferred)
 
-ScanRefer annotations (`ScanRefer_filtered_*.json`) are gated and not yet
-downloaded under `/home/robin_wang/ScanRefer/data/`; ScanNet scenes on NAS are raw
-`.sens`. See the Track 2 section below once the data lands.
+Deferred by request, pending a proper data source.
 
-## Track 3 — OpenEQA (ScanNet scene0709_00)
+- The public ScanRefer **benchmark/test** json
+  (`ScanRefer_filtered_test.json`) is on NAS at
+  `/data/mondo-training-dataset/semantic_mapping/scanrefer/`; it has
+  `scene_id`/`object_id`/`object_name`/`description` but **no 3D bbox** (test
+  split is for leaderboard submission), so it only supports object-name-level
+  referring scoring. The full filtered train/val (with bbox-resolvable instance
+  ids) is gated behind a Google form.
+- Preferred replacement: **ScanEnts3D** (https://scanents3d.github.io/), a public
+  superset of ScanRefer with the same json fields plus an `entities` array giving
+  every phrase->instance-id correspondence (target + anchors). Download is public:
+  `https://scanents3d.github.io/ScanEnts3D_ScanRefer.zip` (~3.9 MB) and
+  `.../ScanEnts3D_Nr3D.csv`. Objects are ScanNet **instance ids** (`"45_toaster_oven"`),
+  resolvable to 3D bboxes via ScanNet instance annotations. The Track 2 data
+  builder (`spatial_memory_evaluation/track2/data.py:build_track2_data`) already
+  parses the shared `scene_id`/`object_id`/`object_name`/`description` fields.
+- Track 2 needs a ScanNet scene with extracted frames (to build the ReMEmbR
+  memory). `scene0709_00` is both an OpenEQA scene (frames on NAS) and a ScanRefer
+  test scene, so it is a ready candidate once GT-with-bbox referring data lands.
 
-OpenEQA ScanNet frames for `scene0709_00` are extracted on NAS
-(`openeqa_frames/scannet-v0/002-scannet-scene0709_00`, 936 frames + 4x4 poses) and
-questions are in `open-eqa-v0.json`. See the Track 3 section below once run.
+## Track 3 — OpenEQA General QA (ScanNet scene0709_00)
+
+- Memory: reuses the scene0709_00 caption memory (24 Claude-captioned frames from
+  the OpenEQA NAS frames `openeqa_frames/scannet-v0/002-scannet-scene0709_00`),
+  copied to `memories/remembr/openeqa/scene0709_00/remembr-track3-scene0709_00`.
+- Benchmark: the 13 OpenEQA questions for `scene0709_00` (all 7 categories), built
+  from `open-eqa-v0.json` via `scripts/build_track3_data.py` and filtered to the
+  scene.
+- Eval: `--mode tool_llm`, local Claude CLI as the answering agent, max 4 tool
+  calls/question. The LLM calls `retrieve_from_text` over caption memory and
+  returns a short answer + evidence. Scored by an LLM-Match judge (local Claude
+  CLI, separate from the answering call; OpenEQA-style 1-5 rating mapped to [0,1]).
+- Result: 13/13 answered. **LLM-Match = 0.65** (LLM judge, `llm_judge_available=true`;
+  the transparent exact/substring fallback judge gave 0.54). By category: attribute
+  1.0, world-knowledge 0.88, object-recognition 0.75, object-state 0.63,
+  functional / spatial-understanding / object-localization 0.5 — caption memory +
+  tool-LLM answers attribute / world-knowledge / recognition questions well but is
+  weaker on spatial and localization. See `results/remembr/track3-tool_llm-judged/...`.
+
+### Reproduce (Track 3)
+
+```bash
+PKG=$(pwd)/memories/remembr/openeqa/scene0709_00/remembr-track3-scene0709_00
+python scripts/build_track3_data.py --dataset scannet          # builds all scannet Qs
+# filter to scene0709_00 -> a benchmark dir with questions.jsonl + answers.jsonl
+python scripts/evaluate_track3.py "$PKG" --dataset scannet --mode tool_llm \
+  --benchmark-dir <scene0709-benchmark-dir> \
+  --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}' \
+  --judge-command 'claude -p "$(cat {prompt_path})" --output-format text' \
+  --output "$(pwd)/results/remembr/track3-tool_llm-judged/remembr-track3-scene0709_00/eval_summary.json"
+```

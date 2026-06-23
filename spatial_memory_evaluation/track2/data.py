@@ -85,27 +85,81 @@ def track2_data_status(benchmark_dir: Path) -> dict[str, Any]:
     }
 
 
+# ScanRefer benchmark/test annotations (public): scene_id, object_id,
+# object_name, ann_id, description. No 3D bbox -> referring is scored at the
+# target object-name level (does the resolved object match the GT object_name).
+DEFAULT_SCANREFER_JSON = Path(
+    "/data/mondo-training-dataset/semantic_mapping/scanrefer/ScanRefer_filtered_test.json"
+)
+
+
 def build_track2_data(
     *,
-    scanrefer_root: Path,
-    scannet_root: Path,
+    scanrefer_json: Path,
     output_dir: Path,
+    scene_id: str | None = None,
     top_k: int = 10,
+    max_queries: int | None = None,
 ) -> dict[str, Any]:
-    """Build the ScanRefer referring-query benchmark.
+    """Build the ScanRefer referring-query benchmark from the ScanRefer JSON.
 
-    SKELETON: the parsing of ScanRefer JSON into ``referring_queries.jsonl`` and
-    of ScanNet instance boxes into ``scene_objects.jsonl`` is not implemented
-    until the dataset is on NAS. The function documents the intended inputs and
-    fails loudly rather than producing an empty benchmark.
+    Each query row carries the referring ``utterance`` plus the GT
+    ``target_object_id`` / ``target_object_name``. The benchmark/test split has no
+    3D bbox, so Track 2 scores referring at the target object-name level; if a
+    later split provides ``bbox`` the evaluator can also score IoU.
     """
 
-    raise NotImplementedError(
-        "build_track2_data is a skeleton. Implement ScanRefer parsing once the "
-        f"dataset is available. Expected ScanRefer root={scanrefer_root}, "
-        f"ScanNet root={scannet_root}, output={output_dir}, top_k={top_k}. "
-        "See .codex/agentic_eval_plan.md Phase 2 and .codex/path_registry.md."
-    )
+    rows = read_jsonl_or_json(scanrefer_json)
+    if scene_id is not None:
+        rows = [r for r in rows if str(r.get("scene_id")) == scene_id]
+    if max_queries is not None:
+        rows = rows[:max_queries]
+    if not rows:
+        raise ValueError(f"no ScanRefer rows found (scene_id={scene_id}) in {scanrefer_json}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    queries = []
+    for index, r in enumerate(rows):
+        sid = str(r.get("scene_id"))
+        queries.append(
+            {
+                "query_id": f"{sid}_{r.get('object_id')}_{r.get('ann_id')}_{index:04d}",
+                "dataset": "scanrefer",
+                "scene_id": sid,
+                "utterance": r.get("description"),
+                "target_object_id": str(r.get("object_id")),
+                "target_object_name": _normalize_object_name(r.get("object_name")),
+                "top_k": top_k,
+            }
+        )
+    from spatial_memory_evaluation.common.jsonl import write_jsonl
+
+    write_jsonl(output_dir / REFERRING_QUERIES_FILE, queries)
+    summary = {
+        "status": "ok",
+        "track": "track2_scanrefer",
+        "scene_id": scene_id,
+        "query_count": len(queries),
+        "scoring": "object_name (no 3D bbox in ScanRefer test split)",
+        "source": str(scanrefer_json),
+        "output_dir": str(output_dir),
+    }
+    write_json(output_dir / "metadata.json", summary)
+    return summary
+
+
+def read_jsonl_or_json(path: Path) -> list[dict[str, Any]]:
+    import json
+
+    text = Path(path).read_text(encoding="utf-8")
+    data = json.loads(text)
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    raise ValueError(f"expected a JSON list in {path}")
+
+
+def _normalize_object_name(name: Any) -> str:
+    return str(name or "").strip().lower().replace("_", " ")
 
 
 def write_unavailable_metadata(output_dir: Path, *, scanrefer_root: Path | None = None) -> dict[str, Any]:

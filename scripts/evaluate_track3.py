@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from spatial_memory_evaluation.track3.evaluator import evaluate_track3
+from spatial_memory_evaluation.track3.judge import make_cli_judge
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,6 +33,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Command template for --mode tool_llm. Placeholders: {prompt_path}, {sandbox_dir}, {output_path}.",
     )
+    parser.add_argument(
+        "--judge-command",
+        default=None,
+        help=(
+            "LLM-Match judge command template with a {prompt_path} placeholder "
+            "(must print a 1-5 rating). Kept separate from the answering LLM. "
+            "Without it, a transparent exact/substring fallback judge is used."
+        ),
+    )
     parser.add_argument("--max-tool-iterations", type=int, default=5)
     return parser.parse_args()
 
@@ -39,6 +49,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     benchmark_dir = args.benchmark_dir or Path("benchmarks") / "track3" / "openeqa" / args.dataset
+    judge = make_cli_judge(args.judge_command) if args.judge_command else None
     summary = evaluate_track3(
         package_dir=args.package_dir,
         benchmark_dir=benchmark_dir,
@@ -46,6 +57,7 @@ def main() -> int:
         output=args.output,
         llm_command=args.llm_command,
         max_tool_iterations=args.max_tool_iterations,
+        judge=judge,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
