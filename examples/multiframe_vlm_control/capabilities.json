@@ -1,0 +1,40 @@
+{
+  "schema_version": "0.1",
+  "fixed_api": {
+    "track1_memory_construction": {
+      "status": "invalid",
+      "entrypoint": null,
+      "reason": "Control-only: no explicit object memory. A multi-frame VLM control builds no object inventory with labels and 3D positions at memory-construction time, so there is no Track 1 object-memory fixed API."
+    },
+    "track2_object_location": {
+      "status": "invalid",
+      "entrypoint": null,
+      "reason": "Control-only: no fixed object-location query API. There is no deterministic native object-location query over memory artifacts; the VLM only reads raw sampled frames at query time."
+    },
+    "track3_scanrefer": {
+      "status": "invalid",
+      "entrypoint": null,
+      "reason": "Control-only: no explicit object memory and no referring-expression resolver over object memory."
+    },
+    "track4_openeqa": {
+      "status": "invalid",
+      "entrypoint": null,
+      "reason": "Control-only: any answering happens over raw frames, not exported memory. This is a no-explicit-memory ablation, not a native QA/retrieval fixed API."
+    }
+  },
+  "agent_access": {
+    "mode": "memory_plus_raw",
+    "read_manifest": true,
+    "read_schema": true,
+    "read_memory_artifacts": true,
+    "read_evidence": true,
+    "read_adapter_code": true,
+    "read_shared_module_code": true,
+    "read_method_root_source_code": true,
+    "read_raw_links": true,
+    "read_raw_frames": true,
+    "read_source_keyframes_or_crops": true,
+    "run_package_tools": false,
+    "write_package": false
+  }
+}

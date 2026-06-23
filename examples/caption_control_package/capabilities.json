@@ -1,0 +1,40 @@
+{
+  "agent_access": {
+    "mode": "agentic_full_access",
+    "read_adapter_code": true,
+    "read_evidence": true,
+    "read_manifest": true,
+    "read_memory_artifacts": true,
+    "read_method_root_source_code": true,
+    "read_raw_frames": false,
+    "read_raw_links": false,
+    "read_schema": true,
+    "read_shared_module_code": true,
+    "read_source_keyframes_or_crops": false,
+    "run_package_tools": false,
+    "write_package": false
+  },
+  "fixed_api": {
+    "track1_memory_construction": {
+      "entrypoint": null,
+      "reason": "Caption memory has no native object-level inventory. ReMEmbR MemoryItem (remembr/memory/memory.py:5-9) stores only caption/time/position/theta with no object field, so there is no native source of object labels + 3D positions to export as an object table.",
+      "status": "invalid"
+    },
+    "track2_object_location": {
+      "entrypoint": null,
+      "reason": "No deterministic native object-location query API over caption memory. TextMemory/MilvusMemory.memory_to_string (remembr/memory/text_memory.py:40, remembr/memory/milvus_memory.py:231) return caption+pose+time strings, not object-level locations. The only answerer, NonAgent.query (remembr/agents/non_agent.py:40-91), is an LLM over caption context and is excluded from fixed-API support by design.",
+      "status": "invalid"
+    },
+    "track3_scanrefer": {
+      "entrypoint": null,
+      "reason": "No referring-expression resolver. Caption memory cannot ground a ScanRefer utterance to a target object id/bbox.",
+      "status": "invalid"
+    },
+    "track4_openeqa": {
+      "entrypoint": null,
+      "reason": "No method-native QA/retrieval fixed API in caption memory. NonAgent.query is a no-retrieval LLM caption-context answerer; ReMEmbR's native QA path is the agentic ReMEmbRAgent (Track 4), not this control.",
+      "status": "invalid"
+    }
+  },
+  "schema_version": "0.1"
+}

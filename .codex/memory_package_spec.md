@@ -195,7 +195,11 @@ Use one of:
 - `other`
 
 Controls such as Multi-frame VLM and LLM-with-captions must set
-`explicit_memory` to `false`.
+`explicit_memory` to `false`. Multi-frame VLM uses `raw_frame_control`;
+LLM-with-captions uses `caption_control`. Both must declare every fixed-API
+track `invalid` (the validator rejects any `supported` fixed API for control
+families) and are evaluated control-only / agentic-only. A minimal raw-frame
+control declaration fixture lives at `examples/multiframe_vlm_control/`.
 
 ### Artifact Records
 
@@ -567,6 +571,30 @@ unsupported:
 
 `invalid` is a valid benchmark outcome. It means the method does not expose that
 fixed API. Runtime failures are `error`, not `invalid`.
+
+For a no-explicit-memory control (`explicit_memory=false` or a
+`raw_frame_control`/`caption_control` family), the evaluator emits a distinct
+invalid result so the control can never be confused with an object-memory
+baseline that merely failed to implement a track:
+
+```json
+{
+  "status": "invalid",
+  "reason_code": "control_no_explicit_memory",
+  "required_api": "track2_object_location",
+  "method": "multiframe_vlm",
+  "control": true,
+  "explicit_memory": false,
+  "method_family": "raw_frame_control",
+  "package_path": "memories/multiframe_vlm/...",
+  "message": "Control-only: no fixed object-location query API. ..."
+}
+```
+
+The `reason_code` is `control_no_explicit_memory` (not `unsupported_fixed_api`),
+and the message states there is no explicit object memory (Track 1/3/4) or no
+fixed object-location API (Track 2). The readable report marks the row as a
+no-explicit-memory control.
 
 ## Validation Rules
 
