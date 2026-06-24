@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--embedding-dim", type=int, default=DEFAULT_EMBEDDING_DIM)
     parser.add_argument("--scannetpp-root", type=Path, default=DEFAULT_SCANNETPP_ROOT)
+    parser.add_argument(
+        "--dataset-tag",
+        default="scannetpp",
+        help="Dataset path segment for outputs (memories/claws/<tag>/<scene>). "
+        "Use 'scannet' for ScanNet .sens scenes.",
+    )
     parser.add_argument("--package-root", type=Path, default=Path("memories"))
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--limit", type=int, default=5000)
@@ -71,7 +77,7 @@ def main(args: argparse.Namespace) -> int:
     )
     if not db_path.exists():
         raise FileNotFoundError(f"ClawS native DB not found: {db_path}")
-    package_dir = args.package_root / "claws" / "scannetpp" / args.scene_id / run_id
+    package_dir = args.package_root / "claws" / args.dataset_tag / args.scene_id / run_id
 
     objects, crops = _load_claws_objects(
         claws_root=args.claws_root,
@@ -438,7 +444,7 @@ def _write_manifest(
         package_dir / "manifest.json",
         {
             "schema_version": "0.2",
-            "package_id": f"claws/scannetpp/{args.scene_id}/{run_id}",
+            "package_id": f"claws/{args.dataset_tag}/{args.scene_id}/{run_id}",
             "method": {
                 "name": "claws",
                 "display_name": "ClawS SpatialRAG",
@@ -448,7 +454,7 @@ def _write_manifest(
                 "version": None,
             },
             "dataset": {
-                "name": "scannetpp",
+                "name": args.dataset_tag,
                 "split": "current-scene",
                 "scene_id": args.scene_id,
                 "episode_id": None,
