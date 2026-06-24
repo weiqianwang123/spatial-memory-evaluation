@@ -52,6 +52,19 @@ Runtime envs currently used:
 
 ## Shared Modules Policy
 
+**Shared OV detector + class list (all detector-based methods).** Any method that
+runs a detector must use the shared strongest OV detector AND the single shared
+class prompt/eval list = the Track 1 `detector_coverable.txt`
+(`spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`, 37 labels;
+the canonical path from `common/labels.py`). The shared-module registry already
+hands this same file to daaam/hovsg/conceptgraphs as `class_names`. ClawS is wired
+to it in `scripts/methods/claws/build_scannet_memory.py` (defaults: YOLO-World-L
+`modules/yolo/yolo_world/yolov8l-world.pt` + `set_classes(detector_coverable)` —
+ClawS's `UltralyticsBackend` does not call `set_classes` itself, so an OV model
+needs the prompt applied by the driver). Method-native detector/vocabulary
+overrides are `module_ablation` only, never the formal main-table result.
+Detector-free methods (ReMEmbR captioner, caption/multiframe controls) are exempt.
+
 External method repos should not be edited to load shared modules. Method
 scripts under `scripts/methods/` read
 `spatial_memory_evaluation/shared_modules/registry.py` and translate registry
@@ -629,14 +642,19 @@ Build/package routes:
 
 # (b) Build a DB for a plain ScanNet scene (Track 2/3). Drives ClawS's own
 #     SpatialPipeline.process_frame over a prepared DAAAM RGB-D layout; ollama
-#     qwen3-embedding:0.6b dim-1024 embeddings, VLM describer off (label from YOLO).
-#     Needs the spatial-rag env + the same cuDNN LD_LIBRARY_PATH fix:
+#     qwen3-embedding:0.6b dim-1024 embeddings. Defaults to the SHARED OV detector
+#     YOLO-World-L (modules/yolo/yolo_world/yolov8l-world.pt) prompted with the
+#     Track 1 detector_coverable.txt class list via set_classes (ClawS's backend
+#     does not call set_classes itself), and the VLM describer ON (qwen3.5:4b,
+#     since the config default qwen3.5:35b is not pulled) so it stores rich
+#     `**label** description` snapshots like DAAAM. Needs spatial-rag env + cuDNN fix:
 export LD_LIBRARY_PATH=/home/robin_wang/miniforge3/envs/spatial-rag/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
   scripts/methods/claws/build_scannet_memory.py \
   --layout-dir data/daaam_layouts/scannet_scene0207_00/<run> --scene-id scene0207_00 \
   --db-path data/claws_scannet/scannet_memory_scene0207_00.db \
-  --rag-config data/claws_scannet/claws_scannet_config.yaml --no-vlm
+  --rag-config data/claws_scannet/claws_scannet_config.yaml
+#     (--no-vlm for a fast label-only build; --detector-model / --class-list to override.)
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
   scripts/methods/claws/build_memory_package.py --scene-id scene0207_00 \
   --db-path data/claws_scannet/scannet_memory_scene0207_00.db --run-id claws-scene0207_00 --no-crops
