@@ -559,6 +559,41 @@ Common issues:
   `/data/mondo-training-dataset/semantic_mapping/modules/fastsam/`. Do not
   make `/home/robin_wang/DAAAM/checkpoints/fastsam` the only source of truth.
 
+### DAAAM 3-track build notes (2026-06-24)
+
+- **cuDNN regression**: torch 2.11.0+cu128 in the daaam env raises
+  `CUDNN_STATUS_NOT_INITIALIZED` on the first conv unless the env's bundled cuDNN
+  9 libdir is on `LD_LIBRARY_PATH` (matmul works without it; only conv fails).
+  Prepend it before the colcon lib dir:
+  `export LD_LIBRARY_PATH=$DAAAM_ENV/lib/python3.10/site-packages/nvidia/cudnn/lib:/home/robin_wang/daaam_colcon_ws/install/lib:$DAAAM_ENV/lib:$LD_LIBRARY_PATH`
+- **Dependency preflight false-negative**: the build's `_preflight_python_deps`
+  subprocess can spuriously report `ultralytics`/`boxmot` missing even though they
+  import fine from the DAAAM cwd. Pass `--skip-dependency-preflight` (imports
+  verified separately) to proceed.
+- **postprocess regression**: `postprocess_scene_graph.py` fails on the installed
+  `sentence_transformers` (rejects DAAAM's multimodal `{'description': ...}` dict).
+  Build with `--skip-postprocess`. The DSG is still complete and packageable; its
+  objects land in `BACKGROUND_OBJECTS` (object_count may be 0, background_object_count
+  large) and `get_matching_subjects` still returns them with positions. This means
+  the Track 2 deterministic semantic index isn't built, so the package falls back
+  to the label index (Track 2 fixed_api still reported `supported` per-package, but
+  the 3-track comparison uses tool_llm anyway).
+- **ScanNet scenes (Track 2 scene0207_00, Track 3 scene0709_00)**: DAAAM's native
+  exporter is ScanNet++-only, so prepare the layout with the new helpers:
+  `scripts/methods/daaam/extract_sens_frames.py` (.sens -> `{idx}-rgb.png`/
+  `-depth.png`/`.txt`) then `scripts/methods/daaam/export_scannet_layout.py`
+  (-> `rgb/depth/pose/intrinsic/camera_info.json`, color intrinsic scaled to depth
+  res), then build with `--layout-dir <prepared> --scene-id <scene>`. scene0709_00
+  frames already exist at `openeqa_frames/scannet-v0/002-scannet-scene0709_00`
+  (936 RGB+depth). Native scratch for these lands under `data/daaam_native_scannet/`.
+- A native DSG for `036bce3393` already exists under
+  `data/daaam_native/scannetpp_036bce3393/daaam-native-fastsam-full-nativegraph-20260618-153522/`
+  (package Track 1 from it with `--skip-daaam-run --native-output-dir`).
+- 2026-06-24 results (tool_llm, Opus 4.8): T1 success@5=0.51 / first-hit 0.32 m /
+  MRR 0.97; T2 referring@1=0.40 / acc@0.5m=0.20; T3 LLM-Match=0.60. fixed_api T1
+  success@5=0.27 / first-hit 0.50 m / 2.4 ms/query. See
+  `scripts/methods/daaam/RESULTS.md`.
+
 ## ClawS
 
 Root repo:
@@ -567,15 +602,50 @@ Root repo:
 /home/robin_wang/ClawS-SpatialRAG
 ```
 
-Current adapter entrypoint:
+Adapter entrypoints:
 
 ```text
-scripts/methods/claws/build_memory_package.py
+scripts/methods/claws/build_memory_package.py   # package an existing ClawS sqlite-vec DB
+scripts/methods/claws/build_scannet_memory.py   # build a DB for a plain ScanNet scene
 ```
 
-Use this route only after confirming the ClawS native DB/memory output exists.
-ClawS should record its detector, embeddings, SQLite/sqlite-vec versions, and
-any VLM/caption modules in the package manifest/build log.
+ClawS is an object spatial-memory method with **native non-interactive query
+APIs**, so it is scored two ways (report both):
+
+- `--mode fixed_api`: native deterministic `tools/query_object.py:query_object`
+  over `memory/object_table.jsonl`. Track 1 = supported; Track 2/3 = `invalid`
+  (no native referring/QA API). Instant (~2.3 ms/query), precise (first-hit 0.12 m
+  on 036bce3393). This is ClawS's distinguishing capability.
+- `--mode tool_llm`: agent + ClawS native tools (`query_spatial_memory`,
+  `get_entity_anchor`, `retrieve_by_location`, `get_all_objects`).
+
+Build/package routes:
+
+```bash
+# (a) Package an existing ClawS DB (Track 1 036bce3393 has one shipped in the repo):
+/home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
+  scripts/methods/claws/build_memory_package.py --scene-id 036bce3393 \
+  --run-id claws-track1-036bce3393
+
+# (b) Build a DB for a plain ScanNet scene (Track 2/3). Drives ClawS's own
+#     SpatialPipeline.process_frame over a prepared DAAAM RGB-D layout; ollama
+#     qwen3-embedding:0.6b dim-1024 embeddings, VLM describer off (label from YOLO).
+#     Needs the spatial-rag env + the same cuDNN LD_LIBRARY_PATH fix:
+export LD_LIBRARY_PATH=/home/robin_wang/miniforge3/envs/spatial-rag/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH
+/home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
+  scripts/methods/claws/build_scannet_memory.py \
+  --layout-dir data/daaam_layouts/scannet_scene0207_00/<run> --scene-id scene0207_00 \
+  --db-path data/claws_scannet/scannet_memory_scene0207_00.db \
+  --rag-config data/claws_scannet/claws_scannet_config.yaml --no-vlm
+/home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
+  scripts/methods/claws/build_memory_package.py --scene-id scene0207_00 \
+  --db-path data/claws_scannet/scannet_memory_scene0207_00.db --run-id claws-scene0207_00 --no-crops
+```
+
+ClawS records its detector, embeddings, and SQLite/sqlite-vec versions in the
+package manifest/build log. Note ScanNet DBs are sparse (COCO-class YOLO, VLM
+off): 11 objects for scene0207_00, 12 for scene0709_00 vs 183 for the
+036bce3393 native DB. 2026-06-24 results in `scripts/methods/claws/RESULTS.md`.
 
 ## ConceptGraphs
 
@@ -603,13 +673,28 @@ Current Track 1 (`track1_object_location`) fixed API status:
 
 - Hydra standalone: invalid/declaration route unless a native object-memory
   package is produced.
-- ReMEmbR: invalid for Track 1 fixed-API object memory; caption-memory control
-  semantics are separate from main object-memory methods. ReMEmbR's native value
-  is on Track 3 (`track3_openeqa`) through its agentic `ReMEmbRAgent.query` path.
+- ReMEmbR: invalid for Track 1/2/3 fixed-API object memory; caption-memory has no
+  object table or object-location output. Do not force a synthetic object table
+  with an LLM wrapper to satisfy fixed API.
 
-Do not force these methods into a synthetic object table with an LLM wrapper just
-to satisfy fixed API. Tool-LLM evaluation is only for methods with native
-retrieval/query tools.
+ReMEmbR's runnable value is the **tool_llm** path (its native `ReMEmbRAgent`
+retrieval loop), adapted across all 3 tracks (2026-06-24):
+- Build caption memory with `scripts/methods/remembr/build_memory_package.py`
+  (`--captioner claude` stands in for VILA; MemoryItem caption/time/position/theta).
+- Native tools `retrieve_from_text`/`retrieve_from_position`/`retrieve_from_time`.
+- Results (Opus 4.8): T1 success@5=0.375 / first-hit 1.30 m; T2 referring@1=0.87
+  but acc@0.25m=acc@0.5m=0.0 (caption memory emits the robot viewpoint, no object
+  position); T3 LLM-Match=0.65. See `scripts/methods/remembr/RESULTS.md`.
+- This contrasts with DAAAM/ClawS geometric memory: caption memory wins on
+  name-level recognition, loses on precise localization. Both run on the same
+  Track 2/3 scenes (scene0207_00 / scene0709_00) for comparability.
+
+The two no-explicit-memory controls (Multi-frame VLM `raw_frame_control`,
+LLM-with-captions `caption_control`) also run via tool_llm (build scripts
+`scripts/methods/multiframe_vlm/build_control_package.py`,
+`scripts/methods/remembr/build_caption_control_package.py`) while keeping
+`explicit_memory=false` — real metrics, but never promoted to object-memory
+baselines (fixed_api stays `invalid` / `control_no_explicit_memory`).
 
 ## Tool-LLM Eval
 
@@ -619,18 +704,70 @@ memory links, and original method source links needed by the native tool runtime
 It does not copy fixed-API views, evaluation adapters, build code, benchmark GT, or
 raw frames.
 
-For Claude through Bedrock:
+### 3-track adaptation pattern (2026-06-24)
+
+The runnable adaptation for object/scene-graph/caption methods is **build memory
+-> per-query LLM tool-calling** over the method's own native retrieval tools, on
+one scene per track:
+
+- Track 1 object location: ScanNet++ `036bce3393`,
+  `benchmarks/track1/scannetpp/036bce3393` (37 detector_coverable queries).
+- Track 2 referring: ScanEnts3D `scene0207_00`,
+  `benchmarks/track2/scanents3d/scene0207_00` (+ a 15-distinct-object-type subset
+  `scene0207_00_subset15` used for cross-method comparison). Distance-based
+  `acc@0.25m`/`acc@0.5m` (top-1 predicted position within X m of the GT object
+  center) plus `referring_acc@1/@5`; GT bboxes resolved from ScanNet geometry
+  (`track2/scannet_bbox.py`).
+- Track 3 OpenEQA QA: ScanNet `scene0709_00`,
+  `benchmarks/track3/openeqa/scene0709_00` (13 Qs filtered from the scannet split);
+  scored by an LLM-Match judge via `--judge-command`.
+
+Per-method native tools are declared in
+`spatial_memory_evaluation/tool_llm/native_tools.py`. **Principle: expose ALL of a
+method's native interfaces that the packaged artifact can faithfully back, and let
+the agent choose** (do not collapse to one tool, do not invent capability the
+package can't serve). Current tool surfaces:
+
+| Method (family) | Native tools exposed | Backed by |
+|---|---|---|
+| DAAAM (`scene_graph`) | `get_matching_subjects`, `get_objects_in_radius` | `memory/native/` corrections+object_positions+background_objects / dsg.json |
+| ReMEmbR / caption_control | `retrieve_from_text`, `retrieve_from_position`, `retrieve_from_time` | `memory/captions.jsonl` |
+| ClawS (`object_map`) | `query_spatial_memory`, `get_entity_anchor`, `retrieve_by_location`, `get_all_objects` | `memory/object_table.jsonl` |
+| Multi-frame VLM (`raw_frame_control`) | `retrieve_frames` | `raw_links/sampled_frames.jsonl` (frame paths + pose) |
+
+DAAAM's `get_region_information` / `get_objects_in_view` / trajectory tools are
+intentionally NOT exposed: the package has no region-summary / camera-pose /
+agent-layer data to back them. Tool returns are bounded (`top_k`) except ClawS
+`get_all_objects`, which returns the full listing by explicit choice (fidelity over
+speed). With many objects (ClawS: 183) the full dump bloats the next prompt and
+the agent chains more tool steps, so ClawS tool_llm is ~2x slower than DAAAM(71
+objs)/ReMEmbR(24 captions) — inherent, not a bug.
+
+Methods with a native deterministic query API (ClawS, DAAAM via `query_object.py`)
+are ALSO run in `--mode fixed_api` (instant, no LLM); report both modes. Methods
+without one (ReMEmbR, controls) are `invalid` on fixed_api and only run tool_llm.
+
+### LLM model selection (Bedrock)
+
+The CLI runs on Bedrock (`CLAUDE_CODE_USE_BEDROCK=1`), so `--model` needs the
+`us.anthropic.…` prefix. Bare `claude -p` uses the `~/.claude/settings.json`
+default (currently `us.anthropic.claude-opus-4-8[1m]`). `scripts/methods/llm_presets.sh`
+provides cost/speed tiers (verified on this account):
 
 ```bash
-CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude \
-  -p "$(cat {prompt_path})" \
-  --permission-mode bypassPermissions \
-  --output-format text \
-  --max-budget-usd 5 \
-  > {output_path}
+source scripts/methods/llm_presets.sh
+#   haiku  -> us.anthropic.claude-haiku-4-5-20251001-v1:0  (cheapest; ~9x faster: 26s vs ~230s/query)
+#   sonnet -> us.anthropic.claude-sonnet-4-6               (mid)
+#   opus   -> us.anthropic.claude-opus-4-8[1m]             (default; all 2026-06-24 runs used this)
+python scripts/evaluate_track1.py "$PKG" --scene-id 036bce3393 --mode tool_llm \
+  --llm-command "$(llm_cmd haiku)" --output "$OUT"
 ```
 
-Evaluator example:
+Keep one model across a comparison set (the committed DAAAM/ClawS/ReMEmbR runs are
+all Opus 4.8). Running 3+ tool_llm chains concurrently can hang Claude CLI calls;
+keep <=2 concurrent.
+
+Evaluator example (explicit Opus, mirrors committed runs):
 
 ```bash
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
@@ -638,5 +775,5 @@ Evaluator example:
   memories/<method>/scannetpp/036bce3393/<run-id> \
   --scene-id 036bce3393 \
   --mode tool_llm \
-  --llm-command 'CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2 claude -p "$(cat {prompt_path})" --output-format text --max-budget-usd 5 > {output_path}'
+  --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}'
 ```

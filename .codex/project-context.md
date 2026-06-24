@@ -38,6 +38,17 @@ zero-shot transfer targets, not main-line tracks.
    exported package.
 6. Evaluation outputs go under `results/<method>/<evaluation>/<timestamp>/`.
 
+Two evaluation modes per package (see `method_runtime_runbook.md` > Tool-LLM Eval):
+- `--mode fixed_api`: the package's declared deterministic entrypoint (instant, no
+  LLM). Used where a method has a native non-interactive query API (ClawS Track 1,
+  DAAAM Track 1 via `query_object.py`).
+- `--mode tool_llm`: per-query LLM (local Claude CLI, Bedrock) calling the method's
+  native retrieval tools. This is the runnable adaptation for object/scene-graph/
+  caption methods across all 3 tracks (one scene per track). Methods done this way
+  (2026-06-24): DAAAM, ClawS, ReMEmbR, + two no-explicit-memory controls. Expose
+  ALL native tools the package can back and let the agent choose. Model presets
+  (haiku/sonnet/opus) in `scripts/methods/llm_presets.sh`.
+
 The current data source is the NAS mount:
 
 ```text

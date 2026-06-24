@@ -24,16 +24,20 @@ checkpoint、prepared intermediate、memory package、result output 和工具环
 | semantic mapping data root | `/data/mondo-training-dataset/semantic_mapping` | spatial-memory datasets/checkpoints/modules | never commit |
 | ScanNet++ root | `/data/mondo-training-dataset/semantic_mapping/scannetpp` | ScanNet++ dataset root (Track 1) | never commit |
 | current ScanNet++ scene | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393` | current Track 1 smoke/full scene | never commit |
-| ScanNet scans | `/data/mondo-training-dataset/semantic_mapping/scannet/scans` | ScanNet scans (ScanRefer geometry source candidate for Track 2) | never commit |
+| ScanNet scans | `/data/mondo-training-dataset/semantic_mapping/scannet/scans` | ScanNet scans (Track 2 GT-bbox geometry: aggregation/segs/ply/.txt; .sens for frame extraction) | never commit |
+| ScanEnts3D val | `/data/mondo-training-dataset/semantic_mapping/scanents3d/ScanRefer_filtered_val_ScanEnts3D.json` | Track 2 referring annotations (public ScanRefer superset) | never commit |
+| ScanEnts3D frames | `/data/mondo-training-dataset/semantic_mapping/scanents3d_frames/scene0207_00` | Track 2 scene0207_00 frames extracted from .sens (caption-method memory) | never commit |
+| DAAAM .sens frames | `/data/mondo-training-dataset/semantic_mapping/daaam_sens_frames/<scene>` | RGB+depth+pose extracted from ScanNet .sens for DAAAM/ClawS ScanNet builds | never commit |
 | OpenEQA ScanNet DBs | `/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_dbs` | OpenEQA ScanNet episode DBs (Track 3); currently 1 episode `scannet-v0__002-scannet-scene0709_00.db` | never commit |
 | OpenEQA frames | `/data/mondo-training-dataset/semantic_mapping/openeqa_frames/scannet-v0` | OpenEQA ScanNet frames (Track 3) | never commit |
 | OpenEQA ScanNet RGB-D | `/data/mondo-training-dataset/semantic_mapping/openeqa_scannet_rgbd` | OpenEQA ScanNet posed RGB-D (Track 3) | never commit |
 
-### Track 2/3 datasets still to acquire
+### Track 2/3 datasets
 
-| Dataset | Target purpose | Status (2026-06-23) | Acquisition note |
+| Dataset | Target purpose | Status (2026-06-24) | Acquisition note |
 |---|---|---|---|
-| ScanRefer annotations | Track 2 instance-level referring | **missing** | Need ScanRefer referring expressions aligned to ScanNet `scans`. Track 2 `data.py` emits a `data_unavailable` stub until present. |
+| ScanEnts3D val | Track 2 instance-level referring | **present** | `/data/mondo-training-dataset/semantic_mapping/scanents3d/ScanRefer_filtered_val_ScanEnts3D.json` — public ScanRefer superset (gated ScanRefer avoided). `track2/data.py` builds from it; GT bbox derived from ScanNet geometry via `track2/scannet_bbox.py`. Default scene `scene0207_00`. |
+| ScanNet per-scene annotations | Track 2 GT bbox source | **present (per scene)** | `scannet/scans/<scene>/{.aggregation.json,_vh_clean_2.0.010000.segs.json,_vh_clean_2.ply,.txt}` + `scannet/tasks/scannetv2-labels.combined.tsv`. Downloaded per-file from kaldir for scene0207_00; download others as needed. |
 | HM3D / OpenEQA-HM3D | Track 3 general QA (HM3D half) | **missing** | Need HM3D scenes + OpenEQA HM3D episodes. Track 3 currently only has the ScanNet half. |
 | OC-NaVQA / SG3D | Phase 5 zero-shot transfer | missing; deferred | Not main-line; acquire when transfer phase starts. |
 | current scene RGB | `/data/mondo-training-dataset/semantic_mapping/scannetpp/data/036bce3393/iphone/rgb.mkv` | source RGB video for HOV-SG prepare | never commit |
