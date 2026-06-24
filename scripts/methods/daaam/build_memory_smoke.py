@@ -1330,13 +1330,28 @@ def _rank_by_label(
     return ranked
 
 
-def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
-    with (package_dir / "memory" / "object_table.jsonl").open("r", encoding="utf-8") as f:
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 rows.append(json.loads(line))
+    return rows
+
+
+def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
+    # DAAAM's merged OBJECTS layer (object_table.jsonl) is empty when the build
+    # runs with --skip-postprocess (the sentence_transformers postprocess that
+    # promotes grounded tracks to the OBJECTS layer is incompatible locally), so
+    # the grounded objects land in BACKGROUND_OBJECTS. Fall back to it so the
+    # native deterministic query reflects DAAAM's real memory rather than scoring
+    # zero. (The tool_llm path already reads both layers.)
+    rows = _read_jsonl(package_dir / "memory" / "object_table.jsonl")
+    if not rows:
+        rows = _read_jsonl(package_dir / "memory" / "background_object_table.jsonl")
     return rows
 
 
