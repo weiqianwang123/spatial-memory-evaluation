@@ -5,12 +5,14 @@ against the exported memory. Supports ``fixed_api`` (package declares a native
 ``resolve_referring_expression`` entrypoint) and ``tool_llm`` (per-query LLM +
 method-native referring/retrieval tools).
 
-Scoring: target object-name accuracy (``referring_acc@1/@5``) plus distance-based
-localization accuracy (``acc@0.25m`` / ``acc@0.5m`` — top-1 predicted 3D position
-within X meters of the GT object center) and ``mean_center_distance_m``. Distance,
-not IoU, is used because caption-memory methods emit a viewpoint position rather
-than an instance bbox. The harness emits a ``data_unavailable`` result until the
-referring benchmark is built (see ``track2/data.py``).
+Scoring: distance-based 3D localization only — ``acc@0.25m`` / ``acc@0.5m`` (top-1
+predicted position within X meters of the GT object center) and
+``mean_center_distance_m``. Distance, not IoU, is used because caption-memory
+methods emit a viewpoint position rather than an instance bbox. Name-level
+``referring_acc`` was removed: string overlap between a predicted label and the GT
+class name is not instance grounding and unfairly penalized free-text labels. The
+harness emits a ``data_unavailable`` result until the referring benchmark is built
+(see ``track2/data.py``).
 """
 
 from __future__ import annotations
@@ -141,8 +143,6 @@ def _finalize(
 def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "query_count",
-        "referring_acc@1",
-        "referring_acc@5",
         "acc@0.25m",
         "acc@0.5m",
         "mean_center_distance_m",
@@ -279,9 +279,6 @@ def _score(
 ) -> dict[str, Any]:
     distance_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     center_distances: list[float] = []
-    name_hits_top1 = 0
-    name_hits_topk = 0
-    name_scored = 0
     distance_scored = 0
     per_query = []
 
@@ -292,22 +289,12 @@ def _score(
         predictions = predictions_by_query.get(query_id, [])
         top1 = predictions[0] if predictions else None
 
-        # Name-level referring accuracy (ScanEnts3D has no 3D bbox): does the
-        # resolved object's label match the GT target object_name?
-        name_top1 = None
-        name_topk = None
-        if isinstance(target_name, str) and target_name.strip():
-            name_scored += 1
-            name_top1 = bool(top1 is not None and _name_match(top1.get("label"), target_name))
-            name_topk = any(_name_match(p.get("label"), target_name) for p in predictions)
-            if name_top1:
-                name_hits_top1 += 1
-            if name_topk:
-                name_hits_topk += 1
-
-        # Distance-based localization accuracy: the top-1 prediction's 3D
-        # position vs the GT object-bbox center. A query is "distance-scored"
-        # only when both a GT bbox and a usable predicted position exist.
+        # Instance referring is scored purely by 3D localization: the top-1
+        # prediction's position vs the GT object-bbox center. A query is
+        # "distance-scored" only when both a GT bbox and a usable predicted
+        # position exist. (Name-level matching was removed: it conflated
+        # class-name string overlap with instance grounding and penalized
+        # free-text labels; localization is the meaningful referring metric.)
         center_distance = None
         if isinstance(target_bbox, list):
             center_distance = _center_distance(top1, target_bbox) if top1 is not None else None
@@ -321,8 +308,7 @@ def _score(
             {
                 "query_id": query_id,
                 "target_object_name": target_name,
-                "name_match_top1": name_top1,
-                "name_match_topk": name_topk,
+                "predicted_label": (top1.get("label") if isinstance(top1, dict) else None),
                 "center_distance_m": center_distance,
                 "latency_ms": latency_seconds_by_query.get(query_id, 0.0) * 1000.0,
             }
@@ -331,9 +317,6 @@ def _score(
     latencies = [latency_seconds_by_query.get(str(q["query_id"]), 0.0) for q in queries]
     return {
         "query_count": len(queries),
-        "referring_acc@1": safe_div(name_hits_top1, name_scored) if name_scored else None,
-        "referring_acc@5": safe_div(name_hits_topk, name_scored) if name_scored else None,
-        "name_scored_count": name_scored,
         **{
             f"acc@{threshold}m": (safe_div(distance_hits[threshold], distance_scored) if distance_scored else None)
             for threshold in DISTANCE_THRESHOLDS_M
@@ -343,15 +326,6 @@ def _score(
         "mean_query_latency_ms": (mean(latencies) or 0.0) * 1000.0,
         "per_query": per_query,
     }
-
-
-def _name_match(predicted_label: Any, target_name: str) -> bool:
-    pred = str(predicted_label or "").strip().lower().replace("_", " ")
-    target = str(target_name or "").strip().lower().replace("_", " ")
-    if not pred or not target:
-        return False
-    # match if either name contains the other (handles "office chair" vs "chair")
-    return target in pred or pred in target
 
 
 def _center_distance(prediction: dict[str, Any], target_bbox: list[float]) -> float | None:
