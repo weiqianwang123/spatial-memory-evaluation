@@ -55,51 +55,66 @@ DEFAULT_LABEL_ALIASES: dict[str, str] = {
     "trash can": "trash can",
     "tripod": "tripod",
     "whiteboard": "whiteboard",
+    # --- ScanNet++ -> ScanNet200 surface-form reconciliation (2026-06-24) ---
+    # Map common ScanNet++ raw labels onto their ScanNet200 equivalents so they
+    # land in the detector_coverable split instead of all_annotated-only. Targets
+    # verified present in scannet200.txt.
+    "books": "book",
+    "notebook": "book",
+    "papers": "paper",
+    "folders": "file cabinet",
+    "filer organizer": "file cabinet",
+    "heater": "radiator",
+    "sofa": "couch",
+    "office visitor chair": "chair",
+    "office chair": "chair",
+    "storage cabinet": "cabinet",
+    "kitchen cabinet": "kitchen cabinet",
+    "window frame": "window",
+    "window blind": "blinds",
+    "window sill": "windowsill",
+    "blind rail": "blinds",
+    "door frame": "door",
+    "suspended ceiling": "ceiling",
+    "power socket": "power strip",
+    "socket": "power strip",
+    "mug": "cup",
+    "jar": "bottle",
+    "spray bottle": "bottle",
+    "cardboard box": "box",
+    "cardboards": "box",
+    "storage rack": "shelf",
+    "rolling cart": "cart",
+    "tap": "sink",
 }
 
-DEFAULT_DETECTOR_COVERABLE_LABELS: set[str] = {
-    "bag",
-    "basket",
-    "blanket",
-    "blinds",
-    "book",
-    "bottle",
-    "box",
-    "broom",
-    "cabinet",
-    "can",
-    "carpet",
-    "chair",
-    "clock",
-    "computer",
-    "container",
-    "counter",
-    "cup",
-    "curtain",
-    "cushion",
-    "foot rest",
-    "heater",
-    "keyboard",
-    "lamp",
-    "medical machine",
-    "monitor",
-    "mouse",
-    "sink",
-    "sofa",
-    "speaker",
-    "suitcase",
-    "table",
-    "tablet",
-    "tissue box",
-    "toilet paper dispenser",
-    "trash can",
-    "tripod",
-    "whiteboard",
-}
+# ScanNet++ annotation edit-tags that are not real objects; drop from queries.
+SCANNETPP_NON_OBJECT_LABELS: set[str] = {"remove", "split", "objects", "object", ""}
 
-DEFAULT_DETECTOR_CLASS_LIST_PATH = (
-    Path(__file__).resolve().parents[1] / "assets" / "class_lists" / "detector_coverable.txt"
-)
+# Shared detector class list — the single OV prompt/eval vocabulary used by Track 1
+# query generation AND every detector-based method's prompt (set_classes), across
+# all scenes. 2026-06-24: switched from the 37-label hand-picked list to the
+# standard **ScanNet200** vocabulary (200 labels), which covers ~95% of the Track 2
+# ScanEnts3D referring targets (the 37-list covered 44%) and is what DualMap /
+# ConceptGraphs project onto natively. The list is loaded from the asset file so it
+# stays the single source of truth; to revert, point this at the old list.
+_CLASS_LIST_DIR = Path(__file__).resolve().parents[1] / "assets" / "class_lists"
+DEFAULT_DETECTOR_CLASS_LIST_PATH = _CLASS_LIST_DIR / "scannet200.txt"
+# Legacy 37-label list kept for reference / coarse-eval ablation.
+LEGACY_DETECTOR_COVERABLE_LIST_PATH = _CLASS_LIST_DIR / "detector_coverable.txt"
+
+
+def _load_label_set(path: Path) -> set[str]:
+    labels: set[str] = set()
+    with Path(path).open("r", encoding="utf-8") as f:
+        for line in f:
+            text = re.sub(r"\s+", " ", str(line).strip().lower())
+            if text:
+                labels.add(text)
+    return labels
+
+
+DEFAULT_DETECTOR_COVERABLE_LABELS: set[str] = _load_label_set(DEFAULT_DETECTOR_CLASS_LIST_PATH)
 
 
 def canonical_detector_labels() -> list[str]:

@@ -97,6 +97,46 @@ sharp. This becomes the single `class_list` for Track 1 query generation AND eve
 detector method's `set_classes`/prompt, and the Track 1 `detector_coverable` split
 is redefined against it.
 
+### DECISION (2026-06-24): ScanNet200 adopted, change STAGED (not yet re-run)
+
+- Added `assets/class_lists/scannet200.txt` (200 labels, from ConceptGraphs'
+  `scannet200_classes.txt`; DualMap's adds a 201st `unknown` which we drop).
+- `common/labels.py`: `DEFAULT_DETECTOR_COVERABLE_LABELS` now LOADS from
+  `scannet200.txt` (was a hardcoded 37-set); `DEFAULT_DETECTOR_CLASS_LIST_PATH`
+  -> `scannet200.txt`; old list kept as `LEGACY_DETECTOR_COVERABLE_LIST_PATH`.
+  The shared-module registry's `detector_class_list.canonical` follows
+  automatically (it imports that path), so all detector methods + Track 1 query
+  gen now use ScanNet200.
+- Verified: loads 200 labels incl window/bathtub/mirror/dresser/stool; Track 1
+  build + validate pass.
+- **Alias reconciliation DONE** (user decision: ScanNet200 + alias reconcile):
+  added ~25 ScanNet++ -> ScanNet200 surface-form aliases to `DEFAULT_LABEL_ALIASES`
+  (`heater->radiator`, `sofa->couch`, `office visitor chair->chair`, `storage
+  cabinet->cabinet`, `mug->cup`, `books->book`, `power socket/socket->power strip`,
+  `window frame->window`, `door frame->door`, `suspended ceiling->ceiling`,
+  `tap->sink`, ...; all targets verified in scannet200.txt). Added
+  `SCANNETPP_NON_OBJECT_LABELS` (remove/split/objects edit-tags) for future
+  filtering. Net ScanNet++ Track-1 detector_coverable coverage: 34% (old-37) ->
+  68% (ScanNet200 raw) -> **81%** (ScanNet200 + reconciled aliases). The rest are
+  genuinely ScanNet++-specific (ducts, rare items) and stay in all_annotated.
+
+### Track 1 two-split design (answers "does querying ScanNet++ items directly break?")
+
+Track 1 ALWAYS builds two query splits per scene (`track1/data.py`, SPLITS):
+- `all_annotated` — one query per EVERY distinct ScanNet++ GT label (nothing lost;
+  power socket, ducts, etc. are here).
+- `detector_coverable` — the subset whose (aliased) label is in the shared OV list.
+  This is the formal fair-comparison split (only objects a shared OV detector
+  could plausibly find).
+So ScanNet++ objects outside the shared vocab are NOT dropped — they remain
+queryable via all_annotated; ScanNet200 just makes the fair `detector_coverable`
+subset much larger (10-scene totals: 121 -> 272 dc-queries; 392 all-queries).
+
+- Built state: the 10 Track 1 scenes were regenerated against ScanNet200 +
+  reconciled aliases (gitignored under benchmarks/). Detector-method
+  rebuild/​re-eval with `--shared-module-profile formal` is still deferred per
+  user (staged only).
+
 ## Next actions (not yet done)
 
 - Re-run Track 2 (distance-only) for methods already built.
