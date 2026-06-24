@@ -1947,6 +1947,15 @@ def _openclip_hf_cache_dir(args: argparse.Namespace) -> Path | None:
     pretrained = getattr(args, "clip_pretrained", None)
     if not model or not pretrained:
         return None
+    # Prefer a fast local-SSD cache root if provided (the NAS shared modules dir is
+    # slow for cold cp/torch reads of the 3.9GB ViT-H-14 checkpoint; loading it from
+    # NAS can stall the grounding worker for minutes). Layout mirrors the shared
+    # tree: <root>/<model>/<pretrained>/hf_cache.
+    override = os.environ.get("SPATIAL_EVAL_OPENCLIP_CACHE_ROOT")
+    if override:
+        local = Path(override) / str(model) / str(pretrained) / "hf_cache"
+        if local.exists():
+            return local
     candidate = DEFAULT_SHARED_MODULES_ROOT / "openclip" / str(model) / str(pretrained) / "hf_cache"
     if candidate.exists():
         return candidate
