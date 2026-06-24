@@ -609,24 +609,24 @@ class NativeToolExecutor:
     def _claws_get_all_objects(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """ClawS get_all_objects: enumerate stored spatial objects, most recent first.
 
-        Capped to keep the observation (and therefore the next LLM prompt) small:
-        a default of 50 rows with snapshot text trimmed. The native API supports a
-        larger limit, but feeding hundreds of full records back into the prompt
-        bloats it (a 183-object dump is ~54 KB) and slows every subsequent tool
-        call, so we bound it and report the total so the agent knows it's capped.
+        Faithful to SpatialStorage.get_all_objects(limit=500): returns the full
+        object listing (label + 3D position + snapshot text), most recent first,
+        honoring the requested ``limit``. The agent freely chooses whether to call
+        this; like the native API it returns every record up to ``limit``.
         """
 
         objects = self._claws_objects()
         if objects is None:
             return {"status": "error", "message": "ClawS object memory not found at memory/object_table.jsonl."}
-        limit = min(_positive_int(arguments.get("limit"), default=50), 50)
+        limit = _positive_int(arguments.get("limit"), default=500)
         ordered = sorted(objects, key=lambda r: _as_float_or(r.get("timestamp"), 0.0), reverse=True)
         results = [
             {
                 "object_id": row.get("object_id"),
                 "label": row.get("label"),
                 "position_3d": row.get("position_3d"),
-                "snapshot_text": str(row.get("snapshot_text") or "")[:80],
+                "snapshot_text": row.get("snapshot_text"),
+                "timestamp": row.get("timestamp"),
                 "source": "memory/object_table.jsonl",
             }
             for row in ordered[:limit]
