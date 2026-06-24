@@ -43,17 +43,21 @@ def main() -> int:
     if args.max_frames:
         indices = indices[: args.max_frames]
 
+    import cv2  # JPEG encode is ~25x faster than imageio PNG for the 1.3MP color frame.
+
     exported = 0
     for out_idx, src in enumerate(indices):
         frame = sd.frames[src]
         pose = frame.camera_to_world
         if not np.all(np.isfinite(pose)):
             continue
-        color = frame.decompress_color(sd.color_compression_type)
+        color = frame.decompress_color(sd.color_compression_type)  # RGB
         depth = frame.decompress_depth(sd.depth_compression_type)
         depth = np.frombuffer(depth, dtype=np.uint16).reshape(sd.depth_height, sd.depth_width)
         stem = f"{out_idx:06d}"
-        imageio.imwrite(args.output_dir / f"{stem}-rgb.png", color)
+        # Color -> JPEG (lossy is fine: every downstream method resizes to depth
+        # resolution anyway). Depth stays PNG (uint16, must be lossless).
+        cv2.imwrite(str(args.output_dir / f"{stem}-rgb.jpg"), cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
         imageio.imwrite(args.output_dir / f"{stem}-depth.png", depth)
         np.savetxt(args.output_dir / f"{stem}.txt", pose, fmt="%.6f")
         exported += 1
