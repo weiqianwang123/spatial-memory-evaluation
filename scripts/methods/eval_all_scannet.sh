@@ -53,11 +53,14 @@ run_one() {
           --mode fixed_api --output "$out" > "${out%.json}.log" 2>&1
       fi ;;
     2)
+      # T2 uses the ~15-query/scene subset (T2_BENCH=subset15 default; set T2_BENCH=full for all).
+      local t2dir="benchmarks/track2/scanents3d/$s"
+      [ "${T2_BENCH:-subset15}" = "subset15" ] && [ -d "${t2dir}_subset15" ] && t2dir="${t2dir}_subset15"
       if [ "$mode" = "tool_llm" ]; then
-        $PY scripts/evaluate_track2.py "$pkg" --benchmark-dir "benchmarks/track2/scanents3d/$s" \
+        $PY scripts/evaluate_track2.py "$pkg" --benchmark-dir "$t2dir" \
           --mode tool_llm --llm-command "$AGENT_CMD" --output "$out" > "${out%.json}.log" 2>&1
       else
-        $PY scripts/evaluate_track2.py "$pkg" --benchmark-dir "benchmarks/track2/scanents3d/$s" \
+        $PY scripts/evaluate_track2.py "$pkg" --benchmark-dir "$t2dir" \
           --mode fixed_api --output "$out" > "${out%.json}.log" 2>&1
       fi ;;
     3)
