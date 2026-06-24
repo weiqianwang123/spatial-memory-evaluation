@@ -1,7 +1,31 @@
 # Baseline Registry
 
-Last checked: 2026-06-17
+Last checked: 2026-06-24
 
+> 2026-06-24 integration note (3-track tool_llm adaptation): the audit rows below
+> remain the capability source of truth; this note records what is now actually
+> RUN/runnable as `build memory -> LLM tool-calling` across all 3 tracks (one
+> scene per track), scored with the local Claude CLI (Bedrock, Opus 4.8). See
+> `method_runtime_runbook.md` > Tool-LLM Eval and each `scripts/methods/<m>/RESULTS.md`.
+>
+> - **ReMEmbR** (`caption_memory`): tool_llm done all 3 tracks (T1 success@5=0.375;
+>   T2 referring@1=0.87, acc@0.5m=0.0; T3 LLM-Match=0.65). Fixed-API object tracks
+>   stay `invalid` as finalized in Task 19.
+> - **DAAAM** (`scene_graph`): tool_llm done all 3 tracks (T1 success@5=0.51 /
+>   first-hit 0.32 m; T2 referring@1=0.40 / acc@0.5m=0.20; T3 LLM-Match=0.60) +
+>   fixed_api Track 1 (native `query_object`, first-hit 0.50 m, 2.4 ms/q). Native
+>   DSG build env unblocked (cuDNN + hydra_python); ScanNet scene layouts via
+>   `extract_sens_frames.py`+`export_scannet_layout.py`.
+> - **ClawS SpatialRAG** (`object_map`): fixed_api Track 1 native (first-hit 0.12 m,
+>   2.3 ms/q; T2/3 honest `invalid`) + tool_llm all 3 tracks. ScanNet DBs built by
+>   driving `SpatialPipeline.process_frame` (`build_scannet_memory.py`).
+> - **Controls** (Multi-frame VLM `raw_frame_control`, LLM-with-captions
+>   `caption_control`): run via tool_llm keeping `explicit_memory=false`; never
+>   promoted to object-memory baselines (fixed_api stays `invalid`/control).
+> - tool_llm native tool surface per method is in `tool_llm/native_tools.py`
+>   (expose all interfaces the package can back; agent chooses). Cheaper model
+>   tiers: `scripts/methods/llm_presets.sh`.
+>
 > 2026-06-17 integration note: Claude tasks 01-05 re-audited the first fixed-API
 > baseline capability slice. This file intentionally combines the method-specific
 > evidence from all five task branches instead of letting later branches overwrite
