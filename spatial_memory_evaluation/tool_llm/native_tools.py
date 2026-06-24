@@ -607,25 +607,37 @@ class NativeToolExecutor:
         return {"status": "ok", "tool": "retrieve_by_location", "results": results}
 
     def _claws_get_all_objects(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
-        """ClawS get_all_objects: enumerate stored spatial objects, most recent first."""
+        """ClawS get_all_objects: enumerate stored spatial objects, most recent first.
+
+        Capped to keep the observation (and therefore the next LLM prompt) small:
+        a default of 50 rows with snapshot text trimmed. The native API supports a
+        larger limit, but feeding hundreds of full records back into the prompt
+        bloats it (a 183-object dump is ~54 KB) and slows every subsequent tool
+        call, so we bound it and report the total so the agent knows it's capped.
+        """
 
         objects = self._claws_objects()
         if objects is None:
             return {"status": "error", "message": "ClawS object memory not found at memory/object_table.jsonl."}
-        limit = _positive_int(arguments.get("limit"), default=200)
+        limit = min(_positive_int(arguments.get("limit"), default=50), 50)
         ordered = sorted(objects, key=lambda r: _as_float_or(r.get("timestamp"), 0.0), reverse=True)
         results = [
             {
                 "object_id": row.get("object_id"),
                 "label": row.get("label"),
                 "position_3d": row.get("position_3d"),
-                "snapshot_text": row.get("snapshot_text"),
-                "timestamp": row.get("timestamp"),
+                "snapshot_text": str(row.get("snapshot_text") or "")[:80],
                 "source": "memory/object_table.jsonl",
             }
             for row in ordered[:limit]
         ]
-        return {"status": "ok", "tool": "get_all_objects", "results": results}
+        return {
+            "status": "ok",
+            "tool": "get_all_objects",
+            "total_objects": len(objects),
+            "returned": len(results),
+            "results": results,
+        }
 
 
 def _read_json(path: Path) -> dict[str, Any]:
