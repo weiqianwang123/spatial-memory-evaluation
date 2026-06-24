@@ -32,6 +32,7 @@ echo "[$(date +%H:%M:%S)] DAAAM $SCENE: $NFRAMES frames, native speed, wait-for-
 START=$(date +%s)
 $DAAAM_ENV/bin/python scripts/methods/daaam/build_memory_smoke.py \
   --scene-id "$SCENE" \
+  --dataset-tag scannet \
   --layout-dir "$LAYOUT" \
   --run-id "$RUN_ID" \
   --native-output-root "$NATIVE_ROOT" \

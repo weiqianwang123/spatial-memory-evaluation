@@ -281,6 +281,12 @@ def parse_args() -> argparse.Namespace:
             "SamAutomaticMaskGenerator. Only keep it for a FastSAM engine run."
         ),
     )
+    parser.add_argument(
+        "--dataset-tag",
+        default="scannetpp",
+        help="Dataset path segment for outputs (memories/daaam/<tag>/<scene>, "
+        "native key <tag>_<scene>). Use 'scannet' for ScanNet .sens scenes.",
+    )
     parser.add_argument("--class-names", type=Path, default=None)
     parser.add_argument("--sam-checkpoint", type=Path, default=None)
     parser.add_argument("--sam-type", default=None)
@@ -321,10 +327,11 @@ def main(args: argparse.Namespace) -> int:
     run_id = args.run_id or (
         args.native_output_dir.name if args.native_output_dir is not None else f"daaam-smoke-{_run_timestamp()}"
     )
-    scene_key = f"scannetpp_{args.scene_id}"
+    dataset_tag = getattr(args, "dataset_tag", None) or "scannetpp"
+    scene_key = f"{dataset_tag}_{args.scene_id}"
     layout_dir = args.layout_dir or (args.layout_root / scene_key / run_id)
     native_output_dir = args.native_output_dir or (args.native_output_root / scene_key / run_id)
-    package_dir = args.package_root / "daaam" / "scannetpp" / args.scene_id / run_id
+    package_dir = args.package_root / "daaam" / dataset_tag / args.scene_id / run_id
 
     layout_summary: dict[str, Any] = {}
     if args.native_output_dir is None:
@@ -1444,7 +1451,7 @@ def _write_manifest(
         package_dir / "manifest.json",
         {
             "schema_version": "0.2",
-            "package_id": f"daaam/scannetpp/{args.scene_id}/{run_id}",
+            "package_id": f"daaam/{getattr(args, 'dataset_tag', None) or 'scannetpp'}/{args.scene_id}/{run_id}",
             "method": {
                 "name": "daaam",
                 "display_name": "DAAAM",
@@ -1454,7 +1461,7 @@ def _write_manifest(
                 "version": None,
             },
             "dataset": {
-                "name": "scannetpp",
+                "name": getattr(args, "dataset_tag", None) or "scannetpp",
                 "split": "smoke",
                 "scene_id": args.scene_id,
                 "episode_id": None,
