@@ -1,4 +1,16 @@
-# Evaluation Set Inventory (2026-06-24)
+# Evaluation Set Inventory (2026-06-24; unified 2026-06-25)
+
+> **2026-06-25 UNIFICATION:** All three tracks now evaluate the SAME 10 ScanNet
+> scenes (scene0015_00, scene0050_00, scene0077_00, scene0084_00, scene0131_00,
+> scene0193_00, scene0207_00, scene0222_00, scene0256_00, scene0314_00). One memory
+> build per (method, scene) serves T1+T2+T3. Track 1 gained ScanNet support
+> (`benchmarks/track1/scannet/<scene>/`, 148 detector_coverable queries) while
+> keeping its ScanNet++ path. T2 uses the per-scene `_subset15` referring dirs
+> (15 queries/scene = 150). T3 uses the per-scene OpenEQA questions (121). See
+> `method_runtime_runbook.md` "Unified 10-scene ScanNet evaluation" for build/eval
+> details. The inventory below documents the broader expandable corpus.
+
+
 
 Snapshot of what each track currently evaluates vs. how far it can expand, with
 per-scene query yields. Use this to plan benchmark expansion. Counts are from the
