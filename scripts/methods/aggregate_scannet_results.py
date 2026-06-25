@@ -22,10 +22,25 @@ SCENES = [
 
 # (track, mode) -> metric keys to average
 TRACK_METRICS = {
-    ("1", "tool_llm"): ["success@5", "success@1", "mean_first_hit_distance_m", "mrr", "mean_query_latency_ms"],
-    ("1", "fixed_api"): ["success@5", "success@1", "mean_first_hit_distance_m", "mrr", "mean_query_latency_ms"],
-    ("2", "tool_llm"): ["acc@0.25m", "acc@0.5m", "mean_center_distance_m", "mean_query_latency_ms"],
-    ("2", "fixed_api"): ["acc@0.25m", "acc@0.5m", "mean_center_distance_m", "mean_query_latency_ms"],
+    ("1", "tool_llm"): [
+        "success@5", "success@1", "mean_first_hit_distance_m", "mrr",
+        "proximity_top1@1.0m", "proximity_top1@3.0m", "proximity@3.0m", "proximity@5.0m",
+        "mean_query_latency_ms",
+    ],
+    ("1", "fixed_api"): [
+        "success@5", "success@1", "mean_first_hit_distance_m", "mrr",
+        "proximity_top1@1.0m", "proximity_top1@3.0m", "proximity@3.0m", "proximity@5.0m",
+        "mean_query_latency_ms",
+    ],
+    ("2", "tool_llm"): [
+        "acc@0.25m", "acc@0.5m", "acc_top5@0.5m",
+        "proximity@1.0m", "proximity@3.0m", "proximity_top5@3.0m",
+        "mean_center_distance_m", "mean_query_latency_ms",
+    ],
+    ("2", "fixed_api"): [
+        "acc@0.25m", "acc@0.5m", "acc_top5@0.5m",
+        "proximity@1.0m", "proximity@3.0m", "mean_center_distance_m", "mean_query_latency_ms",
+    ],
     ("3", "tool_llm"): ["llm_match", "answered_rate", "mean_query_latency_ms"],
 }
 
