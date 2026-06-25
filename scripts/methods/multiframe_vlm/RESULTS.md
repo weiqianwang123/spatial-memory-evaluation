@@ -68,3 +68,15 @@ python scripts/methods/multiframe_vlm/build_control_package.py \
   --pose-dir   data/daaam_layouts/scannet_scene0709_00/<run>/pose \
   --dataset openeqa --scene-id scene0709_00 --num-frames 12
 ```
+
+## Unified 10-scene ScanNet results (2026-06-25)
+
+Full results in `.codex/scannet_10scene_results.md`. Multi-frame VLM control
+(raw_frame_control, explicit_memory=false): the lower-bound "answer from a handful
+of raw frames, no built memory" baseline.
+- T1 success@5 0.053, T2 acc@0.5m 0.008 (no object memory -> ~0 localization),
+  proximity_top1@3m 0.888. T3 OpenEQA LLM-Match 0.337.
+- Build: 23 raw frames/scene (stride 18, uniform across scene = ReMEmbR cadence),
+  retrieve_frames hands all sampled frames + pose to the multimodal agent.
+- Confirms the value of explicit memory: raw-frame VLM trails both geometric (T1/T2)
+  and caption (T3) memory.

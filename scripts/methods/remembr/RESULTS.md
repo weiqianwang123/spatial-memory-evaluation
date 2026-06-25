@@ -145,3 +145,18 @@ python scripts/evaluate_track3.py "$PKG" --dataset scannet --mode tool_llm \
   --judge-command 'claude -p "$(cat {prompt_path})" --output-format text' \
   --output "$(pwd)/results/remembr/track3-tool_llm-judged/remembr-track3-scene0709_00/eval_summary.json"
 ```
+
+## Unified 10-scene ScanNet results (2026-06-25)
+
+Full results in `.codex/scannet_10scene_results.md`. ReMEmbR (caption memory) +
+the two controls:
+- ReMEmbR T1 success@5 0.094 / T2 acc@0.5m 0.0 (caption memory stores viewpoints,
+  not object centers — strict localization ~0) BUT proximity_top1@3m 0.92 (points to
+  the right region). **T3 OpenEQA LLM-Match 0.498** (beats geometric methods' 0.34-0.37).
+- LLM-with-captions control: **T3 0.520** (highest), T1/T2 localization ~0.
+- Multi-frame VLM control: T3 0.337, T1/T2 ~0.
+- Build (faithful): qwen3.5:4b captioner (VILA substitute, ~1 caption/3s native
+  cadence = stride 18), qwen3-embedding:0.6b caption embeddings, retrieve_from_text
+  = embedding cosine (Milvus substitute). 23 captions/scene, 0.3 MB. No Claude in memory.
+- Finding: caption memory wins recognition/QA, loses precise localization — the core
+  memory-type trade-off vs DAAAM/ClawS geometric memory.

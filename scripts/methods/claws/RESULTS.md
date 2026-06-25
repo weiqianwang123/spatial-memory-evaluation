@@ -73,3 +73,13 @@ python scripts/evaluate_track1.py "$PKG" --scene-id 036bce3393 --mode tool_llm \
   --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}' \
   --output "$(pwd)/results/claws/track1-tool_llm/claws-track1-036bce3393/eval_summary.json"
 ```
+
+## Unified 10-scene ScanNet results (2026-06-25)
+
+Full results in `.codex/scannet_10scene_results.md`. ClawS (object_map):
+- T1 tool_llm: success@5 0.418, **first-hit 0.330 m** (tightest), prox_top1@1m 0.583.
+- T1 fixed_api: **success@5 0.472** (> tool_llm), 0.6 ms/query — its distinguishing strength.
+- T2 tool_llm: acc@0.5m **0.351**, mean dist **1.458 m** (best localizer), prox@3m 0.837.
+- T3 OpenEQA: LLM-Match 0.340, answered 0.916.
+- Build: YOLO-World-L + set_classes(ScanNet200) + qwen3.5:4b VLM describer,
+  ~0.18 s/frame, ~44 objects/scene, 5.1 MB. VLM describes only new confirmed tracks.
