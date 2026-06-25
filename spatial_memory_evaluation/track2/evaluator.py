@@ -49,6 +49,10 @@ K_VALUES = (1, 5)
 # (and other caption-memory methods) emit a viewpoint position, not an instance
 # bbox, so distance — not IoU — is the meaningful localization metric here.
 DISTANCE_THRESHOLDS_M = (0.25, 0.5)
+# Relaxed proximity thresholds for viewpoint-based caption memory (ReMEmbR emits
+# the robot viewpoint near the referred object, not its center, so acc@0.25/0.5m
+# is ~0). These give a fairer "how close did the method point?" view.
+PROXIMITY_THRESHOLDS_M = (1.0, 3.0, 5.0)
 
 
 def evaluate_track2(
@@ -145,6 +149,9 @@ def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
         "query_count",
         "acc@0.25m",
         "acc@0.5m",
+        "proximity@1.0m",
+        "proximity@3.0m",
+        "proximity@5.0m",
         "mean_center_distance_m",
         "mean_query_latency_ms",
     )
@@ -172,13 +179,14 @@ def _run_fixed_api(
     resolve = load_entrypoint(package_dir, str(cap["entrypoint"]))
     predictions_by_query: dict[str, list[dict[str, Any]]] = {}
     latency_seconds_by_query: dict[str, float] = {}
-    for query in read_jsonl(benchmark_dir / REFERRING_QUERIES_FILE):
+    for index, query in enumerate(read_jsonl(benchmark_dir / REFERRING_QUERIES_FILE)):
         query_id = str(query["query_id"])
+        public_query_id = _public_query_id(query, index)
         started = time.perf_counter()
         result = resolve(
             str(package_dir),
             {
-                "query_id": query_id,
+                "query_id": public_query_id,
                 "dataset": query.get("dataset", "scanrefer"),
                 "scene_id": query.get("scene_id"),
                 "utterance": query.get("utterance"),
@@ -212,14 +220,15 @@ def _run_tool_llm(
     latency_seconds_by_query: dict[str, float] = {}
     tool_traces_by_query: dict[str, Any] = {}
 
-    for query in read_jsonl(benchmark_dir / REFERRING_QUERIES_FILE):
+    for index, query in enumerate(read_jsonl(benchmark_dir / REFERRING_QUERIES_FILE)):
         query_id = str(query["query_id"])
+        public_query_id = _public_query_id(query, index)
         try:
             query_result = run_tool_llm_query(
                 package_dir=package_dir,
                 manifest=manifest,
                 query={
-                    "query_id": query_id,
+                    "query_id": public_query_id,
                     "scene_id": query.get("scene_id"),
                     "query": query.get("utterance"),
                     "utterance": query.get("utterance"),
@@ -256,6 +265,12 @@ def _run_tool_llm(
     }
 
 
+def _public_query_id(query: dict[str, Any], index: int) -> str:
+    scene_id = str(query.get("scene_id") or "scene")
+    safe_scene = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in scene_id)
+    return f"{safe_scene}_query_{index:04d}"
+
+
 def _scene_objects_by_id(benchmark_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
     """Map scene_id -> {object_id -> object record} for distance/center scoring."""
 
@@ -278,6 +293,7 @@ def _score(
     latency_seconds_by_query: dict[str, float],
 ) -> dict[str, Any]:
     distance_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
+    proximity_hits = {threshold: 0 for threshold in PROXIMITY_THRESHOLDS_M}
     center_distances: list[float] = []
     distance_scored = 0
     per_query = []
@@ -304,6 +320,9 @@ def _score(
                 for threshold in DISTANCE_THRESHOLDS_M:
                     if center_distance <= threshold:
                         distance_hits[threshold] += 1
+                for threshold in PROXIMITY_THRESHOLDS_M:
+                    if center_distance <= threshold:
+                        proximity_hits[threshold] += 1
         per_query.append(
             {
                 "query_id": query_id,
@@ -320,6 +339,10 @@ def _score(
         **{
             f"acc@{threshold}m": (safe_div(distance_hits[threshold], distance_scored) if distance_scored else None)
             for threshold in DISTANCE_THRESHOLDS_M
+        },
+        **{
+            f"proximity@{threshold}m": (safe_div(proximity_hits[threshold], distance_scored) if distance_scored else None)
+            for threshold in PROXIMITY_THRESHOLDS_M
         },
         "distance_scored_count": distance_scored,
         "mean_center_distance_m": mean(center_distances),
