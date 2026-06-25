@@ -162,6 +162,9 @@ def _track1_summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
         "proximity@1.0m",
         "proximity@3.0m",
         "proximity@5.0m",
+        "proximity_top1@1.0m",
+        "proximity_top1@3.0m",
+        "proximity_top1@5.0m",
         "mean_query_latency_ms",
     )
     return {key: metrics.get(key) for key in keys}
@@ -298,7 +301,9 @@ def _score_split(
     reciprocal_ranks: list[float] = []
     first_hit_distances: list[float] = []
     proximity_hits = {thr: 0 for thr in PROXIMITY_THRESHOLDS_M}
+    proximity_top1_hits = {thr: 0 for thr in PROXIMITY_THRESHOLDS_M}
     proximity_scored = 0
+    proximity_top1_scored = 0
     per_query = []
 
     for query in queries:
@@ -306,15 +311,23 @@ def _score_split(
         targets = [gt_by_id[gt_id] for gt_id in query["target_gt_ids"] if gt_id in gt_by_id]
         predictions = predictions_by_query.get(query_id, [])
         query_row = {"query_id": query_id, "target_count": len(targets)}
-        # Relaxed proximity: nearest distance from any top-5 predicted position to any
-        # target object center, independent of the strict size-scaled match threshold.
+        # Relaxed proximity: nearest distance to any target center, both for the
+        # full top-5 (best-of) and for the top-1 prediction alone (the method's
+        # primary answer — stricter, more interpretable for ranked output).
         prox = _nearest_proximity(targets, predictions[: max(K_VALUES)])
+        prox_top1 = _nearest_proximity(targets, predictions[:1])
         if targets and prox is not None:
             proximity_scored += 1
             for thr in PROXIMITY_THRESHOLDS_M:
                 if prox <= thr:
                     proximity_hits[thr] += 1
+        if targets and prox_top1 is not None:
+            proximity_top1_scored += 1
+            for thr in PROXIMITY_THRESHOLDS_M:
+                if prox_top1 <= thr:
+                    proximity_top1_hits[thr] += 1
         query_row["nearest_proximity_m"] = prox
+        query_row["nearest_proximity_top1_m"] = prox_top1
         first_rank = None
         first_distance = None
         for k in K_VALUES:
@@ -353,6 +366,10 @@ def _score_split(
         "mean_first_hit_distance_m": mean(first_hit_distances),
         **{
             f"proximity@{thr}m": (safe_div(proximity_hits[thr], proximity_scored) if proximity_scored else None)
+            for thr in PROXIMITY_THRESHOLDS_M
+        },
+        **{
+            f"proximity_top1@{thr}m": (safe_div(proximity_top1_hits[thr], proximity_top1_scored) if proximity_top1_scored else None)
             for thr in PROXIMITY_THRESHOLDS_M
         },
         "proximity_scored_count": proximity_scored,
