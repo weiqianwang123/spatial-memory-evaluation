@@ -252,9 +252,13 @@ class NativeToolExecutor:
                 "status": "error",
                 "message": "Multi-frame VLM control frames not found at raw_links/sampled_frames.jsonl.",
             }
-        top_k = _positive_int(arguments.get("top_k"), default=12)
+        # Default to ALL sampled frames (follows ReMEmbR's VLMNonAgent, which
+        # ingests its whole frame/caption memory). The control's sample is already
+        # bounded by the build-time stride; the agent may still pass top_k to cap.
+        all_rows = read_jsonl(frames_path)
+        top_k = _positive_int(arguments.get("top_k"), default=len(all_rows) or 12)
         results = []
-        for row in read_jsonl(frames_path)[:top_k]:
+        for row in all_rows[:top_k]:
             results.append(
                 {
                     "frame_id": row.get("frame_id"),

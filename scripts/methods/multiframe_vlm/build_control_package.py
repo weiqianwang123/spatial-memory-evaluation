@@ -46,7 +46,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--scene-id", required=True)
     parser.add_argument("--run-id", default=None)
-    parser.add_argument("--num-frames", type=int, default=12, help="How many frames to sample for the control.")
+    parser.add_argument("--num-frames", type=int, default=12, help="How many frames to sample for the control (uniform). Ignored if --frame-stride > 0.")
+    parser.add_argument(
+        "--frame-stride",
+        type=int,
+        default=0,
+        help="If > 0, sample every Nth frame across the whole scene (follows ReMEmbR's "
+        "cadence; e.g. stride 18 = ~1 frame / 3s on a 6fps layout). Overrides --num-frames.",
+    )
     parser.add_argument("--package-root", type=Path, default=Path("memories"))
     return parser.parse_args()
 
@@ -76,10 +83,15 @@ def main(args: argparse.Namespace) -> int:
     frame_paths = sorted(args.frames_dir.glob("*.jpg")) or sorted(args.frames_dir.glob("*.png"))
     if not frame_paths:
         raise FileNotFoundError(f"no frame images in {args.frames_dir}")
-    # Evenly sample num_frames across the sequence.
-    n = min(args.num_frames, len(frame_paths))
-    step = max(1, len(frame_paths) // n)
-    sampled = frame_paths[::step][:n]
+    # Sample frames. With --frame-stride > 0 take every Nth frame across the whole
+    # scene (follows ReMEmbR's ~3s cadence so the two controls share a frame budget);
+    # otherwise evenly sample --num-frames.
+    if args.frame_stride and args.frame_stride > 0:
+        sampled = frame_paths[:: args.frame_stride]
+    else:
+        n = min(args.num_frames, len(frame_paths))
+        step = max(1, len(frame_paths) // n)
+        sampled = frame_paths[::step][:n]
 
     # Copy sampled frames into the package (raw_links/frames) so the tool can hand
     # absolute image paths to the multimodal agent.
