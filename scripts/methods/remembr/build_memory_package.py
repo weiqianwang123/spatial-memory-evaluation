@@ -77,6 +77,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ollama-endpoint", default="http://localhost:11434")
     parser.add_argument(
+        "--embed-model",
+        default="qwen3-embedding:0.6b",
+        help="Local Ollama text-embedding model for caption vectors (faithful to "
+        "ReMEmbR's Milvus semantic memory). Empty string disables embeddings.",
+    )
+    parser.add_argument(
         "--caption-command",
         default=(
             "cd {layout_dir} && claude -p {prompt_q} --output-format text "
@@ -131,6 +137,13 @@ def main(args: argparse.Namespace) -> int:
                 image_rel=f"color/{image_path.name}",
                 timeout=args.caption_timeout,
             )
+        # Precompute the caption text embedding (faithful to ReMEmbR's Milvus
+        # vector memory): retrieve_from_text does cosine similarity over these.
+        embedding = None
+        if caption and args.embed_model:
+            embedding = _embed_text_ollama(
+                text=caption, model=args.embed_model, endpoint=args.ollama_endpoint, timeout=60
+            )
         caption_rows.append(
             {
                 "caption_id": frame_id,
@@ -140,6 +153,7 @@ def main(args: argparse.Namespace) -> int:
                 "theta": theta,
                 "file_start": image_path.name,
                 "file_end": image_path.name,
+                "embedding": embedding,
             }
         )
         print(f"[{index + 1}/{len(frames)}] {frame_id}: {caption[:80]}", flush=True)
@@ -240,6 +254,30 @@ def _pose_position_yaw(pose_path: Path) -> tuple[list[float], float]:
     if not all(math.isfinite(v) for v in position) or not math.isfinite(yaw):
         return [0.0, 0.0, 0.0], 0.0
     return [round(v, 6) for v in position], round(yaw, 6)
+
+
+def _embed_text_ollama(*, text: str, model: str, endpoint: str, timeout: int) -> list[float] | None:
+    """Embed caption text via Ollama /api/embed (qwen3-embedding:0.6b, dim 1024)."""
+    import json as _json
+    import urllib.request
+
+    try:
+        payload = {"model": model, "input": text}
+        req = urllib.request.Request(
+            endpoint.rstrip("/") + "/api/embed",
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = _json.loads(resp.read())
+        emb = data.get("embeddings") or data.get("embedding")
+        if emb and isinstance(emb[0], list):
+            return [float(x) for x in emb[0]]
+        if emb:
+            return [float(x) for x in emb]
+    except Exception:
+        return None
+    return None
 
 
 def _caption_with_ollama(*, image_path: Path, model: str, endpoint: str, timeout: int) -> str:

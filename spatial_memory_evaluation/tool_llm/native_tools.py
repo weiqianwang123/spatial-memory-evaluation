@@ -380,10 +380,24 @@ class NativeToolExecutor:
             }
         query = str(arguments.get("query") or "")
         top_k = _positive_int(arguments.get("top_k"), default=5)
+        rows = list(read_jsonl(captions_path))
+        # Faithful to ReMEmbR's Milvus semantic memory: rank by cosine similarity
+        # over precomputed caption embeddings (qwen3-embedding:0.6b). Falls back to
+        # lexical keyword matching if embeddings are absent or the embedder is down.
+        retrieval = "lexical"
         scored = []
-        for row in read_jsonl(captions_path):
-            text = str(row.get("caption") or "")
-            scored.append((_lexical_score(query, text), row))
+        have_emb = any(isinstance(r.get("embedding"), list) for r in rows)
+        query_emb = _embed_query_ollama(query) if (have_emb and query) else None
+        if query_emb is not None:
+            retrieval = "embedding"
+            for row in rows:
+                emb = row.get("embedding")
+                score = _cosine(query_emb, emb) if isinstance(emb, list) else -1.0
+                scored.append((score, row))
+        else:
+            for row in rows:
+                text = str(row.get("caption") or "")
+                scored.append((_lexical_score(query, text), row))
         scored.sort(key=lambda item: item[0], reverse=True)
         results = []
         for score, row in scored[:top_k]:
@@ -398,7 +412,7 @@ class NativeToolExecutor:
                     "source": "memory/captions.jsonl",
                 }
             )
-        return {"status": "ok", "tool": "retrieve_from_text", "results": results}
+        return {"status": "ok", "tool": "retrieve_from_text", "retrieval": retrieval, "results": results}
 
     def _remembr_retrieve_from_position(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         captions_path = self.package_dir / "memory" / "captions.jsonl"
@@ -954,6 +968,54 @@ def _lexical_score(query: str, text: str) -> float:
         return 0.0
     overlap = len(query_terms & text_terms)
     return overlap / max(1, len(query_terms))
+
+
+def _cosine(a: list, b: list) -> float:
+    """Cosine similarity between two equal-length vectors; -1 on mismatch."""
+    try:
+        if not a or not b or len(a) != len(b):
+            return -1.0
+        dot = sum(float(x) * float(y) for x, y in zip(a, b))
+        na = math.sqrt(sum(float(x) * float(x) for x in a))
+        nb = math.sqrt(sum(float(y) * float(y) for y in b))
+        if na == 0 or nb == 0:
+            return -1.0
+        return dot / (na * nb)
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def _embed_query_ollama(
+    query: str,
+    *,
+    model: str = "qwen3-embedding:0.6b",
+    endpoint: str = "http://localhost:11434",
+    timeout: int = 30,
+) -> list[float] | None:
+    """Embed a retrieval query via Ollama /api/embed (matches the caption embedder).
+
+    Returns None on any failure so the caller falls back to lexical retrieval.
+    """
+    import json as _json
+    import urllib.request
+
+    try:
+        payload = {"model": model, "input": query}
+        req = urllib.request.Request(
+            endpoint.rstrip("/") + "/api/embed",
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = _json.loads(resp.read())
+        emb = data.get("embeddings") or data.get("embedding")
+        if emb and isinstance(emb[0], list):
+            return [float(x) for x in emb[0]]
+        if emb:
+            return [float(x) for x in emb]
+    except Exception:
+        return None
+    return None
 
 
 def _tokens(text: str) -> list[str]:
