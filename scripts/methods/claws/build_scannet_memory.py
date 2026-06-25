@@ -183,11 +183,20 @@ async def run(args: argparse.Namespace) -> None:
         if getattr(cfg.vlm, "enabled", False) and hasattr(pipeline, "wait_vlm_pending"):
             await pipeline.wait_vlm_pending(timeout=120.0)
         count = await rag_service.storage.count()
-        print(json.dumps({
+        elapsed = round(time.monotonic() - start, 1)
+        stats = {
             "status": "ok", "scene_id": args.scene_id, "frames_processed": frames_seen,
             "stored_events": stored_events, "memory_records": count, "db_path": str(db_path),
-            "elapsed_s": round(time.monotonic() - start, 1),
-        }, indent=2))
+            "elapsed_s": elapsed,
+            "time_per_frame_seconds": round(elapsed / frames_seen, 4) if frames_seen else None,
+        }
+        # Sidecar next to the DB so the package builder can record frame_count +
+        # time_per_frame in build_log.json (the package step is a separate process).
+        try:
+            Path(str(db_path) + ".build_stats.json").write_text(json.dumps(stats, indent=2))
+        except Exception:
+            pass
+        print(json.dumps(stats, indent=2))
     finally:
         await rag_service.storage.close()
 

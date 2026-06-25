@@ -605,10 +605,22 @@ def _write_build_log(
 ) -> None:
     finished_at = time.time()
     runtime_seconds = finished_at - started_at
+    # Pull frame_count + time_per_frame from the DB-build sidecar if present (the
+    # DB build is a separate process; build_scannet_memory.py writes <db>.build_stats.json).
+    db_frame_count = 0
+    db_tpf = None
+    stats_path = Path(str(db_path) + ".build_stats.json")
+    if stats_path.exists():
+        try:
+            _st = json.loads(stats_path.read_text())
+            db_frame_count = int(_st.get("frames_processed") or 0)
+            db_tpf = _st.get("time_per_frame_seconds")
+        except Exception:
+            pass
     write_build_log_with_accounting(
         package_dir=package_dir,
         native_memory_artifact_paths=[db_path],
-        frame_count=0,
+        frame_count=db_frame_count,
         build_log={
             "status": "ok",
             "started_at": _iso_time(started_at),
@@ -623,7 +635,10 @@ def _write_build_log(
             "claws_runtime": {
                 "native_db_path": str(db_path),
                 "embedding_dim": args.embedding_dim,
-                "note": "Exported from a pre-built ClawS DB; perception pipeline not re-run here.",
+                "db_build_time_per_frame_seconds": db_tpf,
+                "note": "Exported from a pre-built ClawS DB; perception pipeline not re-run here. "
+                "db_build_time_per_frame_seconds is the real perception cost from the DB build "
+                "(packaging build_runtime below is just the export step).",
             },
             "warnings": [],
         },
