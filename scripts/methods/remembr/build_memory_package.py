@@ -68,7 +68,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="current-scene")
     parser.add_argument("--scene-id", default=None)
     parser.add_argument("--episode-id", default=None)
-    parser.add_argument("--captioner", choices=("claude", "none"), default="claude")
+    parser.add_argument("--captioner", choices=("ollama", "claude", "none"), default="ollama")
+    parser.add_argument(
+        "--ollama-model",
+        default="qwen3.5:4b",
+        help="Local Ollama multimodal model for captioning (native VILA substitute; "
+        "vision-capable, ~VILA-3B scale). Used when --captioner ollama.",
+    )
+    parser.add_argument("--ollama-endpoint", default="http://localhost:11434")
     parser.add_argument(
         "--caption-command",
         default=(
@@ -110,7 +117,14 @@ def main(args: argparse.Namespace) -> int:
     for index, (frame_id, image_path, pose_path) in enumerate(frames):
         position, theta = _pose_position_yaw(pose_path)
         caption = ""
-        if args.captioner == "claude":
+        if args.captioner == "ollama":
+            caption = _caption_with_ollama(
+                image_path=image_path,
+                model=args.ollama_model,
+                endpoint=args.ollama_endpoint,
+                timeout=args.caption_timeout,
+            )
+        elif args.captioner == "claude":
             caption = _caption_with_command(
                 caption_command=args.caption_command,
                 layout_dir=layout_dir,
@@ -226,6 +240,46 @@ def _pose_position_yaw(pose_path: Path) -> tuple[list[float], float]:
     if not all(math.isfinite(v) for v in position) or not math.isfinite(yaw):
         return [0.0, 0.0, 0.0], 0.0
     return [round(v, 6) for v in position], round(yaw, 6)
+
+
+def _caption_with_ollama(*, image_path: Path, model: str, endpoint: str, timeout: int) -> str:
+    """Caption one frame with a local Ollama multimodal model (qwen3.5:4b).
+
+    This is the native-style captioner substitute for ReMEmbR's VILA (which is not
+    installed): a small local vision-language model, no Claude. Posts the JPEG as
+    base64 to Ollama's /api/chat. Strips any <think> reasoning block.
+    """
+    import base64
+    import json as _json
+    import re as _re
+    import urllib.request
+
+    try:
+        b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": CAPTION_PROMPT.format(image_rel=image_path.name) + " /no_think",
+                    "images": [b64],
+                }
+            ],
+            "stream": False,
+            "options": {"temperature": 0.1},
+        }
+        req = urllib.request.Request(
+            endpoint.rstrip("/") + "/api/chat",
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = _json.loads(resp.read())
+        text = (data.get("message", {}) or {}).get("content", "") or ""
+        text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.S)
+        return " ".join(text.strip().splitlines()).strip()
+    except Exception:
+        return ""
 
 
 def _caption_with_command(*, caption_command: str, layout_dir: Path, image_rel: str, timeout: int) -> str:
@@ -381,7 +435,11 @@ def _write_manifest(
                 "captioner": args.captioner,
             },
             "modules": {
-                "captioner": f"{args.captioner} (stands in for ReMEmbR VILA captioner)",
+                "captioner": (
+                    f"{args.ollama_model} via ollama (local VLM, stands in for ReMEmbR VILA captioner)"
+                    if args.captioner == "ollama"
+                    else f"{args.captioner} (stands in for ReMEmbR VILA captioner)"
+                ),
                 "retrieval_tools": "retrieve_from_text / retrieve_from_position over caption memory",
                 "native_memory": "remembr.memory.MemoryItem (caption/time/position/theta)",
             },
