@@ -149,6 +149,8 @@ def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
         "query_count",
         "acc@0.25m",
         "acc@0.5m",
+        "acc_top5@0.25m",
+        "acc_top5@0.5m",
         "proximity@1.0m",
         "proximity@3.0m",
         "proximity@5.0m",
@@ -294,6 +296,7 @@ def _score(
 ) -> dict[str, Any]:
     distance_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     proximity_hits = {threshold: 0 for threshold in PROXIMITY_THRESHOLDS_M}
+    top5_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     center_distances: list[float] = []
     distance_scored = 0
     per_query = []
@@ -306,14 +309,16 @@ def _score(
         top1 = predictions[0] if predictions else None
 
         # Instance referring is scored purely by 3D localization: the top-1
-        # prediction's position vs the GT object-bbox center. A query is
-        # "distance-scored" only when both a GT bbox and a usable predicted
-        # position exist. (Name-level matching was removed: it conflated
-        # class-name string overlap with instance grounding and penalized
-        # free-text labels; localization is the meaningful referring metric.)
+        # prediction's position vs the GT object-bbox center (acc@Xm = precision of
+        # the primary answer). We also report acc_top5@Xm = the best of the top-5
+        # predictions (recall: is the right instance anywhere in the ranked list?).
+        # Name-level matching was removed: it conflated class-name string overlap
+        # with instance grounding and penalized free-text labels.
         center_distance = None
+        top5_distance = None
         if isinstance(target_bbox, list):
             center_distance = _center_distance(top1, target_bbox) if top1 is not None else None
+            top5_distance = _best_center_distance(predictions[:5], target_bbox)
             if center_distance is not None:
                 distance_scored += 1
                 center_distances.append(center_distance)
@@ -323,12 +328,17 @@ def _score(
                 for threshold in PROXIMITY_THRESHOLDS_M:
                     if center_distance <= threshold:
                         proximity_hits[threshold] += 1
+                if top5_distance is not None:
+                    for threshold in DISTANCE_THRESHOLDS_M:
+                        if top5_distance <= threshold:
+                            top5_hits[threshold] += 1
         per_query.append(
             {
                 "query_id": query_id,
                 "target_object_name": target_name,
                 "predicted_label": (top1.get("label") if isinstance(top1, dict) else None),
                 "center_distance_m": center_distance,
+                "top5_center_distance_m": top5_distance,
                 "latency_ms": latency_seconds_by_query.get(query_id, 0.0) * 1000.0,
             }
         )
@@ -338,6 +348,10 @@ def _score(
         "query_count": len(queries),
         **{
             f"acc@{threshold}m": (safe_div(distance_hits[threshold], distance_scored) if distance_scored else None)
+            for threshold in DISTANCE_THRESHOLDS_M
+        },
+        **{
+            f"acc_top5@{threshold}m": (safe_div(top5_hits[threshold], distance_scored) if distance_scored else None)
             for threshold in DISTANCE_THRESHOLDS_M
         },
         **{
@@ -360,6 +374,18 @@ def _center_distance(prediction: dict[str, Any], target_bbox: list[float]) -> fl
     if pred_center is None or target_center is None:
         return None
     return euclidean_distance(pred_center, target_center)
+
+
+def _best_center_distance(predictions: list[dict[str, Any]], target_bbox: list[float]) -> float | None:
+    """Smallest top-k prediction-to-target-center distance (for acc_top5@Xm recall)."""
+    best: float | None = None
+    for pred in predictions:
+        if not isinstance(pred, dict):
+            continue
+        d = _center_distance(pred, target_bbox)
+        if d is not None and (best is None or d < best):
+            best = d
+    return best
 
 
 def _bbox_center(bbox: Any) -> list[float] | None:
