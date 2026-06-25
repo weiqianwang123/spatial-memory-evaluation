@@ -1697,6 +1697,26 @@ def _write_capabilities(package_dir: Path, *, track2_status: str, track2_reason:
     )
 
 
+def _read_native_processing_stats(native_output_dir: Path) -> dict[str, Any]:
+    """Read DAAAM's native processing_stats.json (frames + cv/hydra per-frame times).
+
+    Looks in the native output dir and its out_*/ subdir. Returns {} if absent.
+    """
+    candidates = [
+        native_output_dir / "processing_stats.json",
+        native_output_dir.parent / "processing_stats.json",  # out_*/ -> parent native dir
+    ]
+    candidates += sorted(native_output_dir.glob("out_*/processing_stats.json"))
+    candidates += sorted(native_output_dir.glob("*/processing_stats.json"))
+    for path in candidates:
+        try:
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return {}
+
+
 def _write_build_log(
     *,
     package_dir: Path,
@@ -1712,10 +1732,14 @@ def _write_build_log(
 ) -> None:
     finished_at = time.time()
     runtime_seconds = finished_at - started_at
+    # Prefer the native pipeline's own per-frame compute stats (cv+hydra) over the
+    # packaging wall-clock, which is meaningless when packaging via --skip-daaam-run.
+    native_stats = _read_native_processing_stats(native_output_dir)
+    frame_count = int(layout_summary.get("frame_count") or native_stats.get("frames_processed") or 0)
     write_build_log_with_accounting(
         package_dir=package_dir,
         native_memory_artifact_paths=[native_output_dir, *native_artifacts],
-        frame_count=int(layout_summary.get("frame_count") or 0),
+        frame_count=frame_count,
         build_log={
             "status": "ok",
             "started_at": _iso_time(started_at),
@@ -1729,6 +1753,18 @@ def _write_build_log(
             "object_count": object_count,
             "background_object_count": background_object_count,
             "track2_fixed_api": track2_status,
+            # Native per-frame COMPUTE cost (cv segmentation + hydra integration),
+            # independent of any stream throttle or packaging wall-clock. This is
+            # the fair build-cost number to report for DAAAM.
+            "native_frames_processed": native_stats.get("frames_processed"),
+            "native_cv_avg_time_s": native_stats.get("cv_avg_time"),
+            "native_hydra_avg_time_s": native_stats.get("hydra_avg_time"),
+            "native_compute_time_per_frame_s": (
+                (native_stats.get("cv_avg_time") or 0) + (native_stats.get("hydra_avg_time") or 0)
+            )
+            if native_stats
+            else None,
+            "native_total_processing_time_s": native_stats.get("total_processing_time"),
             "shared_modules": shared_modules_metadata(args),
             "daaam_runtime": {
                 "daaam_root": str(args.daaam_root),
