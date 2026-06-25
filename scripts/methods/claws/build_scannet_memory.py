@@ -41,6 +41,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--depth-scale", type=float, default=1000.0, help="uint16 depth -> meters divisor.")
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--no-vlm", action="store_true", help="Disable the VLM describer (faster; label from YOLO).")
+    parser.add_argument(
+        "--detector-model",
+        type=Path,
+        default=Path("/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt"),
+        help="Shared OV detector (default: YOLO-World-L from shared modules). "
+        "set_classes is applied with the shared class list below.",
+    )
+    parser.add_argument(
+        "--class-list",
+        type=Path,
+        default=Path("spatial_memory_evaluation/assets/class_lists/detector_coverable.txt"),
+        help="Shared OV prompt/eval class list (the Track 1 detector_coverable list); "
+        "applied to the OV detector via set_classes so all methods share one vocabulary.",
+    )
+    parser.add_argument(
+        "--vlm-model",
+        default="qwen3.5:4b",
+        help="Ollama VLM describer model (default qwen3.5:4b, locally available; the "
+        "config default qwen3.5:35b is not pulled). Produces snapshot descriptions.",
+    )
     return parser.parse_args()
 
 
@@ -64,9 +84,27 @@ async def run(args: argparse.Namespace) -> None:
     from build_scannetpp_spatial_rag_memory import build_pipeline, load_config  # type: ignore
 
     cfg = load_config(args.rag_config)
-    if args.no_vlm and hasattr(cfg, "vlm"):
+    # Shared OV detector + shared class prompt for ALL detector-based methods:
+    # point ClawS's trigger at YOLO-World-L and prompt it with the Track 1 class
+    # list (applied via set_classes after the model loads, below).
+    class_list = [
+        line.strip()
+        for line in Path(args.class_list).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    try:
+        cfg.trigger.model = str(args.detector_model)
+    except Exception:
+        pass
+    # VLM describer: enable so ClawS stores rich `**label** description` snapshots
+    # (like DAAAM's DAM grounding); off only with --no-vlm.
+    if hasattr(cfg, "vlm"):
         try:
-            cfg.vlm.enabled = False
+            cfg.vlm.enabled = not args.no_vlm
+            if not args.no_vlm:
+                cfg.vlm.model = args.vlm_model
+                cfg.vlm.provider = "ollama"
+                cfg.vlm.endpoint = "http://localhost:11434"
         except Exception:
             pass
 
@@ -86,6 +124,22 @@ async def run(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"no rgb frames in {args.layout_dir/'rgb'}")
 
     pipeline, rag_service = await build_pipeline(cfg, db_path)
+
+    # Apply the shared OV class prompt to the detector (ClawS's UltralyticsBackend
+    # never calls set_classes itself, so an open-vocab YOLO-World model would
+    # otherwise detect nothing / its defaults). This makes ClawS use the SAME
+    # detector + class list as Track 1 and the other detector-based methods.
+    backend = getattr(pipeline, "_backend", None)
+    model = getattr(backend, "_model", None)
+    if model is not None and hasattr(model, "set_classes") and class_list:
+        try:
+            model.set_classes(class_list)
+            print(f"set_classes OK: {len(class_list)} shared OV labels on {args.detector_model.name}")
+        except Exception as exc:
+            print(f"warning: set_classes failed ({exc}); detector runs with its default vocabulary")
+    else:
+        print(f"note: detector {args.detector_model.name} has no set_classes (closed-vocab); using its built-in classes")
+
     frames_seen = 0
     stored_events = 0
     start = time.monotonic()
@@ -129,11 +183,20 @@ async def run(args: argparse.Namespace) -> None:
         if getattr(cfg.vlm, "enabled", False) and hasattr(pipeline, "wait_vlm_pending"):
             await pipeline.wait_vlm_pending(timeout=120.0)
         count = await rag_service.storage.count()
-        print(json.dumps({
+        elapsed = round(time.monotonic() - start, 1)
+        stats = {
             "status": "ok", "scene_id": args.scene_id, "frames_processed": frames_seen,
             "stored_events": stored_events, "memory_records": count, "db_path": str(db_path),
-            "elapsed_s": round(time.monotonic() - start, 1),
-        }, indent=2))
+            "elapsed_s": elapsed,
+            "time_per_frame_seconds": round(elapsed / frames_seen, 4) if frames_seen else None,
+        }
+        # Sidecar next to the DB so the package builder can record frame_count +
+        # time_per_frame in build_log.json (the package step is a separate process).
+        try:
+            Path(str(db_path) + ".build_stats.json").write_text(json.dumps(stats, indent=2))
+        except Exception:
+            pass
+        print(json.dumps(stats, indent=2))
     finally:
         await rag_service.storage.close()
 

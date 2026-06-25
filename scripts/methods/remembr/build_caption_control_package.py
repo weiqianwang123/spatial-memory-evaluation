@@ -241,17 +241,21 @@ def _normalize_caption_rows(captions: list[dict[str, Any]]) -> list[dict[str, An
     for index, entry in enumerate(captions):
         if not isinstance(entry, dict):
             continue
-        rows.append(
-            {
-                "caption_id": str(entry.get("id", f"caption_{index:04d}")),
-                "caption": str(entry.get("caption", "")),
-                "time": _as_float(entry.get("time")),
-                "position": _as_float_list(entry.get("position")),
-                "theta": _as_float(entry.get("theta")),
-                "file_start": entry.get("file_start"),
-                "file_end": entry.get("file_end"),
-            }
-        )
+        row = {
+            "caption_id": str(entry.get("id", f"caption_{index:04d}")),
+            "caption": str(entry.get("caption", "")),
+            "time": _as_float(entry.get("time")),
+            "position": _as_float_list(entry.get("position")),
+            "theta": _as_float(entry.get("theta")),
+            "file_start": entry.get("file_start"),
+            "file_end": entry.get("file_end"),
+        }
+        # Carry the caption embedding through if present (so the control's
+        # retrieve_from_text uses the same semantic search as ReMEmbR).
+        emb = entry.get("embedding")
+        if isinstance(emb, list):
+            row["embedding"] = emb
+        rows.append(row)
     return rows
 
 

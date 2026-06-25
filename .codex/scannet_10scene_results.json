@@ -1,0 +1,239 @@
+{
+  "track1-tool_llm:daaam": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.5392,
+      "success@1": 0.386,
+      "mean_first_hit_distance_m": 0.4276,
+      "mrr": 0.8158,
+      "proximity_top1@1.0m": 0.5032,
+      "proximity_top1@3.0m": 0.8349,
+      "proximity@3.0m": 0.9342,
+      "proximity@5.0m": 1.0,
+      "mean_query_latency_ms": 51285.9871
+    }
+  },
+  "track1-tool_llm:claws": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.4177,
+      "success@1": 0.2902,
+      "mean_first_hit_distance_m": 0.33,
+      "mrr": 0.8683,
+      "proximity_top1@1.0m": 0.583,
+      "proximity_top1@3.0m": 0.8904,
+      "proximity@3.0m": 0.9211,
+      "proximity@5.0m": 0.9958,
+      "mean_query_latency_ms": 54633.841
+    }
+  },
+  "track1-tool_llm:remembr": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.0938,
+      "success@1": 0.0453,
+      "mean_first_hit_distance_m": 1.3679,
+      "mrr": 0.6944,
+      "proximity_top1@1.0m": 0.06,
+      "proximity_top1@3.0m": 0.9196,
+      "proximity@3.0m": 0.9972,
+      "proximity@5.0m": 1.0,
+      "mean_query_latency_ms": 38059.4194
+    }
+  },
+  "track1-tool_llm:remembr_captions": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.1055,
+      "success@1": 0.0453,
+      "mean_first_hit_distance_m": 1.2592,
+      "mrr": 0.6347,
+      "proximity_top1@1.0m": 0.0555,
+      "proximity_top1@3.0m": 0.9413,
+      "proximity@3.0m": 0.9973,
+      "proximity@5.0m": 1.0,
+      "mean_query_latency_ms": 43119.367
+    }
+  },
+  "track1-tool_llm:multiframe_vlm": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.0532,
+      "success@1": 0.0532,
+      "mean_first_hit_distance_m": 0.9861,
+      "mrr": 1.0,
+      "proximity_top1@1.0m": 0.0895,
+      "proximity_top1@3.0m": 0.8876,
+      "proximity@3.0m": 0.9019,
+      "proximity@5.0m": 0.9941,
+      "mean_query_latency_ms": 57639.6124
+    }
+  },
+  "track1-fixed_api:daaam": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.3961,
+      "success@1": 0.2703,
+      "mean_first_hit_distance_m": 0.3282,
+      "mrr": 0.8364,
+      "proximity_top1@1.0m": 0.4111,
+      "proximity_top1@3.0m": 0.7609,
+      "proximity@3.0m": 0.9323,
+      "proximity@5.0m": 1.0,
+      "mean_query_latency_ms": 4.9498
+    }
+  },
+  "track1-fixed_api:claws": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 148,
+    "means": {
+      "success@5": 0.4718,
+      "success@1": 0.3253,
+      "mean_first_hit_distance_m": 0.3338,
+      "mrr": 0.8615,
+      "proximity_top1@1.0m": 0.5087,
+      "proximity_top1@3.0m": 0.9104,
+      "proximity@3.0m": 0.986,
+      "proximity@5.0m": 1.0,
+      "mean_query_latency_ms": 0.583
+    }
+  },
+  "track2-tool_llm:daaam": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 150,
+    "means": {
+      "acc@0.25m": 0.2136,
+      "acc@0.5m": 0.3303,
+      "acc_top5@0.5m": 0.5176,
+      "proximity@1.0m": 0.5098,
+      "proximity@3.0m": 0.7573,
+      "proximity_top5@3.0m": 0.8613,
+      "mean_center_distance_m": 1.7694,
+      "mean_query_latency_ms": 82761.1992
+    }
+  },
+  "track2-tool_llm:claws": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 150,
+    "means": {
+      "acc@0.25m": 0.203,
+      "acc@0.5m": 0.3506,
+      "acc_top5@0.5m": 0.472,
+      "proximity@1.0m": 0.5042,
+      "proximity@3.0m": 0.837,
+      "proximity_top5@3.0m": 0.9161,
+      "mean_center_distance_m": 1.4578,
+      "mean_query_latency_ms": 66650.3833
+    }
+  },
+  "track2-tool_llm:remembr": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 150,
+    "means": {
+      "acc@0.25m": 0.0,
+      "acc@0.5m": 0.0,
+      "acc_top5@0.5m": 0.0,
+      "proximity@1.0m": 0.0367,
+      "proximity@3.0m": 0.9,
+      "proximity_top5@3.0m": 0.9867,
+      "mean_center_distance_m": 2.0652,
+      "mean_query_latency_ms": 46505.1386
+    }
+  },
+  "track2-tool_llm:remembr_captions": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 150,
+    "means": {
+      "acc@0.25m": 0.0,
+      "acc@0.5m": 0.0,
+      "acc_top5@0.5m": 0.0,
+      "proximity@1.0m": 0.0414,
+      "proximity@3.0m": 0.8933,
+      "proximity_top5@3.0m": 0.9867,
+      "mean_center_distance_m": 2.05,
+      "mean_query_latency_ms": 46081.459
+    }
+  },
+  "track2-tool_llm:multiframe_vlm": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 150,
+    "means": {
+      "acc@0.25m": 0.0,
+      "acc@0.5m": 0.0077,
+      "acc_top5@0.5m": 0.0077,
+      "proximity@1.0m": 0.0415,
+      "proximity@3.0m": 0.8187,
+      "proximity_top5@3.0m": 0.8348,
+      "mean_center_distance_m": 2.2443,
+      "mean_query_latency_ms": 58389.4102
+    }
+  },
+  "track3-tool_llm:daaam": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 121,
+    "means": {
+      "llm_match": 0.3668,
+      "answered_rate": 0.8379,
+      "mean_query_latency_ms": 51945.3066
+    }
+  },
+  "track3-tool_llm:claws": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 121,
+    "means": {
+      "llm_match": 0.3397,
+      "answered_rate": 0.9164,
+      "mean_query_latency_ms": 52647.7764
+    }
+  },
+  "track3-tool_llm:remembr": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 121,
+    "means": {
+      "llm_match": 0.4976,
+      "answered_rate": 0.948,
+      "mean_query_latency_ms": 56700.5298
+    }
+  },
+  "track3-tool_llm:remembr_captions": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 121,
+    "means": {
+      "llm_match": 0.5197,
+      "answered_rate": 0.9081,
+      "mean_query_latency_ms": 50103.6367
+    }
+  },
+  "track3-tool_llm:multiframe_vlm": {
+    "scenes_ok": 10,
+    "scenes_total": 10,
+    "query_total": 121,
+    "means": {
+      "llm_match": 0.3368,
+      "answered_rate": 0.8692,
+      "mean_query_latency_ms": 78123.4261
+    }
+  }
+}

@@ -74,6 +74,7 @@ def run_tool_llm_query(
                 sandbox_context=sandbox_context,
                 max_tool_iterations=max_tool_iterations,
                 response_kind=response_kind,
+                final_step=(step_index >= max_tool_iterations),
             ),
             encoding="utf-8",
         )
@@ -168,6 +169,7 @@ def _render_prompt(
     sandbox_context: Mapping[str, Any],
     max_tool_iterations: int,
     response_kind: str = "predictions",
+    final_step: bool = False,
 ) -> str:
     method_meta = manifest.get("method") if isinstance(manifest.get("method"), Mapping) else {}
     dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), Mapping) else {}
@@ -199,18 +201,27 @@ def _render_prompt(
         query_payload = {
             "query_id": query.get("query_id"),
             "query": query.get("query") or query.get("utterance"),
-            "target_label": query.get("target_label") or query.get("canonical_label"),
-            "canonical_label": query.get("canonical_label"),
             "utterance": query.get("utterance"),
             "top_k": query.get("top_k"),
         }
+        target_label = query.get("target_label") or query.get("canonical_label")
+        if target_label is not None:
+            query_payload["target_label"] = target_label
+        canonical_label = query.get("canonical_label")
+        if canonical_label is not None:
+            query_payload["canonical_label"] = canonical_label
         task_line = "You are answering one spatial-memory retrieval query."
-        final_rules = (
-            "- Prefer the provided target_label/canonical_label when choosing retrieval terms.\n"
-            "- Return up to top_k predictions.\n"
-            "- A prediction should include label/raw_label, object_id if available,\n"
-            "  position_3d or bbox_3d if available, score, and evidence."
+        final_rules_lines = []
+        if target_label is not None or canonical_label is not None:
+            final_rules_lines.append("- Prefer the provided target/canonical label when choosing retrieval terms.")
+        final_rules_lines.extend(
+            [
+                "- Return up to top_k predictions.",
+                "- A prediction should include label/raw_label, object_id if available,",
+                "  position_3d or bbox_3d if available, score, and evidence.",
+            ]
         )
+        final_rules = "\n".join(final_rules_lines)
         final_format = """{
   "final": {
     "predictions": [
@@ -259,7 +270,7 @@ Rules:
   new query interface or adapter.
 {final_rules}
 - You may make at most {max_tool_iterations} tool calls before final answer.
-
+{_final_step_directive(final_step, response_kind)}
 Return exactly one raw JSON object and no Markdown.
 
 To call a tool:
@@ -273,6 +284,29 @@ To call a tool:
 To finish:
 {final_format}
 """
+
+
+def _final_step_directive(final_step: bool, response_kind: str) -> str:
+    """On the last allowed iteration, force a final answer (no more tool calls).
+
+    Without this, an agent that keeps retrieving exhausts the tool budget and the
+    query records an empty answer. This is most common for object-memory methods on
+    descriptive QA (the object table rarely answers directly), so forcing a
+    best-effort final answer fairly turns 'gave up' into 'best guess from context'.
+    """
+    if not final_step:
+        return ""
+    if response_kind == "answer":
+        return (
+            "- THIS IS YOUR LAST STEP: you have no tool calls left. You MUST return a "
+            "final.answer now — give your best direct answer from the observations so "
+            "far. Do NOT return a tool_call; an empty answer scores zero."
+        )
+    return (
+        "- THIS IS YOUR LAST STEP: you have no tool calls left. You MUST return "
+        "final.predictions now (your best ranked guesses from the observations so "
+        "far). Do NOT return a tool_call."
+    )
 
 
 def _prepare_tool_llm_sandbox(

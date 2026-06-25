@@ -21,7 +21,13 @@ from typing import Any
 
 from spatial_memory_evaluation.common.jsonl import read_jsonl
 from spatial_memory_evaluation.common.labels import load_aliases
-from spatial_memory_evaluation.common.matching import match_objects, mean, median, safe_div
+from spatial_memory_evaluation.common.matching import (
+    euclidean_distance,
+    match_objects,
+    mean,
+    median,
+    safe_div,
+)
 from spatial_memory_evaluation.common.package_io import (
     dir_size_bytes,
     fixed_api_capability,
@@ -44,6 +50,12 @@ from spatial_memory_evaluation.tool_llm import run_tool_llm_query
 TRACK_KEY = "track1_object_location"
 SPLITS = ("detector_coverable",)
 K_VALUES = (1, 5)
+# Relaxed proximity thresholds (meters). The strict success@k uses match_threshold
+# (~0.5-2m, object-size scaled). Caption-memory methods (ReMEmbR) emit the robot
+# VIEWPOINT near an object, not the object center, so they score ~0 strictly. These
+# relaxed thresholds give partial credit for "the method pointed within X m of the
+# right object" — a fairer localization-coarseness view for viewpoint-based memory.
+PROXIMITY_THRESHOLDS_M = (1.0, 3.0, 5.0)
 
 
 def evaluate_track1(
@@ -147,6 +159,12 @@ def _track1_summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
         "recall@5",
         "mrr",
         "mean_first_hit_distance_m",
+        "proximity@1.0m",
+        "proximity@3.0m",
+        "proximity@5.0m",
+        "proximity_top1@1.0m",
+        "proximity_top1@3.0m",
+        "proximity_top1@5.0m",
         "mean_query_latency_ms",
     )
     return {key: metrics.get(key) for key in keys}
@@ -282,6 +300,10 @@ def _score_split(
     totals = {k: {"matched_targets": 0, "target_count": 0, "success_count": 0} for k in K_VALUES}
     reciprocal_ranks: list[float] = []
     first_hit_distances: list[float] = []
+    proximity_hits = {thr: 0 for thr in PROXIMITY_THRESHOLDS_M}
+    proximity_top1_hits = {thr: 0 for thr in PROXIMITY_THRESHOLDS_M}
+    proximity_scored = 0
+    proximity_top1_scored = 0
     per_query = []
 
     for query in queries:
@@ -289,6 +311,23 @@ def _score_split(
         targets = [gt_by_id[gt_id] for gt_id in query["target_gt_ids"] if gt_id in gt_by_id]
         predictions = predictions_by_query.get(query_id, [])
         query_row = {"query_id": query_id, "target_count": len(targets)}
+        # Relaxed proximity: nearest distance to any target center, both for the
+        # full top-5 (best-of) and for the top-1 prediction alone (the method's
+        # primary answer — stricter, more interpretable for ranked output).
+        prox = _nearest_proximity(targets, predictions[: max(K_VALUES)])
+        prox_top1 = _nearest_proximity(targets, predictions[:1])
+        if targets and prox is not None:
+            proximity_scored += 1
+            for thr in PROXIMITY_THRESHOLDS_M:
+                if prox <= thr:
+                    proximity_hits[thr] += 1
+        if targets and prox_top1 is not None:
+            proximity_top1_scored += 1
+            for thr in PROXIMITY_THRESHOLDS_M:
+                if prox_top1 <= thr:
+                    proximity_top1_hits[thr] += 1
+        query_row["nearest_proximity_m"] = prox
+        query_row["nearest_proximity_top1_m"] = prox_top1
         first_rank = None
         first_distance = None
         for k in K_VALUES:
@@ -325,6 +364,15 @@ def _score_split(
         },
         "mrr": mean(reciprocal_ranks),
         "mean_first_hit_distance_m": mean(first_hit_distances),
+        **{
+            f"proximity@{thr}m": (safe_div(proximity_hits[thr], proximity_scored) if proximity_scored else None)
+            for thr in PROXIMITY_THRESHOLDS_M
+        },
+        **{
+            f"proximity_top1@{thr}m": (safe_div(proximity_top1_hits[thr], proximity_top1_scored) if proximity_top1_scored else None)
+            for thr in PROXIMITY_THRESHOLDS_M
+        },
+        "proximity_scored_count": proximity_scored,
         "mean_query_latency_ms": (mean(latencies) or 0.0) * 1000.0,
         "median_query_latency_ms": (median(latencies) or 0.0) * 1000.0,
         "p95_query_latency_ms": percentile(latencies, 95) * 1000.0,
@@ -344,6 +392,48 @@ def _first_hit_rank(
         if matches:
             return index + 1
     return None
+
+
+def _pred_position(prediction: dict[str, Any]) -> list[float] | None:
+    pos = prediction.get("position_3d")
+    if isinstance(pos, list) and len(pos) == 3:
+        return pos
+    bbox = prediction.get("bbox_3d")
+    if isinstance(bbox, list) and len(bbox) == 6:
+        return [(bbox[0] + bbox[3]) / 2.0, (bbox[1] + bbox[4]) / 2.0, (bbox[2] + bbox[5]) / 2.0]
+    return None
+
+
+def _nearest_proximity(
+    targets: list[dict[str, Any]], predictions: list[dict[str, Any]]
+) -> float | None:
+    """Smallest Euclidean distance from any predicted position to any target center.
+
+    Threshold-free, label-agnostic: it answers "how close did the method point to
+    the right object?" Used for the relaxed proximity@Xm metrics (fair to
+    viewpoint-based caption memory). Returns None if no usable positions exist.
+    """
+    centers: list[list[float]] = []
+    for obj in targets:
+        c = obj.get("center_3d")
+        if isinstance(c, list) and len(c) == 3:
+            centers.append(c)
+        else:
+            bbox = obj.get("bbox_3d")
+            if isinstance(bbox, list) and len(bbox) == 6:
+                centers.append([(bbox[0] + bbox[3]) / 2.0, (bbox[1] + bbox[4]) / 2.0, (bbox[2] + bbox[5]) / 2.0])
+    if not centers:
+        return None
+    best: float | None = None
+    for pred in predictions:
+        pos = _pred_position(pred)
+        if pos is None:
+            continue
+        for c in centers:
+            d = euclidean_distance(pos, c)
+            if best is None or d < best:
+                best = d
+    return best
 
 
 def percentile(values: list[float], percentile_value: float) -> float:

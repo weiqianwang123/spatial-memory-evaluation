@@ -302,6 +302,41 @@ def _save_corrected_native_dsg(runner: Any) -> None:
         logger.info(f"Adapter patch saved corrected native DAAAM DSG to {corrected_dsg_path}")
 
 
+def _patch_worker_ready_timeout() -> None:
+    """Wait for the async grounding/assignment workers to FULLY load before the
+    frame stream starts.
+
+    DAAAM's ``HydraPipelineRunner.run`` calls ``wait_for_workers_ready`` with a
+    hardcoded 60s timeout, then proceeds regardless. The DAM-3B grounding
+    describer (LLaVA-Llama + SigLIP vision tower + context provider) takes longer
+    than 60s to initialize, so on short scenes the stream finishes and the worker
+    is SIGINT'd before it can describe a single object (every object ends up with
+    an ``unknown``/raw label). Raising the wait timeout lets the pipeline block
+    until DAM signals ready, then run the segmenter at native speed — no stream
+    throttling, so the per-frame COMPUTE cost (processing_stats cv+hydra times) is
+    unaffected. Override via SPATIAL_EVAL_WORKER_READY_TIMEOUT (seconds)."""
+
+    import os
+    from daaam.hydra.runner import HydraPipelineRunner
+
+    if getattr(HydraPipelineRunner, "_spatial_memory_eval_ready_patch", False):
+        return
+
+    try:
+        floor = float(os.environ.get("SPATIAL_EVAL_WORKER_READY_TIMEOUT", "600"))
+    except ValueError:
+        floor = 600.0
+
+    original_wait = HydraPipelineRunner.wait_for_workers_ready
+
+    def wait_for_workers_ready_longer(self: Any, timeout: float = 60.0, check_interval: float = 1.0) -> bool:
+        # Never wait LESS than the floor; keep a longer caller timeout if given.
+        return original_wait(self, timeout=max(timeout, floor), check_interval=check_interval)
+
+    HydraPipelineRunner.wait_for_workers_ready = wait_for_workers_ready_longer
+    HydraPipelineRunner._spatial_memory_eval_ready_patch = True
+
+
 def _patch_hydra_runner() -> None:
     from daaam.hydra.runner import HydraPipelineRunner
 
@@ -333,6 +368,7 @@ def main() -> None:
     # pipeline/scene_graph circular imports in the same order as the native CLI.
     _patch_scene_graph_service()
     _patch_tracking_empty_outputs()
+    _patch_worker_ready_timeout()
     _patch_hydra_runner()
     daaam_main()
 

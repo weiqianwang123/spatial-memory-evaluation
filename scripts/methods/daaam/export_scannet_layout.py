@@ -90,9 +90,12 @@ def export_scannet_layout(
 ) -> dict[str, Any]:
     import cv2
 
-    frame_ids = sorted(p.stem.split("-")[0] for p in frames_dir.glob("*-rgb.png"))
+    frame_ids = sorted(
+        p.stem.split("-")[0]
+        for p in (*frames_dir.glob("*-rgb.jpg"), *frames_dir.glob("*-rgb.png"))
+    )
     if not frame_ids:
-        raise FileNotFoundError(f"no *-rgb.png frames in {frames_dir}")
+        raise FileNotFoundError(f"no *-rgb.jpg/*-rgb.png frames in {frames_dir}")
     selected = frame_ids[:: max(1, frame_stride)]
 
     color_intrinsic = _read_matrix(frames_dir / "intrinsic_color.txt")
@@ -117,7 +120,8 @@ def export_scannet_layout(
         if max_frames is not None and len(exported) >= max_frames:
             break
         pose_path = frames_dir / f"{frame_id}.txt"
-        rgb_path = frames_dir / f"{frame_id}-rgb.png"
+        rgb_jpg = frames_dir / f"{frame_id}-rgb.jpg"
+        rgb_path = rgb_jpg if rgb_jpg.exists() else frames_dir / f"{frame_id}-rgb.png"
         depth_path = frames_dir / f"{frame_id}-depth.png"
         if not (pose_path.exists() and rgb_path.exists() and depth_path.exists()):
             skipped += 1

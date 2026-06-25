@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--embedding-dim", type=int, default=DEFAULT_EMBEDDING_DIM)
     parser.add_argument("--scannetpp-root", type=Path, default=DEFAULT_SCANNETPP_ROOT)
+    parser.add_argument(
+        "--dataset-tag",
+        default="scannetpp",
+        help="Dataset path segment for outputs (memories/claws/<tag>/<scene>). "
+        "Use 'scannet' for ScanNet .sens scenes.",
+    )
     parser.add_argument("--package-root", type=Path, default=Path("memories"))
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--limit", type=int, default=5000)
@@ -71,7 +77,7 @@ def main(args: argparse.Namespace) -> int:
     )
     if not db_path.exists():
         raise FileNotFoundError(f"ClawS native DB not found: {db_path}")
-    package_dir = args.package_root / "claws" / "scannetpp" / args.scene_id / run_id
+    package_dir = args.package_root / "claws" / args.dataset_tag / args.scene_id / run_id
 
     objects, crops = _load_claws_objects(
         claws_root=args.claws_root,
@@ -438,7 +444,7 @@ def _write_manifest(
         package_dir / "manifest.json",
         {
             "schema_version": "0.2",
-            "package_id": f"claws/scannetpp/{args.scene_id}/{run_id}",
+            "package_id": f"claws/{args.dataset_tag}/{args.scene_id}/{run_id}",
             "method": {
                 "name": "claws",
                 "display_name": "ClawS SpatialRAG",
@@ -448,7 +454,7 @@ def _write_manifest(
                 "version": None,
             },
             "dataset": {
-                "name": "scannetpp",
+                "name": args.dataset_tag,
                 "split": "current-scene",
                 "scene_id": args.scene_id,
                 "episode_id": None,
@@ -599,10 +605,22 @@ def _write_build_log(
 ) -> None:
     finished_at = time.time()
     runtime_seconds = finished_at - started_at
+    # Pull frame_count + time_per_frame from the DB-build sidecar if present (the
+    # DB build is a separate process; build_scannet_memory.py writes <db>.build_stats.json).
+    db_frame_count = 0
+    db_tpf = None
+    stats_path = Path(str(db_path) + ".build_stats.json")
+    if stats_path.exists():
+        try:
+            _st = json.loads(stats_path.read_text())
+            db_frame_count = int(_st.get("frames_processed") or 0)
+            db_tpf = _st.get("time_per_frame_seconds")
+        except Exception:
+            pass
     write_build_log_with_accounting(
         package_dir=package_dir,
         native_memory_artifact_paths=[db_path],
-        frame_count=0,
+        frame_count=db_frame_count,
         build_log={
             "status": "ok",
             "started_at": _iso_time(started_at),
@@ -617,7 +635,10 @@ def _write_build_log(
             "claws_runtime": {
                 "native_db_path": str(db_path),
                 "embedding_dim": args.embedding_dim,
-                "note": "Exported from a pre-built ClawS DB; perception pipeline not re-run here.",
+                "db_build_time_per_frame_seconds": db_tpf,
+                "note": "Exported from a pre-built ClawS DB; perception pipeline not re-run here. "
+                "db_build_time_per_frame_seconds is the real perception cost from the DB build "
+                "(packaging build_runtime below is just the export step).",
             },
             "warnings": [],
         },

@@ -281,6 +281,12 @@ def parse_args() -> argparse.Namespace:
             "SamAutomaticMaskGenerator. Only keep it for a FastSAM engine run."
         ),
     )
+    parser.add_argument(
+        "--dataset-tag",
+        default="scannetpp",
+        help="Dataset path segment for outputs (memories/daaam/<tag>/<scene>, "
+        "native key <tag>_<scene>). Use 'scannet' for ScanNet .sens scenes.",
+    )
     parser.add_argument("--class-names", type=Path, default=None)
     parser.add_argument("--sam-checkpoint", type=Path, default=None)
     parser.add_argument("--sam-type", default=None)
@@ -321,10 +327,11 @@ def main(args: argparse.Namespace) -> int:
     run_id = args.run_id or (
         args.native_output_dir.name if args.native_output_dir is not None else f"daaam-smoke-{_run_timestamp()}"
     )
-    scene_key = f"scannetpp_{args.scene_id}"
+    dataset_tag = getattr(args, "dataset_tag", None) or "scannetpp"
+    scene_key = f"{dataset_tag}_{args.scene_id}"
     layout_dir = args.layout_dir or (args.layout_root / scene_key / run_id)
     native_output_dir = args.native_output_dir or (args.native_output_root / scene_key / run_id)
-    package_dir = args.package_root / "daaam" / "scannetpp" / args.scene_id / run_id
+    package_dir = args.package_root / "daaam" / dataset_tag / args.scene_id / run_id
 
     layout_summary: dict[str, Any] = {}
     if args.native_output_dir is None:
@@ -1323,13 +1330,28 @@ def _rank_by_label(
     return ranked
 
 
-def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
-    with (package_dir / "memory" / "object_table.jsonl").open("r", encoding="utf-8") as f:
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 rows.append(json.loads(line))
+    return rows
+
+
+def _load_objects(package_dir: Path) -> list[dict[str, Any]]:
+    # DAAAM's merged OBJECTS layer (object_table.jsonl) is empty when the build
+    # runs with --skip-postprocess (the sentence_transformers postprocess that
+    # promotes grounded tracks to the OBJECTS layer is incompatible locally), so
+    # the grounded objects land in BACKGROUND_OBJECTS. Fall back to it so the
+    # native deterministic query reflects DAAAM's real memory rather than scoring
+    # zero. (The tool_llm path already reads both layers.)
+    rows = _read_jsonl(package_dir / "memory" / "object_table.jsonl")
+    if not rows:
+        rows = _read_jsonl(package_dir / "memory" / "background_object_table.jsonl")
     return rows
 
 
@@ -1444,7 +1466,7 @@ def _write_manifest(
         package_dir / "manifest.json",
         {
             "schema_version": "0.2",
-            "package_id": f"daaam/scannetpp/{args.scene_id}/{run_id}",
+            "package_id": f"daaam/{getattr(args, 'dataset_tag', None) or 'scannetpp'}/{args.scene_id}/{run_id}",
             "method": {
                 "name": "daaam",
                 "display_name": "DAAAM",
@@ -1454,7 +1476,7 @@ def _write_manifest(
                 "version": None,
             },
             "dataset": {
-                "name": "scannetpp",
+                "name": getattr(args, "dataset_tag", None) or "scannetpp",
                 "split": "smoke",
                 "scene_id": args.scene_id,
                 "episode_id": None,
@@ -1675,6 +1697,26 @@ def _write_capabilities(package_dir: Path, *, track2_status: str, track2_reason:
     )
 
 
+def _read_native_processing_stats(native_output_dir: Path) -> dict[str, Any]:
+    """Read DAAAM's native processing_stats.json (frames + cv/hydra per-frame times).
+
+    Looks in the native output dir and its out_*/ subdir. Returns {} if absent.
+    """
+    candidates = [
+        native_output_dir / "processing_stats.json",
+        native_output_dir.parent / "processing_stats.json",  # out_*/ -> parent native dir
+    ]
+    candidates += sorted(native_output_dir.glob("out_*/processing_stats.json"))
+    candidates += sorted(native_output_dir.glob("*/processing_stats.json"))
+    for path in candidates:
+        try:
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return {}
+
+
 def _write_build_log(
     *,
     package_dir: Path,
@@ -1690,10 +1732,14 @@ def _write_build_log(
 ) -> None:
     finished_at = time.time()
     runtime_seconds = finished_at - started_at
+    # Prefer the native pipeline's own per-frame compute stats (cv+hydra) over the
+    # packaging wall-clock, which is meaningless when packaging via --skip-daaam-run.
+    native_stats = _read_native_processing_stats(native_output_dir)
+    frame_count = int(layout_summary.get("frame_count") or native_stats.get("frames_processed") or 0)
     write_build_log_with_accounting(
         package_dir=package_dir,
         native_memory_artifact_paths=[native_output_dir, *native_artifacts],
-        frame_count=int(layout_summary.get("frame_count") or 0),
+        frame_count=frame_count,
         build_log={
             "status": "ok",
             "started_at": _iso_time(started_at),
@@ -1707,6 +1753,18 @@ def _write_build_log(
             "object_count": object_count,
             "background_object_count": background_object_count,
             "track2_fixed_api": track2_status,
+            # Native per-frame COMPUTE cost (cv segmentation + hydra integration),
+            # independent of any stream throttle or packaging wall-clock. This is
+            # the fair build-cost number to report for DAAAM.
+            "native_frames_processed": native_stats.get("frames_processed"),
+            "native_cv_avg_time_s": native_stats.get("cv_avg_time"),
+            "native_hydra_avg_time_s": native_stats.get("hydra_avg_time"),
+            "native_compute_time_per_frame_s": (
+                (native_stats.get("cv_avg_time") or 0) + (native_stats.get("hydra_avg_time") or 0)
+            )
+            if native_stats
+            else None,
+            "native_total_processing_time_s": native_stats.get("total_processing_time"),
             "shared_modules": shared_modules_metadata(args),
             "daaam_runtime": {
                 "daaam_root": str(args.daaam_root),
@@ -1940,6 +1998,15 @@ def _openclip_hf_cache_dir(args: argparse.Namespace) -> Path | None:
     pretrained = getattr(args, "clip_pretrained", None)
     if not model or not pretrained:
         return None
+    # Prefer a fast local-SSD cache root if provided (the NAS shared modules dir is
+    # slow for cold cp/torch reads of the 3.9GB ViT-H-14 checkpoint; loading it from
+    # NAS can stall the grounding worker for minutes). Layout mirrors the shared
+    # tree: <root>/<model>/<pretrained>/hf_cache.
+    override = os.environ.get("SPATIAL_EVAL_OPENCLIP_CACHE_ROOT")
+    if override:
+        local = Path(override) / str(model) / str(pretrained) / "hf_cache"
+        if local.exists():
+            return local
     candidate = DEFAULT_SHARED_MODULES_ROOT / "openclip" / str(model) / str(pretrained) / "hf_cache"
     if candidate.exists():
         return candidate

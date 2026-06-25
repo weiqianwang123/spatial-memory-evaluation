@@ -23,7 +23,13 @@ def parse_args() -> argparse.Namespace:
         "--benchmark-dir",
         type=Path,
         default=None,
-        help="Default: benchmarks/track1/scannetpp/<scene-id>",
+        help="Default: benchmarks/track1/<dataset>/<scene-id>",
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=("scannetpp", "scannet"),
+        default="scannetpp",
+        help="Selects the default benchmark dir: benchmarks/track1/<dataset>/<scene-id>.",
     )
     parser.add_argument("--scene-id", default=DEFAULT_SCENE_ID)
     parser.add_argument("--mode", choices=("fixed_api", "tool_llm"), default="fixed_api")
@@ -42,7 +48,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    benchmark_dir = args.benchmark_dir or Path("benchmarks") / "track1" / "scannetpp" / args.scene_id
+    benchmark_dir = args.benchmark_dir or Path("benchmarks") / "track1" / args.dataset / args.scene_id
     summary = evaluate_track1(
         package_dir=args.package_dir,
         benchmark_dir=benchmark_dir,

@@ -115,3 +115,14 @@ Track 2 distance metric activates at all); caption memory wins on name-level
 recognition (Track 2 acc@1, Track 3 QA) because its free-text captions match
 class names and answer recognition questions directly. This is the expected
 geometric-vs-semantic memory trade-off the benchmark is designed to surface.
+
+## Unified 10-scene ScanNet results (2026-06-25)
+
+Full results across 10 shared ScanNet scenes (5 methods × 3 tracks) are in
+`.codex/scannet_10scene_results.md`. DAAAM (scene_graph object memory):
+- T1 tool_llm: success@5 **0.539**, first-hit 0.428 m, proximity_top1@3m 0.835.
+- T1 fixed_api: success@5 0.396, first-hit 0.328 m, 4.9 ms/query.
+- T2 tool_llm: acc@0.5m 0.330, acc_top5@0.5m 0.518, mean dist 1.77 m.
+- T3 OpenEQA: LLM-Match 0.367, answered 0.838.
+- Build: FastSAM-x TRT + DAM grounding + ViT-H-14 (formal), ~0.124 s/frame compute,
+  ~173 bg objects/scene, 21.9 MB native memory. Faithful native pipeline (grounding ON).

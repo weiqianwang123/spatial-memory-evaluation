@@ -52,6 +52,19 @@ Runtime envs currently used:
 
 ## Shared Modules Policy
 
+**Shared OV detector + class list (all detector-based methods).** Any method that
+runs a detector must use the shared strongest OV detector AND the single shared
+class prompt/eval list = the Track 1 `detector_coverable.txt`
+(`spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`, 37 labels;
+the canonical path from `common/labels.py`). The shared-module registry already
+hands this same file to daaam/hovsg/conceptgraphs as `class_names`. ClawS is wired
+to it in `scripts/methods/claws/build_scannet_memory.py` (defaults: YOLO-World-L
+`modules/yolo/yolo_world/yolov8l-world.pt` + `set_classes(detector_coverable)` —
+ClawS's `UltralyticsBackend` does not call `set_classes` itself, so an OV model
+needs the prompt applied by the driver). Method-native detector/vocabulary
+overrides are `module_ablation` only, never the formal main-table result.
+Detector-free methods (ReMEmbR captioner, caption/multiframe controls) are exempt.
+
 External method repos should not be edited to load shared modules. Method
 scripts under `scripts/methods/` read
 `spatial_memory_evaluation/shared_modules/registry.py` and translate registry
@@ -629,14 +642,19 @@ Build/package routes:
 
 # (b) Build a DB for a plain ScanNet scene (Track 2/3). Drives ClawS's own
 #     SpatialPipeline.process_frame over a prepared DAAAM RGB-D layout; ollama
-#     qwen3-embedding:0.6b dim-1024 embeddings, VLM describer off (label from YOLO).
-#     Needs the spatial-rag env + the same cuDNN LD_LIBRARY_PATH fix:
+#     qwen3-embedding:0.6b dim-1024 embeddings. Defaults to the SHARED OV detector
+#     YOLO-World-L (modules/yolo/yolo_world/yolov8l-world.pt) prompted with the
+#     Track 1 detector_coverable.txt class list via set_classes (ClawS's backend
+#     does not call set_classes itself), and the VLM describer ON (qwen3.5:4b,
+#     since the config default qwen3.5:35b is not pulled) so it stores rich
+#     `**label** description` snapshots like DAAAM. Needs spatial-rag env + cuDNN fix:
 export LD_LIBRARY_PATH=/home/robin_wang/miniforge3/envs/spatial-rag/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
   scripts/methods/claws/build_scannet_memory.py \
   --layout-dir data/daaam_layouts/scannet_scene0207_00/<run> --scene-id scene0207_00 \
   --db-path data/claws_scannet/scannet_memory_scene0207_00.db \
-  --rag-config data/claws_scannet/claws_scannet_config.yaml --no-vlm
+  --rag-config data/claws_scannet/claws_scannet_config.yaml
+#     (--no-vlm for a fast label-only build; --detector-model / --class-list to override.)
 /home/robin_wang/miniforge3/envs/spatial-rag/bin/python \
   scripts/methods/claws/build_memory_package.py --scene-id scene0207_00 \
   --db-path data/claws_scannet/scannet_memory_scene0207_00.db --run-id claws-scene0207_00 --no-crops
@@ -777,3 +795,81 @@ Evaluator example (explicit Opus, mirrors committed runs):
   --mode tool_llm \
   --llm-command 'claude -p "$(cat {prompt_path})" --output-format text --permission-mode bypassPermissions > {output_path}'
 ```
+
+## Unified 10-scene ScanNet evaluation (2026-06-25)
+
+Major pivot: ALL THREE TRACKS now share the **same 10 ScanNet scenes**, so one
+memory build per (method, scene) serves Track 1+2+3. Track 1 keeps its ScanNet++
+support but gained a ScanNet path. Branch `eval-10scene-unified`.
+
+**Shared scenes:** scene0015_00, scene0050_00, scene0077_00, scene0084_00,
+scene0131_00, scene0193_00, scene0207_00, scene0222_00, scene0256_00, scene0314_00.
+
+### Track 1 ScanNet support
+- `build_track1_scannet_data()` in `track1/data.py`; CLI `--dataset scannet` on
+  `scripts/build_track1_data.py` + `scripts/evaluate_track1.py`. GT object
+  inventory from the ScanNet aggregation (objectId->label) + axis-aligned instance
+  bbox via `track2/scannet_bbox.py` (same GT geometry all 3 tracks share). Drops
+  structure labels (wall/floor/ceiling) + generic tags (object/objects). Benchmarks
+  under `benchmarks/track1/scannet/<scene>/`. 10 scenes => 148 detector_coverable queries.
+
+### Shared RGB-D layout (one extraction serves every method)
+- `scripts/methods/prepare_scannet_layout.sh <scene> <stride>`: extract .sens at
+  stride 5 -> DAAAM layout (rgb jpg / depth png / pose / intrinsic) + `color`->`rgb`
+  symlink. data/scannet_layouts/<scene>/layout/. 6 fps effective (30fps/stride5).
+- FRAME EXTRACTION FIX: write color as JPEG via cv2 (~18ms) not full-res PNG
+  (~450ms) -> ~6x faster (extract_sens_frames.py). depth stays uint16 PNG.
+
+### Build configs (faithful + fair; all describers/captioners LOCAL, no Claude)
+- **DAAAM**: `scripts/methods/daaam/build_scannet_scene.sh <scene>`. FastSAM-x TRT
+  segmenter + DAM grounding ON + `--shared-module-profile formal` (SAM vit_h,
+  OpenCLIP **ViT-H-14**, YOLO-World-L). ViT-H-14 was NOT cached + env is HF-offline
+  -> downloaded to shared modules AND copied to local SSD
+  `/home/robin_wang/.cache/spatial_eval_openclip` (NAS cold-read stalls the worker);
+  build reads it via `SPATIAL_EVAL_OPENCLIP_CACHE_ROOT`. run_pipeline_patched.py
+  patches `wait_for_workers_ready` to honor `SPATIAL_EVAL_WORKER_READY_TIMEOUT`
+  (default 600s) so DAM fully loads before the stream (stock 60s timeout SIGINT'd
+  it -> 0 objects). After "Results saved" the native run DEADLOCKS joining the CUDA
+  grounding worker; the wrapper watches for the marker + complete out_*/dsg.json,
+  kills the hang, packages from out_*/ (--skip-daaam-run). Objects land in
+  BACKGROUND_OBJECTS (object_count=0, bg>0) due to --skip-postprocess; query_object.py
+  falls back to background_object_table.jsonl. build_log records native per-frame
+  COMPUTE cost (cv_avg+hydra_avg ~0.10-0.16 s/frame), not throttled wall-clock.
+  `--dataset-tag scannet` -> memories/daaam/scannet/<scene>.
+- **ClawS**: build_scannet_memory.py (YOLO-World-L + `set_classes(scannet200.txt)` +
+  qwen3.5:4b VLM describer) then build_memory_package.py `--dataset-tag scannet`.
+  VLM-describes only NEW confirmed tracks (~1/object), not every frame -> fast.
+- **ReMEmbR** (native VILA not installed): build_memory_package.py
+  `--captioner ollama --ollama-model qwen3.5:4b` (local VLM, ~VILA-3B scale, no
+  Claude) + `--embed-model qwen3-embedding:0.6b` (precomputes caption embeddings)
+  + `--frame-stride 18` = native ~1 caption/3s cadence (6fps layout). retrieve_from_text
+  now does EMBEDDING cosine (faithful to Milvus), lexical fallback.
+- **caption-control**: build_caption_control_package.py reuses ReMEmbR captions
+  (+embeddings). **multiframe-VLM**: build_control_package.py `--frame-stride 18`
+  (follows ReMEmbR cadence; retrieve_frames returns ALL sampled frames).
+
+### Metrics (per user, fair to viewpoint-based caption memory)
+- T1: success@{1,5}, recall@{1,5}, mrr, mean_first_hit_distance_m, **proximity@{1,3,5}m**
+  (best-of-top5) + **proximity_top1@{1,3,5}m** (primary answer). Strict match
+  threshold 0.5-2m size-scaled; proximity is threshold-free nearest pred->GT center.
+- T2: **acc@{0.25,0.5}m** (top-1 precision) + **acc_top5@{0.25,0.5}m** (recall) +
+  **proximity@{1,3,5}m** (top-1) + **proximity_top5@{1,3,5}m**. Distance-only;
+  referring_acc/name-match removed.
+- T3: llm_match (sonnet judge), answered_rate.
+
+### Eval models + harness (per user)
+- agent = haiku (`llm_cmd haiku`, fastest), judge = sonnet (`judge_cmd sonnet`, T3).
+  ALL describers/captioners/embedders = local qwen (no Claude in memory construction).
+- **DESIGN DECISION: per-query INDEPENDENT agent** (fresh context per query) — a
+  persistent per-scene session was rejected as unfair (later queries see earlier
+  retrievals; order-dependent; cross-track contamination).
+- `scripts/methods/eval_all_scannet.sh <track> <mode> <methods-csv>` (T2 uses
+  `_subset15` benchmark dirs, 15 distinct-target queries/scene). T1 fixed_api for
+  ClawS+DAAAM. Aggregate: `scripts/methods/aggregate_scannet_results.py`.
+- CONCURRENCY: per-scene-cell parallelism at cap ~12 (each cell = one scene's
+  queries serially). cap-40 caused per-query stalls (16-min hung agents); cap-12
+  is healthy (~36 agents, ~4min max/query). >~12 concurrent risks CLI hangs.
+
+### Scope (user decision)
+- T1 full (148 dc q), T2 SUBSET15 (150 q), T3 full (121 q), x5 methods, stride 5.
+- Results gitignored under results/<m>/track<N>-<mode>/scannet-<scene>/.
