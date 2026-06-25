@@ -154,6 +154,9 @@ def _summary_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
         "proximity@1.0m",
         "proximity@3.0m",
         "proximity@5.0m",
+        "proximity_top5@1.0m",
+        "proximity_top5@3.0m",
+        "proximity_top5@5.0m",
         "mean_center_distance_m",
         "mean_query_latency_ms",
     )
@@ -296,6 +299,7 @@ def _score(
 ) -> dict[str, Any]:
     distance_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     proximity_hits = {threshold: 0 for threshold in PROXIMITY_THRESHOLDS_M}
+    proximity_top5_hits = {threshold: 0 for threshold in PROXIMITY_THRESHOLDS_M}
     top5_hits = {threshold: 0 for threshold in DISTANCE_THRESHOLDS_M}
     center_distances: list[float] = []
     distance_scored = 0
@@ -332,6 +336,9 @@ def _score(
                     for threshold in DISTANCE_THRESHOLDS_M:
                         if top5_distance <= threshold:
                             top5_hits[threshold] += 1
+                    for threshold in PROXIMITY_THRESHOLDS_M:
+                        if top5_distance <= threshold:
+                            proximity_top5_hits[threshold] += 1
         per_query.append(
             {
                 "query_id": query_id,
@@ -356,6 +363,10 @@ def _score(
         },
         **{
             f"proximity@{threshold}m": (safe_div(proximity_hits[threshold], distance_scored) if distance_scored else None)
+            for threshold in PROXIMITY_THRESHOLDS_M
+        },
+        **{
+            f"proximity_top5@{threshold}m": (safe_div(proximity_top5_hits[threshold], distance_scored) if distance_scored else None)
             for threshold in PROXIMITY_THRESHOLDS_M
         },
         "distance_scored_count": distance_scored,
