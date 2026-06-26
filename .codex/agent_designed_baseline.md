@@ -252,33 +252,47 @@ journal.jsonl, design_manifest.json, eval_report.md}` plus the per-track eval ou
 To avoid implying the agent "won" unfairly, agent_designed rows are reported in their
 own section alongside — not merged into — the hand-built-method table.
 
-## 11. Skeleton scope (when we implement)
+## 11. Implementation status (everything ready except the agent launch)
 
-Importable skeleton with stable signatures and TODOs:
+IMPLEMENTED and runnable (the seam-off harness completes with
+`status="ready_for_designer"`); the SINGLE un-fired seam is `invoke_designer`:
 
-- `agent_designed/__init__.py`
-- `agent_designed/contract.py` — workspace contract constants, allowed/forbidden
-  inputs, entrypoint names, the held-out scene-id blocklist.
-- `agent_designed/workspace.py` — `build_workspace(...)` assembles the dev-only sandbox
-  + the GT-derivation tooling for self-test authoring + provided-inputs manifest;
-  enforces held-out isolation on what gets copied in.
-- `agent_designed/designer.py` — `invoke_designer(workspace, history)` STUB documenting
-  how the coding agent is launched and what it returns each round.
-- `agent_designed/leakage.py` — `scan_for_leakage(...)` STUB for embedded-answer /
-  held-out-scene-id conditioning checks.
-- `agent_designed/journal.py` — append-only round journal + best-so-far snapshot /
-  revert + golden-trace refresh.
-- `agent_designed/harness.py` — `run_agent_designed(...)` orchestrating §8 via the
-  existing validator + Track 1/2/3 evaluators.
-- `scripts/agent_designed/run_baseline.py` — thin CLI over the harness.
+- `agent_designed/contract.py` — contract constants, variants
+  (`one_shot`/`loop_fixed_tests`/`auto_research`), entrypoint names.
+- `agent_designed/splits.py` — held-out 10 + DEV scene-id constants, disjointness
+  guard, `splits.json` writer. Default DEV = `scene0527_00` (small),
+  `scene0406_00` (medium), `scene0426_00` (large) — all prepped (GT + layout +
+  T1/T2/T3 benchmarks). Change via `--dev-scene-id` / edit `DEFAULT_DEV_SCENE_IDS`.
+- `agent_designed/workspace.py` (+ `shared_modules_doc.py`) — `build_workspace(...)`
+  fully materializes the DEV-only sandbox: CONTRACT/metrics/shared_modules docs,
+  copied example packages, symlinked DEV layouts, starter templates, empty journal,
+  provided-inputs manifest. Held-out isolation is structural (only DEV ids linked;
+  held-out ids appear only as the CONTRACT blocklist).
+- `agent_designed/journal.py` — append-only round journal + best-so-far
+  snapshot/revert + no-gain convergence (resume-from-journal safe).
+- `agent_designed/dev_eval.py` — scores a package on the agent's own dev tests via
+  the unchanged Track 1/2/3 evaluators; reduces to one dev score the loop maximizes.
+- `agent_designed/leakage.py` — `scan_for_leakage(...)` over all written artifacts
+  (verified to catch planted held-out ids); `scanner_complete=False` (no data-flow).
+- `agent_designed/harness.py` — `run_agent_designed(...)` runs the full §8 loop via
+  the existing validator + evaluators; `evaluate_on_heldout` + `_build_dev_packages`
+  are gated behind a real design (reached only once the seam is enabled).
+- `agent_designed/designer.py` — `invoke_designer(...)` is THE SEAM: documents the
+  exact `claude -p ... --add-dir <workspace> --permission-mode bypassPermissions
+  --max-turns N` coding-agent launch; returns `status="skipped"` until enabled.
+- `scripts/agent_designed/` — `run_baseline.py` (CLI), `download_scannet_gt.sh`
+  (kaldir GT fetch, un-gated), `prepare_dev_scene.sh` (one-shot GT→layout→benchmarks),
+  `split_track3_by_scene.py` (per-scene OpenEQA dirs).
 
-Not in this skeleton: the real designer invocation, the real leakage scanner, the
-SG3D/NaVQA transfer.
+Still to do when enabling the seam: the coding-agent launch in `invoke_designer`,
+the per-DEV-scene `build_memory` call in `_build_dev_packages`, `evaluate_on_heldout`,
+and (later) SG3D/NaVQA transfer.
 
 ## 12. Open decisions (human-owned)
 
-- **Which ~3 dev scenes** (of the 27 candidates) and confirmation to download their 4
-  ScanNet GT files each from kaldir (frames `.sens` already local).
+- ~~Which ~3 dev scenes + GT download~~ **DONE**: dev = `scene0527_00` /
+  `scene0406_00` / `scene0426_00` (small/medium/large); GT fetched from kaldir,
+  layouts + T1/T2/T3 benchmarks built. Change freely via `--dev-scene-id`.
 - Whether the agent **authors its own dev test cases** (centerpiece intent) vs uses
   harness-provided dev cases — and, if self-authored, any guardrail that its dev cases
   stay metric-faithful (e.g. GT pulled only via the provided tooling).
