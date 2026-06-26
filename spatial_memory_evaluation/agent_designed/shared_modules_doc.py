@@ -15,6 +15,17 @@ OLLAMA_ENDPOINT = "http://localhost:11434"
 OLLAMA_VLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBED_MODEL = "qwen3-embedding:0.6b"
 
+# The shared open-vocabulary DETECTOR. The DAAAM formal profile resolves a
+# FastSAM/SAM segmentation stack (no YOLO-World), so the registry module list does
+# not name a detector weight; expose the formal YOLO-World-L explicitly here so the
+# designed memory uses the SAME detector + vocabulary as the hand-built methods.
+YOLO_WORLD_L_PATH = (
+    "/data/mondo-training-dataset/semantic_mapping/modules/yolo/yolo_world/yolov8l-world.pt"
+)
+SCANNET200_CLASSLIST = (
+    "spatial_memory_evaluation/assets/class_lists/scannet200.txt"
+)
+
 
 def _resolve_formal_modules() -> list[dict[str, Any]] | None:
     try:
@@ -53,13 +64,24 @@ def render_shared_modules_md() -> str:
             lines.append(f"- **{name}** ({m.get('key')}): `{ckpt}`")
             if role:
                 lines.append(f"  - {role}")
+        # The registry's DAAAM formal profile has no YOLO-World detector entry
+        # (DAAAM segments with FastSAM); add the shared OV detector explicitly so
+        # the designed memory detects with the SAME model + vocab as other methods.
+        lines.append(f"- **YOLO-World-L (open-vocab detector)** (yolo_world.v8l): `{YOLO_WORLD_L_PATH}`")
+        lines.append(
+            "  - the shared open-vocabulary detector. Load with ultralytics "
+            "`YOLOWorld`, then `model.set_classes(<scannet200 labels>)` from "
+            f"`{SCANNET200_CLASSLIST}` so detections use the shared eval vocabulary."
+        )
     else:
         lines += [
             "- (registry unavailable in this environment; resolve via",
             "  `spatial_memory_evaluation.shared_modules.registry.get_shared_module_registry()`",
             "  `.method_settings('daaam', profile='formal')`)",
-            "- Shared OV class list: `spatial_memory_evaluation/assets/class_lists/scannet200.txt`",
-            "- SAM vit_h, OpenCLIP ViT-H-14, YOLO-World-L, FastSAM-x TRT under",
+            f"- Shared OV class list: `{SCANNET200_CLASSLIST}`",
+            f"- **YOLO-World-L (open-vocab detector)**: `{YOLO_WORLD_L_PATH}` — load "
+            "with ultralytics `YOLOWorld` + `set_classes(<scannet200 labels>)`.",
+            "- SAM vit_h, OpenCLIP ViT-H-14, FastSAM-x TRT under",
             "  `/data/mondo-training-dataset/semantic_mapping/modules/`",
         ]
     lines += [
