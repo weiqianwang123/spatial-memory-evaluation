@@ -124,7 +124,10 @@ def main() -> int:
     print("-" * 64)
     if result.per_track:
         for track, info in result.per_track.items():
-            print(f"  {track:26s} {info['metric_key']:14s} mean={info['mean']:.3f}  (n={info['n']})")
+            line = f"  {track:26s} {info['metric_key']:14s} mean={info['mean']:.3f}  (n={info['n']})"
+            if info.get("proximity_key"):
+                line += f"   [{info['proximity_key']}={info['proximity_mean']:.3f}]"
+            print(line)
     else:
         print("  no track scored — does your capabilities.json declare a supported "
               f"fixed-API entrypoint? Primary metrics: {PRIMARY_METRIC}")

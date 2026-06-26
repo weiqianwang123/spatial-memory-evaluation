@@ -36,6 +36,15 @@ PRIMARY_METRIC: dict[str, str] = {
     "track3_openeqa": "llm_match",
 }
 
+# Secondary RELAXED-localization (proximity) metric per track — reported alongside
+# the strict primary so caption/coarse memories still show partial credit. T1's
+# top-1 nearest-prediction proximity, T2's top-1 center-distance proximity, both at
+# the 3 m threshold. Track 3 has no spatial proximity notion.
+PROXIMITY_METRIC: dict[str, str] = {
+    "track1_object_location": "proximity_top1@3.0m",
+    "track2_scanrefer": "proximity@3.0m",
+}
+
 
 @dataclass
 class DevEvalResult:
@@ -138,6 +147,7 @@ def evaluate_dev(
 
     per_eval: list[dict[str, Any]] = []
     track_scores: dict[str, list[float]] = {t: [] for t in PRIMARY_METRIC}
+    track_prox: dict[str, list[float]] = {t: [] for t in PROXIMITY_METRIC}
     build_cost_rows: list[dict[str, Any]] = []
 
     for scene in dev_scene_ids:
@@ -154,10 +164,13 @@ def evaluate_dev(
                 output=out, llm_command=llm_command,
             )
             s = _metric(summary, PRIMARY_METRIC["track1_object_location"])
+            px = _metric(summary, PROXIMITY_METRIC["track1_object_location"])
             per_eval.append({"track": "track1_object_location", "scene": scene,
-                             "status": summary.get("status"), "metric": s})
+                             "status": summary.get("status"), "metric": s, "proximity": px})
             if s is not None:
                 track_scores["track1_object_location"].append(s)
+            if px is not None:
+                track_prox["track1_object_location"].append(px)
 
         # Track 2
         t2_dir = dev_tests_root / "track2" / scene
@@ -168,10 +181,13 @@ def evaluate_dev(
                 output=out, llm_command=llm_command,
             )
             s = _metric(summary, PRIMARY_METRIC["track2_scanrefer"])
+            px = _metric(summary, PROXIMITY_METRIC["track2_scanrefer"])
             per_eval.append({"track": "track2_scanrefer", "scene": scene,
-                             "status": summary.get("status"), "metric": s})
+                             "status": summary.get("status"), "metric": s, "proximity": px})
             if s is not None:
                 track_scores["track2_scanrefer"].append(s)
+            if px is not None:
+                track_prox["track2_scanrefer"].append(px)
 
         # Track 3
         t3_dir = dev_tests_root / "track3" / scene
@@ -183,7 +199,7 @@ def evaluate_dev(
             )
             s = _metric(summary, PRIMARY_METRIC["track3_openeqa"])
             per_eval.append({"track": "track3_openeqa", "scene": scene,
-                             "status": summary.get("status"), "metric": s})
+                             "status": summary.get("status"), "metric": s, "proximity": None})
             if s is not None:
                 track_scores["track3_openeqa"].append(s)
 
@@ -192,7 +208,12 @@ def evaluate_dev(
     for track, scores in track_scores.items():
         if scores:
             mean = sum(scores) / len(scores)
-            per_track[track] = {"metric_key": PRIMARY_METRIC[track], "mean": mean, "n": len(scores)}
+            entry = {"metric_key": PRIMARY_METRIC[track], "mean": mean, "n": len(scores)}
+            prox = track_prox.get(track) or []
+            if prox:
+                entry["proximity_key"] = PROXIMITY_METRIC[track]
+                entry["proximity_mean"] = sum(prox) / len(prox)
+            per_track[track] = entry
             track_means.append(mean)
 
     # Breadth-friendly loop target: SUM (not mean) of per-track means, so adding a
