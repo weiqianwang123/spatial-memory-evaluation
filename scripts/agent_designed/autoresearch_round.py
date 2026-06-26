@@ -234,17 +234,21 @@ def main() -> int:
         _git("clean", "-fd", "memories", "starter")
         commit = _git("rev-parse", "--short", "HEAD")[1].strip()
 
+    sbc = scored.get("build_cost", {})
     row = {
         "round": rnd,
         "message": args.message,
         "loop_objective": obj,
+        "accuracy_sum": scored.get("accuracy_sum"),
         "best_before": best_before,
         "decision": decision,
         "commit": commit,
         "per_track": scored.get("per_track", {}),
         "build_cost": {
-            "mean_native_memory_size_bytes": scored.get("build_cost", {}).get("mean_native_memory_size_bytes"),
-            "mean_time_per_frame_seconds": scored.get("build_cost", {}).get("mean_time_per_frame_seconds"),
+            "mean_native_memory_size_bytes": sbc.get("mean_native_memory_size_bytes"),
+            "mean_time_per_frame_seconds": sbc.get("mean_time_per_frame_seconds"),
+            "cost_penalty": sbc.get("cost_penalty"),
+            "cost_penalty_breakdown": sbc.get("cost_penalty_breakdown"),
         },
     }
     append_history(row)
