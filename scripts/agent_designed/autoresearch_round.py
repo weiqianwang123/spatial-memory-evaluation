@@ -145,12 +145,20 @@ def score_all_scenes() -> dict:
             means.append(entry["mean"])
 
     build_rows = [dev_eval._read_build_cost(pkg_parent / s, s) for s in DEV_SCENES]
+    build_cost = dev_eval._aggregate_build_cost(build_rows)
+    accuracy_sum = sum(means) if means else None
+    # Weighted objective: accuracy primary minus a soft build-cost penalty (memory
+    # bloat / loss of real-time). Same logic as dev_eval so loop + manual agree.
+    penalty, breakdown = dev_eval._cost_penalty(build_cost)
+    build_cost["cost_penalty"] = round(penalty, 4)
+    build_cost["cost_penalty_breakdown"] = breakdown
     return {
         "status": "ok" if means else "no_dev_evals_ran",
         "per_track": per_track,
-        "loop_objective": sum(means) if means else None,
+        "accuracy_sum": accuracy_sum,
+        "loop_objective": (accuracy_sum - penalty) if accuracy_sum is not None else None,
         "per_eval": per_eval,
-        "build_cost": dev_eval._aggregate_build_cost(build_rows),
+        "build_cost": build_cost,
     }
 
 

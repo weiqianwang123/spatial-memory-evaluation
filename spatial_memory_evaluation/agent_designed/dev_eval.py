@@ -30,11 +30,46 @@ from spatial_memory_evaluation.track3.evaluator import evaluate_track3
 
 
 # The primary metric per track that the loop optimizes (each roughly in [0, 1]).
+# T1 uses success@1 (top-1 prediction must be near GT) rather than success@5: @5
+# is gamed by returning many objects (spatial recall), since each query passes
+# target_label so the label-match is free — see the gaming caveat in the prompt.
 PRIMARY_METRIC: dict[str, str] = {
-    "track1_object_location": "success@5",
+    "track1_object_location": "success@1",
     "track2_scanrefer": "acc@0.5m",
     "track3_openeqa": "llm_match",
 }
+
+# Build-cost budget for the weighted loop objective. Accuracy is primary; we only
+# want to discourage memory bloat and loss of real-time. A SOFT hinge: zero penalty
+# while within budget, growing linearly above it. Budgets are generous (the current
+# design is ~2.2MB / ~0.7s/frame, well under), so a normal compact/fast build pays
+# nothing — only regressions (bigger memory or slower builds) are penalized.
+MEMORY_BUDGET_BYTES = 50_000_000      # 50 MB/scene: ample for an object map; bloat beyond pays
+TPF_BUDGET_SECONDS = 1.5              # 1.5 s/frame: keeps builds near-real-time (DAAAM ~0.12, ours ~0.7)
+# Per-unit-over-budget weights, scaled so a 2x-over-budget build costs ~the listed
+# value in loop_objective points (accuracy_sum is ~2-3, so these stay sub-dominant).
+COST_WEIGHT_MEMORY = 0.20             # -0.20 per (1x budget) of memory over 50MB/scene
+COST_WEIGHT_TPF = 0.30               # -0.30 per (1x budget) of tpf over 1.5s/frame
+
+
+def _cost_penalty(build_cost: dict) -> tuple[float, dict]:
+    """Soft-hinge build-cost penalty (>=0). Zero within budget; linear above.
+
+    Returns (penalty, breakdown) where penalty subtracts from loop_objective.
+    """
+    mem = build_cost.get("mean_native_memory_size_bytes")
+    tpf = build_cost.get("mean_time_per_frame_seconds")
+    mem_over = max(0.0, (mem / MEMORY_BUDGET_BYTES) - 1.0) if isinstance(mem, (int, float)) and mem else 0.0
+    tpf_over = max(0.0, (tpf / TPF_BUDGET_SECONDS) - 1.0) if isinstance(tpf, (int, float)) and tpf else 0.0
+    pen_mem = COST_WEIGHT_MEMORY * mem_over
+    pen_tpf = COST_WEIGHT_TPF * tpf_over
+    return pen_mem + pen_tpf, {
+        "memory_over_budget_ratio": round(mem_over, 3),
+        "tpf_over_budget_ratio": round(tpf_over, 3),
+        "penalty_memory": round(pen_mem, 4),
+        "penalty_tpf": round(pen_tpf, 4),
+    }
+
 
 # Secondary RELAXED-localization (proximity) metric per track — reported alongside
 # the strict primary so caption/coarse memories still show partial credit. T1's
@@ -62,6 +97,7 @@ class DevEvalResult:
     per_track: dict[str, Any] = field(default_factory=dict)
     per_eval: list[dict[str, Any]] = field(default_factory=list)
     build_cost: dict[str, Any] = field(default_factory=dict)
+    accuracy_sum: float | None = None
     loop_objective: float | None = None
     status: str = "ok"
 
@@ -69,6 +105,7 @@ class DevEvalResult:
         return {
             "status": self.status,
             "per_track": self.per_track,
+            "accuracy_sum": self.accuracy_sum,
             "loop_objective": self.loop_objective,
             "per_eval": self.per_eval,
             "build_cost": self.build_cost,
@@ -295,13 +332,21 @@ def evaluate_dev(
             per_track[track] = entry
             track_means.append(mean)
 
-    # Breadth-friendly loop target: SUM (not mean) of per-track means, so adding a
+    # Breadth-friendly accuracy term: SUM (not mean) of per-track means, so adding a
     # track can only raise it -> the loop is rewarded for attempting more tracks.
-    # Reported output stays per-track; this is just the scalar the loop maximizes.
-    loop_objective = sum(track_means) if track_means else None
+    accuracy_sum = sum(track_means) if track_means else None
+    build_cost = _aggregate_build_cost(build_cost_rows)
+    # Weighted objective: accuracy is primary; subtract a soft build-cost penalty so
+    # the loop won't bloat memory or lose real-time for a tiny accuracy gain. Within
+    # budget the penalty is 0 (objective == accuracy_sum).
+    penalty, penalty_breakdown = _cost_penalty(build_cost)
+    loop_objective = (accuracy_sum - penalty) if accuracy_sum is not None else None
+    build_cost["cost_penalty"] = round(penalty, 4)
+    build_cost["cost_penalty_breakdown"] = penalty_breakdown
     return DevEvalResult(
         per_track=per_track, per_eval=per_eval,
-        build_cost=_aggregate_build_cost(build_cost_rows),
+        build_cost=build_cost,
+        accuracy_sum=accuracy_sum,
         loop_objective=loop_objective,
         status="ok" if track_means else "no_dev_evals_ran",
     )

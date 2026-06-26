@@ -146,9 +146,13 @@ def main() -> int:
     else:
         print("  no track scored — does your capabilities.json declare a supported "
               f"fixed-API entrypoint? Primary metrics: {PRIMARY_METRIC}")
+    acc = result.accuracy_sum
     lo = result.loop_objective
-    print(f"  loop_objective (sum of per-track means, breadth-friendly): "
-          f"{lo:.3f}" if isinstance(lo, (int, float)) else "  loop_objective: n/a")
+    pen = (result.build_cost or {}).get("cost_penalty", 0.0)
+    accs = f"{acc:.3f}" if isinstance(acc, (int, float)) else "n/a"
+    los = f"{lo:.3f}" if isinstance(lo, (int, float)) else "n/a"
+    print(f"  accuracy_sum (sum of per-track means): {accs}")
+    print(f"  loop_objective = accuracy_sum - cost_penalty({pen:.3f}) = {los}")
     print("-" * 64)
     print("per (track, scene):")
     for row in result.per_eval:
