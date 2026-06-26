@@ -47,11 +47,41 @@ DEV_BENCH = {
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Create an external designer sandbox.")
-    ap.add_argument("--sandbox-root", type=Path, default=Path.home() / "agent_designed_sandbox")
+    ap.add_argument(
+        "--sandbox-root",
+        type=Path,
+        default=None,
+        help="Default: ~/agent_designed_sandbox_<variant>",
+    )
     ap.add_argument("--variant", choices=VARIANTS, default=DEFAULT_VARIANT)
     ap.add_argument("--dev-scene-id", action="append", default=[], dest="dev_scene_ids")
     ap.add_argument("--force", action="store_true", help="overwrite an existing sandbox")
     return ap.parse_args()
+
+
+def _seed_into(seed_root: Path, dev_scene_ids: list[str]) -> dict:
+    """Copy the prepared DEV benchmarks into ``seed_root/<track>/<scene>`` (real files).
+
+    Used for the non-authoring variants (loop_fixed_tests / one_shot): the agent
+    sees a FIXED test set rather than authoring its own. build_workspace then copies
+    this seed into the sandbox's ``dev_tests/`` (children = track dirs). Copies (not
+    symlinks) so the agent can read/inspect the queries directly.
+    """
+
+    status: dict[str, dict] = {}
+    for track, root in DEV_BENCH.items():
+        for scene in dev_scene_ids:
+            src = root / scene
+            if not src.exists():
+                status.setdefault(scene, {})[track] = "MISSING"
+                continue
+            dst = seed_root / track / scene
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            status.setdefault(scene, {})[track] = "ok"
+    return status
 
 
 def _link_dev_tests(sandbox: Path, dev_scene_ids: list[str]) -> dict:
@@ -82,7 +112,7 @@ def _link_dev_tests(sandbox: Path, dev_scene_ids: list[str]) -> dict:
 def main() -> int:
     args = parse_args()
     split = default_split(tuple(args.dev_scene_ids) if args.dev_scene_ids else None)
-    sandbox = args.sandbox_root
+    sandbox = args.sandbox_root or (Path.home() / f"agent_designed_sandbox_{args.variant}")
 
     if sandbox.exists():
         if not args.force:
@@ -90,15 +120,27 @@ def main() -> int:
         shutil.rmtree(sandbox)
     sandbox.mkdir(parents=True)
 
+    # Non-authoring variants get a FIXED test set seeded into dev_tests/; the
+    # centerpiece auto_research variant authors its own (dev_tests/ left empty).
+    authors_own = args.variant == "auto_research"
+
     # 1. Assemble the workspace in-place (docs, examples, dev-scene layout links).
+    #    For seeded variants, build_workspace copies the seed into dev_tests/.
+    seed_root = None
+    if not authors_own:
+        seed_root = sandbox / "_seed_dev_tests"
+        _seed_into(seed_root, list(split.dev_scene_ids))
     build_workspace(
         variant=args.variant,
         workspace_root=sandbox,
         split=split,
         dataset="scannet",
+        seeded_dev_tests_root=seed_root,
     )
+    if seed_root and seed_root.exists():
+        shutil.rmtree(seed_root)  # build_workspace already copied it into dev_tests/
 
-    # 2. Expose the prepared DEV benchmarks for the scorer.
+    # 2. Expose the prepared DEV benchmarks for the scorer (always, via dev_tests_ref).
     dev_tests_status = _link_dev_tests(sandbox, list(split.dev_scene_ids))
 
     # 3. Copy the standalone scorer + write its config.
@@ -117,24 +159,62 @@ def main() -> int:
     )
     (sandbox / "memories").mkdir(exist_ok=True)
     write_split_manifest(sandbox / "splits.json", split)
-    _write_run_claude_md(sandbox / "RUN_CLAUDE.md", args.variant, split, sys.executable)
+    _write_run_claude_md(sandbox / "RUN_CLAUDE.md", args.variant, split, sys.executable, authors_own)
 
     # 4. Report.
+    seeded = sorted(
+        str(p.relative_to(sandbox)) for p in (sandbox / "dev_tests").glob("*/*")
+    ) if not authors_own else []
     print(json.dumps({
         "sandbox": str(sandbox),
         "variant": args.variant,
+        "authors_own_dev_tests": authors_own,
         "dev_scene_ids": list(split.dev_scene_ids),
-        "dev_tests_exposed": dev_tests_status,
+        "dev_tests_seeded": seeded,
+        "dev_tests_ref_exposed": dev_tests_status,
         "next": f"cd {sandbox} && cat RUN_CLAUDE.md",
     }, indent=2))
     return 0
 
 
-def _write_run_claude_md(path: Path, variant: str, split, python: str) -> None:
+_VARIANT_POLICY = {
+    "one_shot": (
+        "ONE-SHOT (no iteration). The agent designs and builds ONCE, then you score.\n"
+        "No revise-and-rebuild loop. Dev tests are PRE-SEEDED under dev_tests/ (the\n"
+        "agent may read them to understand the task but must not edit them). This\n"
+        "measures: can a coding agent design usable memory in a single pass?"
+    ),
+    "loop_fixed_tests": (
+        "LOOP with a FIXED test set. The agent iterates (build -> score -> revise ->\n"
+        "rebuild) but the dev tests are PRE-SEEDED under dev_tests/ and frozen (the\n"
+        "agent must not add/edit tests). This isolates: does iteration help when the\n"
+        "evaluation is held constant?"
+    ),
+    "auto_research": (
+        "AUTO-RESEARCH (centerpiece). The agent iterates AND authors its OWN dev\n"
+        "tests under dev_tests/ from the DEV scenes (dev_tests/ starts empty;\n"
+        "dev_tests_ref/ holds the harness's metric-faithful reference for scoring).\n"
+        "This is the full self-improvement loop."
+    ),
+}
+
+
+def _write_run_claude_md(path: Path, variant: str, split, python: str, authors_own: bool) -> None:
+    tests_note = (
+        "dev_tests/ starts EMPTY — you author your own self-tests here (see\n"
+        "dev_scenes/README.md). The scorer reads the harness reference in\n"
+        "dev_tests_ref/, so you get a metric-faithful signal regardless."
+        if authors_own
+        else
+        "dev_tests/ is PRE-SEEDED with a fixed test set (do not edit it). The scorer\n"
+        "uses dev_tests_ref/ (identical content) for the dev score."
+    )
     path.write_text(
         "# Driving the designer agent by hand\n\n"
+        f"## Variant: {variant}\n\n"
+        f"{_VARIANT_POLICY[variant]}\n\n"
         "This sandbox is OUTSIDE the eval repo. Launch a coding agent here, let it\n"
-        "design a semantic-map memory, score it, and iterate.\n\n"
+        "design a semantic-map memory, score it, and (if the variant loops) iterate.\n\n"
         "## 0. Read the brief\n\n"
         "    cat CONTRACT.md metrics.md shared_modules.md\n"
         "    cat dev_scenes/README.md\n\n"
@@ -145,22 +225,26 @@ def _write_run_claude_md(path: Path, variant: str, split, python: str) -> None:
         "    Implement starter/build_memory.py and the per-track entrypoints to\n"
         "    build a semantic-map memory from the DEV scene layouts in dev_scenes/.\n"
         "    Write a validated package under memories/<name>/<scene>/. Then run\n"
-        "    `python score_design.py --package-dir memories/<name>/<scene>` and\n"
-        "    improve your code based on the per-track dev scores.\n\n"
+        "    `python score_design.py --package-dir memories/<name>/<scene>`"
+        + ("" if variant == "one_shot" else " and\n    improve your code based on the per-track dev scores")
+        + ".\n\n"
         "(Headless equivalent: `claude -p \"<prompt>\" --permission-mode "
         "bypassPermissions --add-dir . --max-turns 60 --output-format text`.)\n\n"
+        f"Dev-tests policy: {tests_note}\n\n"
         "## 2. Score a built package (the feedback signal)\n\n"
         f"    {python} score_design.py --package-dir memories/<name>/<scene> --mode fixed_api\n\n"
         "Prints per-track metrics (T1 success@5, T2 acc@0.5m, T3 llm_match) + the\n"
-        "mean dev score, and writes _dev_eval/dev_score.json. Iterate.\n\n"
+        "mean dev score, and writes _dev_eval/dev_score.json.\n\n"
         "## What to watch for (notes for automating invoke_designer later)\n\n"
         "- Does the agent find everything it needs in CONTRACT/shared_modules?\n"
         "- Does it use the shared perception stack + local qwen (not Claude) at\n"
         "  build/query time?\n"
         "- How many rounds / how much wall-clock to a non-trivial dev score?\n"
         "- Does the package pass the validator on the first try? What trips it up?\n"
-        "- Does it ever try to read held-out scenes? (It must not; none are here.)\n\n"
-        f"Variant: {variant}   DEV scenes: {', '.join(split.dev_scene_ids)}\n"
+        "- Does it ever try to read held-out scenes? (It must not; none are here.)\n"
+        + ("- (auto_research) Are the dev tests it authors metric-faithful, or does\n"
+           "  it game them? Compare its dev_tests/ against dev_tests_ref/.\n" if authors_own else "")
+        + f"\nDEV scenes: {', '.join(split.dev_scene_ids)}\n"
         "Held-out scenes are NOT present in this sandbox by design.\n",
         encoding="utf-8",
     )
