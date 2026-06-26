@@ -119,6 +119,24 @@ def main() -> int:
     for row in result.per_eval:
         m = f"{row['metric']:.3f}" if isinstance(row.get("metric"), (int, float)) else "n/a"
         print(f"  {row['track']:26s} {row['scene']:14s} status={row['status']:10s} metric={m}")
+
+    # Build cost — mandatory secondary metrics (memory size + time per frame).
+    bc = result.build_cost or {}
+    print("-" * 64)
+    print("build cost (memory size + time per frame):")
+
+    def _mb(b):
+        return f"{b / 1e6:.2f} MB" if isinstance(b, (int, float)) else "n/a"
+
+    def _tpf(s):
+        return f"{s:.4f} s/frame" if isinstance(s, (int, float)) else "n/a"
+
+    for row in bc.get("per_scene", []):
+        print(f"  {row.get('scene',''):14s} mem={_mb(row.get('native_memory_size_bytes')):>12s}  "
+              f"tpf={_tpf(row.get('time_per_frame_seconds')):>16s}  frames={row.get('frame_count')}")
+    print(f"  {'MEAN':14s} mem={_mb(bc.get('mean_native_memory_size_bytes')):>12s}  "
+          f"tpf={_tpf(bc.get('mean_time_per_frame_seconds')):>16s}  "
+          f"total_frames={bc.get('total_frame_count')}")
     print(f"\ndetails (per-query) under: {output_root}")
     print("=" * 64)
 

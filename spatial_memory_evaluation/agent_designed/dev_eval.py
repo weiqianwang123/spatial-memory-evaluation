@@ -19,6 +19,7 @@ generates them with the provided GT-derivation tooling on the DEV scenes only.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -41,6 +42,7 @@ class DevEvalResult:
     dev_score: float | None
     per_track: dict[str, Any] = field(default_factory=dict)
     per_eval: list[dict[str, Any]] = field(default_factory=list)
+    build_cost: dict[str, Any] = field(default_factory=dict)
     status: str = "ok"
 
     def to_json(self) -> dict[str, Any]:
@@ -49,6 +51,7 @@ class DevEvalResult:
             "dev_score": self.dev_score,
             "per_track": self.per_track,
             "per_eval": self.per_eval,
+            "build_cost": self.build_cost,
         }
 
 
@@ -58,6 +61,51 @@ def _metric(summary: dict[str, Any], key: str) -> float | None:
         return None
     value = metrics.get(key)
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def _read_build_cost(package_dir: Path, scene: str) -> dict[str, Any]:
+    """Read memory size + time-per-frame from a scene's package build_log.json.
+
+    A package is built per dev scene under <pkg parent>/<scene>/; we accept either
+    ``package_dir`` itself (single scene) or a sibling ``<scene>`` dir, so the
+    scorer surfaces build cost the same way the main eval records it (mandatory
+    secondary metrics alongside accuracy).
+    """
+
+    candidates = [package_dir, package_dir.parent / scene, package_dir / scene]
+    for cand in candidates:
+        bl = cand / "build_log.json"
+        if not bl.exists():
+            continue
+        try:
+            log = json.loads(bl.read_text())
+        except (OSError, ValueError):
+            continue
+        return {
+            "scene": scene,
+            "package_dir": str(cand),
+            "native_memory_size_bytes": log.get("native_memory_size_bytes"),
+            "package_size_bytes": log.get("package_size_bytes"),
+            "frame_count": log.get("frame_count"),
+            "build_runtime_seconds": log.get("build_runtime_seconds"),
+            "time_per_frame_seconds": log.get("time_per_frame_seconds"),
+            "peak_ram_bytes": log.get("peak_ram_bytes"),
+            "peak_vram_bytes": log.get("peak_vram_bytes"),
+        }
+    return {"scene": scene, "package_dir": None, "note": "no build_log.json found"}
+
+
+def _aggregate_build_cost(per_scene: list[dict[str, Any]]) -> dict[str, Any]:
+    def _mean(key: str) -> float | None:
+        vals = [r[key] for r in per_scene if isinstance(r.get(key), (int, float))]
+        return (sum(vals) / len(vals)) if vals else None
+
+    return {
+        "per_scene": per_scene,
+        "mean_native_memory_size_bytes": _mean("native_memory_size_bytes"),
+        "mean_time_per_frame_seconds": _mean("time_per_frame_seconds"),
+        "total_frame_count": sum(r["frame_count"] for r in per_scene if isinstance(r.get("frame_count"), int)),
+    }
 
 
 def evaluate_dev(
@@ -79,8 +127,13 @@ def evaluate_dev(
 
     per_eval: list[dict[str, Any]] = []
     track_scores: dict[str, list[float]] = {t: [] for t in PRIMARY_METRIC}
+    build_cost_rows: list[dict[str, Any]] = []
 
     for scene in dev_scene_ids:
+        # Build cost (memory size + time-per-frame) from the scene's build_log.json
+        # — mandatory secondary metrics reported alongside accuracy.
+        build_cost_rows.append(_read_build_cost(package_dir, scene))
+
         # Track 1
         t1_dir = dev_tests_root / "track1" / scene
         if (t1_dir / "queries_detector_coverable.jsonl").exists():
@@ -134,5 +187,6 @@ def evaluate_dev(
     dev_score = (sum(track_means) / len(track_means)) if track_means else None
     return DevEvalResult(
         dev_score=dev_score, per_track=per_track, per_eval=per_eval,
+        build_cost=_aggregate_build_cost(build_cost_rows),
         status="ok" if dev_score is not None else "no_dev_evals_ran",
     )
