@@ -101,11 +101,13 @@ def main() -> int:
         raise SystemExit("--dev-tests-root is required (or run inside a sandbox with sandbox_config.json)")
 
     # Real LLM-Match judge for Track 3 (else evaluate_dev/track3 uses the
-    # containment fallback, which understates QA scores).
+    # containment fallback, which understates QA scores). Use the BATCHED judge:
+    # one LLM call per SCENE instead of one per question (this is a self-reference
+    # score — "one agent per scene, not per query").
     judge = None
     if args.judge_command:
-        from spatial_memory_evaluation.track3.judge import make_cli_judge
-        judge = make_cli_judge(args.judge_command)
+        from spatial_memory_evaluation.agent_designed.batch_judge import make_batch_cli_judge
+        judge = make_batch_cli_judge(args.judge_command)
 
     output_root = args.output_root or (args.package_dir.parent / "_dev_eval")
     result = evaluate_dev(

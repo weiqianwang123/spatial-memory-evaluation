@@ -83,6 +83,46 @@ def _metric(summary: dict[str, Any], key: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _prime_batch_judge(judge: Callable, package_dir: Path, t3_dir: Path) -> None:
+    """Collect (question, gt, predicted) for a scene and prime a batched judge.
+
+    Runs the package's answer_question once per question (local qwen, cheap) so the
+    batched judge can score the whole scene in ONE LLM call. Best-effort: any error
+    leaves the judge un-primed and it falls back to per-item judging.
+    """
+
+    from spatial_memory_evaluation.common.jsonl import read_jsonl
+    from spatial_memory_evaluation.common.package_io import (
+        fixed_api_capability,
+        load_entrypoint,
+        load_package,
+    )
+
+    try:
+        manifest, capabilities = load_package(package_dir)
+        cap = fixed_api_capability(capabilities, "track3_openeqa")
+        if cap.get("status") != "supported":
+            return
+        answer_question = load_entrypoint(package_dir, str(cap["entrypoint"]))
+        questions = read_jsonl(t3_dir / "questions.jsonl")
+        answers = {str(a["question_id"]): str(a.get("answer") or "")
+                   for a in read_jsonl(t3_dir / "answers.jsonl")}
+        triples = []
+        for q in questions:
+            qid = str(q["question_id"])
+            try:
+                res = answer_question(str(package_dir), {
+                    "question_id": qid, "question": q.get("question"),
+                    "episode_id": q.get("episode_id")})
+                pred = str(res.get("answer") or "") if isinstance(res, dict) else ""
+            except Exception:
+                pred = ""
+            triples.append((str(q.get("question") or ""), answers.get(qid, ""), pred))
+        judge.prime(triples)  # type: ignore[attr-defined]
+    except Exception:
+        return  # un-primed -> evaluator falls back to per-item judge calls
+
+
 def _read_build_cost(package_dir: Path, scene: str) -> dict[str, Any]:
     """Read memory size + time-per-frame from a scene's package build_log.json.
 
@@ -193,9 +233,16 @@ def evaluate_dev(
         t3_dir = dev_tests_root / "track3" / scene
         if (t3_dir / "questions.jsonl").exists():
             out = (output_root / f"track3-{scene}.json") if output_root else None
+            # If the judge is a batched (per-scene) judge, PRIME it with this
+            # scene's (question, gt, predicted) triples so it does ONE LLM call
+            # for the whole scene ("one agent per scene, not per query"). The
+            # evaluator's per-question judge calls then hit the cache.
+            scene_judge = judge
+            if judge is not None and hasattr(judge, "prime") and mode == "fixed_api":
+                _prime_batch_judge(judge, package_dir, t3_dir)
             summary = evaluate_track3(
                 package_dir=package_dir, benchmark_dir=t3_dir, mode=mode,
-                output=out, llm_command=llm_command, judge=judge,
+                output=out, llm_command=llm_command, judge=scene_judge,
             )
             s = _metric(summary, PRIMARY_METRIC["track3_openeqa"])
             per_eval.append({"track": "track3_openeqa", "scene": scene,

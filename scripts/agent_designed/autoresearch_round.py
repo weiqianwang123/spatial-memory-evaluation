@@ -95,7 +95,8 @@ def score_all_scenes() -> dict:
     dev_eval = import_module("spatial_memory_evaluation.agent_designed.dev_eval")
     judge = None
     if JUDGE:
-        mk = import_module("spatial_memory_evaluation.track3.judge").make_cli_judge
+        # Batched judge: one LLM call per scene, not per question (self-ref score).
+        mk = import_module("spatial_memory_evaluation.agent_designed.batch_judge").make_batch_cli_judge
         judge = mk(JUDGE)
 
     # One package dir holding all scenes (design/<scene>) — evaluate_dev resolves per scene.
