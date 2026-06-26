@@ -78,6 +78,13 @@ def parse_args() -> argparse.Namespace:
     ap.set_defaults(_config_dev_scene_ids=cfg.get("dev_scene_ids") or [])
     ap.add_argument("--mode", choices=("fixed_api", "tool_llm"), default="fixed_api")
     ap.add_argument("--llm-command", default=None, help="Required for --mode tool_llm.")
+    ap.add_argument(
+        "--judge-command",
+        default=cfg.get("judge_command"),
+        help="LLM-Match judge command template (with {prompt_path}) for Track 3. "
+        "Without it, T3 uses a transparent containment fallback judge. Default: "
+        "sandbox_config.json judge_command if set.",
+    )
     ap.add_argument("--output-root", type=Path, default=None, help="Where per-eval details land.")
     return ap.parse_args()
 
@@ -93,6 +100,13 @@ def main() -> int:
     if dev_tests_root is None:
         raise SystemExit("--dev-tests-root is required (or run inside a sandbox with sandbox_config.json)")
 
+    # Real LLM-Match judge for Track 3 (else evaluate_dev/track3 uses the
+    # containment fallback, which understates QA scores).
+    judge = None
+    if args.judge_command:
+        from spatial_memory_evaluation.track3.judge import make_cli_judge
+        judge = make_cli_judge(args.judge_command)
+
     output_root = args.output_root or (args.package_dir.parent / "_dev_eval")
     result = evaluate_dev(
         package_dir=args.package_dir,
@@ -100,6 +114,7 @@ def main() -> int:
         dev_scene_ids=dev_scene_ids,
         mode=args.mode,
         llm_command=args.llm_command,
+        judge=judge,
         output_root=output_root,
     )
 
