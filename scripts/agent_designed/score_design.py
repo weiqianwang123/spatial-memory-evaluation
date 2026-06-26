@@ -104,8 +104,7 @@ def main() -> int:
     )
 
     print("=" * 64)
-    print(f"DEV SCORE: {result.dev_score if result.dev_score is not None else 'n/a'}   "
-          f"(mean of per-track means over supported tracks)")
+    print("PER-TRACK DEV RESULTS (reported separately — no single headline score)")
     print(f"status: {result.status}   mode: {args.mode}   scenes: {dev_scene_ids}")
     print("-" * 64)
     if result.per_track:
@@ -114,6 +113,9 @@ def main() -> int:
     else:
         print("  no track scored — does your capabilities.json declare a supported "
               f"fixed-API entrypoint? Primary metrics: {PRIMARY_METRIC}")
+    lo = result.loop_objective
+    print(f"  loop_objective (sum of per-track means, breadth-friendly): "
+          f"{lo:.3f}" if isinstance(lo, (int, float)) else "  loop_objective: n/a")
     print("-" * 64)
     print("per (track, scene):")
     for row in result.per_eval:

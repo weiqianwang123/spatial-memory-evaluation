@@ -7,7 +7,7 @@ Control flow (see ``.codex/agent_designed_baseline.md`` §8):
          a. invoke_designer(workspace, feedback)        [SEAM: off until enabled]
          b. scan_for_leakage(design, held-out ids)
          c. run design.build_memory per DEV scene -> package; validate
-         d. evaluate_dev(package, the agent's own dev tests)  -> dev_score
+         d. evaluate_dev(package, the agent's own dev tests)  -> per-track + loop_objective
          e. journal.append(round); keep (snapshot) or discard (revert) vs best
          f. stop on no-gain convergence or budget
     3. FREEZE best; (separately) evaluate_on_heldout(best, the 10 scenes)
@@ -164,16 +164,18 @@ def run_agent_designed(
             output_root=output_dir / f"round{r}" / "dev_eval",
         )
 
-        # Step 2e: keep/discard vs best.
-        improved = leakage.clean and journal.improves(dev.dev_score)
+        # Step 2e: keep/discard vs best. The loop maximizes loop_objective (sum of
+        # per-track means) — breadth-friendly: attempting another track can only
+        # raise it. Per-track detail is what gets reported (see dev.per_track).
+        improved = leakage.clean and journal.improves(dev.loop_objective)
         decision = "keep" if improved else "discard"
         record = RoundRecord(
             round_index=r,
             design_summary=design.message,
-            dev_score=dev.dev_score,
+            dev_score=dev.loop_objective,
             dev_metrics=dev.to_json(),
             decision=decision,
-            rationale=("dev score improved over best" if improved else "no improvement / leakage"),
+            rationale=("loop_objective improved over best" if improved else "no improvement / leakage"),
             leakage_clean=leakage.clean,
             cost=design.cost or {},
         )

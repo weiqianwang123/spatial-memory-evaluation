@@ -39,17 +39,28 @@ PRIMARY_METRIC: dict[str, str] = {
 
 @dataclass
 class DevEvalResult:
-    dev_score: float | None
+    """Per-track dev results — reported separately, NOT collapsed to one headline.
+
+    The reported signal is ``per_track`` (T1/T2/T3 each scored on its own scale) +
+    ``build_cost``. We deliberately do NOT publish a single mean: averaging over
+    "supported" tracks penalizes breadth (a weak third track drags the headline
+    below a strong two-track design), which pushes a score-maximizer to DROP tracks
+    rather than attempt them. ``loop_objective`` is a breadth-friendly target the
+    self-improvement loop maximizes (sum of per-track means): adding a track can
+    only ever raise it, so the loop is rewarded for attempting more tracks well.
+    """
+
     per_track: dict[str, Any] = field(default_factory=dict)
     per_eval: list[dict[str, Any]] = field(default_factory=list)
     build_cost: dict[str, Any] = field(default_factory=dict)
+    loop_objective: float | None = None
     status: str = "ok"
 
     def to_json(self) -> dict[str, Any]:
         return {
             "status": self.status,
-            "dev_score": self.dev_score,
             "per_track": self.per_track,
+            "loop_objective": self.loop_objective,
             "per_eval": self.per_eval,
             "build_cost": self.build_cost,
         }
@@ -184,9 +195,13 @@ def evaluate_dev(
             per_track[track] = {"metric_key": PRIMARY_METRIC[track], "mean": mean, "n": len(scores)}
             track_means.append(mean)
 
-    dev_score = (sum(track_means) / len(track_means)) if track_means else None
+    # Breadth-friendly loop target: SUM (not mean) of per-track means, so adding a
+    # track can only raise it -> the loop is rewarded for attempting more tracks.
+    # Reported output stays per-track; this is just the scalar the loop maximizes.
+    loop_objective = sum(track_means) if track_means else None
     return DevEvalResult(
-        dev_score=dev_score, per_track=per_track, per_eval=per_eval,
+        per_track=per_track, per_eval=per_eval,
         build_cost=_aggregate_build_cost(build_cost_rows),
-        status="ok" if dev_score is not None else "no_dev_evals_ran",
+        loop_objective=loop_objective,
+        status="ok" if track_means else "no_dev_evals_ran",
     )
