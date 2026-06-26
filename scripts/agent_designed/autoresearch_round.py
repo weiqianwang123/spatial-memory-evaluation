@@ -89,30 +89,69 @@ def build_all_scenes(build_cmd: str, build_once: bool) -> dict:
 
 
 def score_all_scenes() -> dict:
-    """Score each built package on the FIXED dev tests; aggregate loop_objective."""
+    """Score all dev scenes on the FIXED dev tests, CONCURRENTLY (one persistent
+    per-scene agent each), and aggregate per-track + loop_objective + build cost.
+
+    This is the agent SELF-eval path only (per-scene sessions); the main/held-out
+    eval uses the independent-per-query evaluators, never this.
+    """
     from importlib import import_module
     sys.path.insert(0, str(REPO_ROOT))
+    SE = import_module("spatial_memory_evaluation.agent_designed.session_eval")
     dev_eval = import_module("spatial_memory_evaluation.agent_designed.dev_eval")
-    judge = None
-    if JUDGE:
-        # Batched judge: one LLM call per scene, not per question (self-ref score).
-        mk = import_module("spatial_memory_evaluation.agent_designed.batch_judge").make_batch_cli_judge
-        judge = mk(JUDGE)
+    PRIMARY = dev_eval.PRIMARY_METRIC
+    PROX = dev_eval.PROXIMITY_METRIC
+    ANSWER_MODEL = CFG.get("answer_model", SE.DEFAULT_ANSWER_MODEL)
 
-    # One package dir holding all scenes (design/<scene>) — evaluate_dev resolves per scene.
+    judge_factory = None
+    if JUDGE:
+        mk = import_module("spatial_memory_evaluation.agent_designed.batch_judge").make_batch_cli_judge
+        judge_factory = lambda: mk(JUDGE)  # FRESH judge per scene (per-scene cache)
+
     pkg_parent = MEM_ROOT / "design"
-    # evaluate_dev takes a single package_dir but reads <parent>/<scene>; pass any scene
-    # dir so its _read_build_cost + per-scene resolution works.
-    first = pkg_parent / DEV_SCENES[0]
-    result = dev_eval.evaluate_dev(
-        package_dir=first,
-        dev_tests_root=Path(CFG["dev_tests_root"]),
-        dev_scene_ids=DEV_SCENES,
-        mode="fixed_api",
-        judge=judge,
-        output_root=pkg_parent / "_dev_eval",
+    tracks = list(PRIMARY.keys())
+    per_scene = SE.score_all_scenes_concurrent(
+        tracks=tracks, package_parent=pkg_parent,
+        dev_tests_root=Path(CFG["dev_tests_root"]), dev_scene_ids=DEV_SCENES,
+        answer_model=ANSWER_MODEL, judge_factory=judge_factory,
+        work_root=pkg_parent / "_session", max_tool_iterations=int(CFG.get("max_tool_iterations", 1)),
     )
-    return result.to_json()
+
+    # Aggregate to dev_eval's reported shape (per_track means + proximity + sum loop_objective).
+    track_scores = {t: [] for t in PRIMARY}
+    track_prox = {t: [] for t in PROX}
+    per_eval = []
+    for scene, by_track in per_scene.items():
+        for track, summary in by_track.items():
+            m = summary.get("metrics") if isinstance(summary, dict) else None
+            s = (m or {}).get(PRIMARY[track]) if m else None
+            px = (m or {}).get(PROX[track]) if (m and track in PROX) else None
+            per_eval.append({"track": track, "scene": scene,
+                             "status": summary.get("status"), "metric": s, "proximity": px})
+            if isinstance(s, (int, float)):
+                track_scores[track].append(float(s))
+            if isinstance(px, (int, float)):
+                track_prox[track].append(float(px))
+
+    per_track, means = {}, []
+    for t, vals in track_scores.items():
+        if vals:
+            entry = {"metric_key": PRIMARY[t], "mean": sum(vals) / len(vals), "n": len(vals)}
+            pv = track_prox.get(t) or []
+            if pv:
+                entry["proximity_key"] = PROX[t]
+                entry["proximity_mean"] = sum(pv) / len(pv)
+            per_track[t] = entry
+            means.append(entry["mean"])
+
+    build_rows = [dev_eval._read_build_cost(pkg_parent / s, s) for s in DEV_SCENES]
+    return {
+        "status": "ok" if means else "no_dev_evals_ran",
+        "per_track": per_track,
+        "loop_objective": sum(means) if means else None,
+        "per_eval": per_eval,
+        "build_cost": dev_eval._aggregate_build_cost(build_rows),
+    }
 
 
 def append_history(row: dict) -> None:

@@ -76,8 +76,21 @@ def parse_args() -> argparse.Namespace:
         "Default: config dev_scene_ids, else splits.py.",
     )
     ap.set_defaults(_config_dev_scene_ids=cfg.get("dev_scene_ids") or [])
-    ap.add_argument("--mode", choices=("fixed_api", "tool_llm"), default="fixed_api")
-    ap.add_argument("--llm-command", default=None, help="Required for --mode tool_llm.")
+    ap.add_argument(
+        "--mode",
+        choices=("fixed_api", "tool_llm", "per_scene_session"),
+        default="fixed_api",
+        help="fixed_api: stateless entrypoint per query. tool_llm: independent "
+        "agent per query. per_scene_session: ONE agent session per scene, queries "
+        "fed one at a time (the auto-design self-eval).",
+    )
+    ap.add_argument(
+        "--llm-command",
+        default=cfg.get("answer_command"),
+        help="Answer-agent transport for tool_llm / per_scene_session. For "
+        "per_scene_session it MUST include {session_args} (gets --session-id / "
+        "--resume). Default: sandbox_config.json answer_command.",
+    )
     ap.add_argument(
         "--judge-command",
         default=cfg.get("judge_command"),

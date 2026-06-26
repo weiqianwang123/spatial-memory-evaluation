@@ -55,8 +55,37 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--variant", choices=VARIANTS, default=DEFAULT_VARIANT)
     ap.add_argument("--dev-scene-id", action="append", default=[], dest="dev_scene_ids")
-    ap.add_argument("--force", action="store_true", help="overwrite an existing sandbox")
+    ap.add_argument(
+        "--run-id",
+        default=None,
+        help="Unique tag for this run's fresh sandbox dir "
+        "(~/agent_designed_sandbox_<variant>_<run-id>). If omitted, the next free "
+        "run number is used. Every launch is a NEW sandbox — runs are never resumed.",
+    )
     return ap.parse_args()
+
+
+def _fresh_sandbox_dir(variant: str, run_id: str | None) -> Path:
+    """Always return a NEW, non-existent sandbox dir (never reuse/resume a prior run).
+
+    Policy: each auto-design launch starts from a clean sandbox so a run can never
+    inherit code/state from a previous one. If ``run_id`` is given it must not
+    already exist; otherwise we pick the lowest free run number.
+    """
+
+    base = Path.home()
+    if run_id:
+        d = base / f"agent_designed_sandbox_{variant}_{run_id}"
+        if d.exists():
+            raise SystemExit(
+                f"{d} already exists; runs are never resumed — choose a new --run-id "
+                "or delete that dir explicitly."
+            )
+        return d
+    n = 1
+    while (base / f"agent_designed_sandbox_{variant}_run{n}").exists():
+        n += 1
+    return base / f"agent_designed_sandbox_{variant}_run{n}"
 
 
 def _seed_into(seed_root: Path, dev_scene_ids: list[str]) -> dict:
@@ -112,12 +141,18 @@ def _link_dev_tests(sandbox: Path, dev_scene_ids: list[str]) -> dict:
 def main() -> int:
     args = parse_args()
     split = default_split(tuple(args.dev_scene_ids) if args.dev_scene_ids else None)
-    sandbox = args.sandbox_root or (Path.home() / f"agent_designed_sandbox_{args.variant}")
-
-    if sandbox.exists():
-        if not args.force:
-            raise SystemExit(f"{sandbox} exists; pass --force to overwrite")
-        shutil.rmtree(sandbox)
+    # Policy: every auto-design launch starts from a NEW sandbox — runs are never
+    # resumed from a previous one (no inherited code/state). An explicit
+    # --sandbox-root must not already exist.
+    if args.sandbox_root is not None:
+        sandbox = args.sandbox_root
+        if sandbox.exists():
+            raise SystemExit(
+                f"{sandbox} already exists; auto-design runs are never resumed. "
+                "Pass a fresh --sandbox-root / --run-id, or delete that dir explicitly."
+            )
+    else:
+        sandbox = _fresh_sandbox_dir(args.variant, args.run_id)
     sandbox.mkdir(parents=True)
 
     # Non-authoring variants get a FIXED test set seeded into dev_tests/; the

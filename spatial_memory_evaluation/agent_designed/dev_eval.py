@@ -168,6 +168,51 @@ def _aggregate_build_cost(per_scene: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+_TRACK_EVALUATOR = {
+    "track1_object_location": evaluate_track1,
+    "track2_scanrefer": evaluate_track2,
+    "track3_openeqa": evaluate_track3,
+}
+
+
+def _eval_track(
+    track: str, package_dir: Path, bench_dir: Path, scene: str, mode: str,
+    llm_command: str | None, judge: Callable | None, output_root: Path | None,
+) -> dict[str, Any]:
+    """Score one track/scene, routing by mode. Returns a summary with 'metrics'.
+
+    - per_scene_session: ONE agent session per scene, queries one at a time
+      (the auto-design self-eval) -> session_eval.score_scene_session.
+    - fixed_api / tool_llm: the unchanged Track 1/2/3 evaluators.
+    Proximity + judge-priming behavior is preserved in both paths.
+    """
+
+    tkey = track.split("_")[0]  # track1/2/3 for filenames
+    out = (output_root / f"{tkey}-{scene}.json") if output_root else None
+
+    if mode == "per_scene_session":
+        from .session_eval import score_scene_session
+        if llm_command is None:
+            return {"status": "error", "message": "per_scene_session requires --llm-command"}
+        work_dir = (output_root or bench_dir.parent) / "_session" / f"{tkey}-{scene}"
+        return score_scene_session(
+            track=track, package_dir=package_dir, benchmark_dir=bench_dir,
+            scene_id=scene, llm_command=llm_command, work_dir=work_dir, judge=judge)
+
+    # fixed_api / tool_llm: unchanged evaluators.
+    if track == "track3_openeqa":
+        scene_judge = judge
+        # batched/session judge: prime once per scene in fixed_api mode.
+        if judge is not None and hasattr(judge, "prime") and mode == "fixed_api":
+            _prime_batch_judge(judge, package_dir, bench_dir)
+        return evaluate_track3(
+            package_dir=package_dir, benchmark_dir=bench_dir, mode=mode,
+            output=out, llm_command=llm_command, judge=scene_judge)
+    return _TRACK_EVALUATOR[track](
+        package_dir=package_dir, benchmark_dir=bench_dir, mode=mode,
+        output=out, llm_command=llm_command)
+
+
 def evaluate_dev(
     *,
     package_dir: Path,
@@ -198,11 +243,9 @@ def evaluate_dev(
         # Track 1
         t1_dir = dev_tests_root / "track1" / scene
         if (t1_dir / "queries_detector_coverable.jsonl").exists():
-            out = (output_root / f"track1-{scene}.json") if output_root else None
-            summary = evaluate_track1(
-                package_dir=package_dir, benchmark_dir=t1_dir, mode=mode,
-                output=out, llm_command=llm_command,
-            )
+            summary = _eval_track(
+                "track1_object_location", package_dir, t1_dir, scene, mode,
+                llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track1_object_location"])
             px = _metric(summary, PROXIMITY_METRIC["track1_object_location"])
             per_eval.append({"track": "track1_object_location", "scene": scene,
@@ -215,11 +258,9 @@ def evaluate_dev(
         # Track 2
         t2_dir = dev_tests_root / "track2" / scene
         if (t2_dir / "referring_queries.jsonl").exists():
-            out = (output_root / f"track2-{scene}.json") if output_root else None
-            summary = evaluate_track2(
-                package_dir=package_dir, benchmark_dir=t2_dir, mode=mode,
-                output=out, llm_command=llm_command,
-            )
+            summary = _eval_track(
+                "track2_scanrefer", package_dir, t2_dir, scene, mode,
+                llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track2_scanrefer"])
             px = _metric(summary, PROXIMITY_METRIC["track2_scanrefer"])
             per_eval.append({"track": "track2_scanrefer", "scene": scene,
@@ -232,18 +273,9 @@ def evaluate_dev(
         # Track 3
         t3_dir = dev_tests_root / "track3" / scene
         if (t3_dir / "questions.jsonl").exists():
-            out = (output_root / f"track3-{scene}.json") if output_root else None
-            # If the judge is a batched (per-scene) judge, PRIME it with this
-            # scene's (question, gt, predicted) triples so it does ONE LLM call
-            # for the whole scene ("one agent per scene, not per query"). The
-            # evaluator's per-question judge calls then hit the cache.
-            scene_judge = judge
-            if judge is not None and hasattr(judge, "prime") and mode == "fixed_api":
-                _prime_batch_judge(judge, package_dir, t3_dir)
-            summary = evaluate_track3(
-                package_dir=package_dir, benchmark_dir=t3_dir, mode=mode,
-                output=out, llm_command=llm_command, judge=scene_judge,
-            )
+            summary = _eval_track(
+                "track3_openeqa", package_dir, t3_dir, scene, mode,
+                llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track3_openeqa"])
             per_eval.append({"track": "track3_openeqa", "scene": scene,
                              "status": summary.get("status"), "metric": s, "proximity": None})
