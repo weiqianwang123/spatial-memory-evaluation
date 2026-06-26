@@ -1,0 +1,170 @@
+#!/usr/bin/env python
+"""Create a self-contained EXTERNAL sandbox to drive the designer agent by hand.
+
+Builds the agent-designed workspace OUTSIDE the repo so you can `cd` in, run
+`claude` yourself, watch it design a memory, and score it — exactly the loop that
+`invoke_designer` will later automate. The sandbox contains everything the agent
+needs and nothing about the held-out scenes:
+
+    <sandbox>/
+      CONTRACT.md  metrics.md  shared_modules.md  README.md
+      examples/                 # real example packages (copied)
+      dev_scenes/<scene>/       # symlinks to DEV RGB-D layouts (+ README)
+      dev_tests/                # (auto_research: you/agent author here)
+      starter/                  # build_memory.py / query_*.py templates
+      score_design.py           # standalone scorer (copied in)
+      sandbox_config.json       # repo_root + dev_tests_root + dev split
+      RUN_CLAUDE.md             # how to launch claude here + the loop
+      memories/                 # where the agent writes its built package(s)
+
+Usage:
+    python scripts/agent_designed/make_sandbox.py \
+        --sandbox-root /home/robin_wang/agent_designed_sandbox \
+        --variant auto_research
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from spatial_memory_evaluation.agent_designed.contract import DEFAULT_VARIANT, VARIANTS
+from spatial_memory_evaluation.agent_designed.splits import default_split, write_split_manifest
+from spatial_memory_evaluation.agent_designed.workspace import build_workspace
+
+DEV_BENCH = {
+    "track1": REPO_ROOT / "benchmarks" / "track1" / "scannet",
+    "track2": REPO_ROOT / "benchmarks" / "track2" / "scanents3d",
+    "track3": REPO_ROOT / "benchmarks" / "track3" / "openeqa",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Create an external designer sandbox.")
+    ap.add_argument("--sandbox-root", type=Path, default=Path.home() / "agent_designed_sandbox")
+    ap.add_argument("--variant", choices=VARIANTS, default=DEFAULT_VARIANT)
+    ap.add_argument("--dev-scene-id", action="append", default=[], dest="dev_scene_ids")
+    ap.add_argument("--force", action="store_true", help="overwrite an existing sandbox")
+    return ap.parse_args()
+
+
+def _link_dev_tests(sandbox: Path, dev_scene_ids: list[str]) -> dict:
+    """Expose the prepared DEV benchmarks so score_design.py works offline.
+
+    For auto_research we expose them under a separate dev_tests_ref/ (so the agent's
+    OWN dev_tests/ stays its authored space); the scorer reads dev_tests_ref/. For
+    loop_fixed_tests build_workspace already seeded dev_tests/.
+    """
+
+    ref = sandbox / "dev_tests_ref"
+    status: dict[str, dict] = {}
+    for track, root in DEV_BENCH.items():
+        for scene in dev_scene_ids:
+            src = root / scene
+            if not src.exists():
+                status.setdefault(scene, {})[track] = "MISSING"
+                continue
+            dst = ref / track / scene
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_symlink() or dst.exists():
+                dst.unlink() if dst.is_symlink() else shutil.rmtree(dst)
+            dst.symlink_to(src.resolve())
+            status.setdefault(scene, {})[track] = "ok"
+    return status
+
+
+def main() -> int:
+    args = parse_args()
+    split = default_split(tuple(args.dev_scene_ids) if args.dev_scene_ids else None)
+    sandbox = args.sandbox_root
+
+    if sandbox.exists():
+        if not args.force:
+            raise SystemExit(f"{sandbox} exists; pass --force to overwrite")
+        shutil.rmtree(sandbox)
+    sandbox.mkdir(parents=True)
+
+    # 1. Assemble the workspace in-place (docs, examples, dev-scene layout links).
+    build_workspace(
+        variant=args.variant,
+        workspace_root=sandbox,
+        split=split,
+        dataset="scannet",
+    )
+
+    # 2. Expose the prepared DEV benchmarks for the scorer.
+    dev_tests_status = _link_dev_tests(sandbox, list(split.dev_scene_ids))
+
+    # 3. Copy the standalone scorer + write its config.
+    shutil.copy2(REPO_ROOT / "scripts" / "agent_designed" / "score_design.py", sandbox / "score_design.py")
+    (sandbox / "sandbox_config.json").write_text(
+        json.dumps(
+            {
+                "repo_root": str(REPO_ROOT),
+                "dev_tests_root": str(sandbox / "dev_tests_ref"),
+                "dev_scene_ids": list(split.dev_scene_ids),
+                "variant": args.variant,
+                "python": sys.executable,
+            },
+            indent=2,
+        )
+    )
+    (sandbox / "memories").mkdir(exist_ok=True)
+    write_split_manifest(sandbox / "splits.json", split)
+    _write_run_claude_md(sandbox / "RUN_CLAUDE.md", args.variant, split, sys.executable)
+
+    # 4. Report.
+    print(json.dumps({
+        "sandbox": str(sandbox),
+        "variant": args.variant,
+        "dev_scene_ids": list(split.dev_scene_ids),
+        "dev_tests_exposed": dev_tests_status,
+        "next": f"cd {sandbox} && cat RUN_CLAUDE.md",
+    }, indent=2))
+    return 0
+
+
+def _write_run_claude_md(path: Path, variant: str, split, python: str) -> None:
+    path.write_text(
+        "# Driving the designer agent by hand\n\n"
+        "This sandbox is OUTSIDE the eval repo. Launch a coding agent here, let it\n"
+        "design a semantic-map memory, score it, and iterate.\n\n"
+        "## 0. Read the brief\n\n"
+        "    cat CONTRACT.md metrics.md shared_modules.md\n"
+        "    cat dev_scenes/README.md\n\n"
+        "## 1. Launch claude as a coding agent (cwd = this sandbox)\n\n"
+        "    claude --permission-mode bypassPermissions --add-dir .\n\n"
+        "Then prompt it, e.g.:\n\n"
+        "    Read CONTRACT.md, metrics.md, shared_modules.md, and the examples/.\n"
+        "    Implement starter/build_memory.py and the per-track entrypoints to\n"
+        "    build a semantic-map memory from the DEV scene layouts in dev_scenes/.\n"
+        "    Write a validated package under memories/<name>/<scene>/. Then run\n"
+        "    `python score_design.py --package-dir memories/<name>/<scene>` and\n"
+        "    improve your code based on the per-track dev scores.\n\n"
+        "(Headless equivalent: `claude -p \"<prompt>\" --permission-mode "
+        "bypassPermissions --add-dir . --max-turns 60 --output-format text`.)\n\n"
+        "## 2. Score a built package (the feedback signal)\n\n"
+        f"    {python} score_design.py --package-dir memories/<name>/<scene> --mode fixed_api\n\n"
+        "Prints per-track metrics (T1 success@5, T2 acc@0.5m, T3 llm_match) + the\n"
+        "mean dev score, and writes _dev_eval/dev_score.json. Iterate.\n\n"
+        "## What to watch for (notes for automating invoke_designer later)\n\n"
+        "- Does the agent find everything it needs in CONTRACT/shared_modules?\n"
+        "- Does it use the shared perception stack + local qwen (not Claude) at\n"
+        "  build/query time?\n"
+        "- How many rounds / how much wall-clock to a non-trivial dev score?\n"
+        "- Does the package pass the validator on the first try? What trips it up?\n"
+        "- Does it ever try to read held-out scenes? (It must not; none are here.)\n\n"
+        f"Variant: {variant}   DEV scenes: {', '.join(split.dev_scene_ids)}\n"
+        "Held-out scenes are NOT present in this sandbox by design.\n",
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

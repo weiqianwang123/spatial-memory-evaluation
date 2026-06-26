@@ -98,6 +98,7 @@ def build_workspace(
     dev_scene_status = _link_dev_scenes(
         workspace_root / "dev_scenes", split.dev_scene_ids, layout_root, scans_root
     )
+    _write_dev_scenes_readme(workspace_root / "dev_scenes" / "README.md", split)
 
     # Seeded dev tests (loop_fixed_tests only).
     seeded = False
@@ -302,6 +303,32 @@ def _write_starter_templates(starter_dir: Path, contract: WorkspaceContract) -> 
             f'    raise NotImplementedError("designer must implement {fn}")\n',
             encoding="utf-8",
         )
+
+
+def _write_dev_scenes_readme(path: Path, split: Split) -> None:
+    path.write_text(
+        "# DEV scenes (your playground)\n\n"
+        "Each `<scene>/` here symlinks a ScanNet RGB-D layout (frames sampled from\n"
+        "the scene `.sens` at stride 5):\n\n"
+        "- `rgb/<idx>.jpg` color, `depth/<idx>.png` uint16 mm (depth scale 1000),\n"
+        "- `pose/<idx>.txt` 4x4 camera->world, `camera_info.json` (3x3 intrinsics).\n\n"
+        f"DEV scenes: {', '.join(split.dev_scene_ids)}\n\n"
+        "## Scoring your design (the dev score the loop maximizes)\n\n"
+        "Use the standalone scorer to evaluate a built package on the DEV tests with\n"
+        "the UNCHANGED Track 1/2/3 evaluators:\n\n"
+        "```bash\n"
+        "python score_design.py --package-dir <your_package_dir> --mode fixed_api\n"
+        "```\n\n"
+        "It prints per-track metrics + the mean dev score, and tells you which dev\n"
+        "queries failed so you can revise `build_memory.py` / the entrypoints.\n\n"
+        "## Generating metric-faithful dev tests (auto_research)\n\n"
+        "The dev benchmarks (object-location queries + GT, referring utterances +\n"
+        "GT bbox centers, QA + answers) are already prepared for these scenes from\n"
+        "the ScanNet GT geometry. `score_design.py` reads them from the harness; you\n"
+        "do NOT need GT files yourself. Design your memory so those queries succeed.\n"
+        "Never reference any scene id outside the DEV list above.\n",
+        encoding="utf-8",
+    )
 
 
 def _write_readme(path: Path, contract: WorkspaceContract, split: Split) -> None:
