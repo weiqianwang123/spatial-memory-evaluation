@@ -288,7 +288,31 @@ Still to do when enabling the seam: the coding-agent launch in `invoke_designer`
 the per-DEV-scene `build_memory` call in `_build_dev_packages`, `evaluate_on_heldout`,
 and (later) SG3D/NaVQA transfer.
 
-## 12. Open decisions (human-owned)
+## 12. Decisions
+
+### Metrics stay FORM-NEUTRAL — no dedup / precision / map-fidelity metrics (DECIDED)
+
+We deliberately do **NOT** add deduplication / precision / `false_memory_ratio` /
+`duplicate_count` style metrics to any track, even though `common/matching.py`
+already implements `inventory_metrics`. Reason: those metrics presuppose the memory
+is an **object map** (a enumerable list of 3D-centered instances matched 1-to-1
+against GT). That assumption breaks the central design rule of this baseline:
+
+- The agent (and the other methods) may choose ANY memory form — object map, scene
+  graph, vector DB, captions, hybrid. Caption/raw-frame/implicit memories have no
+  object inventory, so a dedup metric is undefined for them.
+- Scoring dedup would covertly **force every design to be an object map**, removing
+  exactly the representational freedom this benchmark is meant to protect.
+
+Therefore we evaluate ONLY the black-box behavior: **answer quality** (T1
+success@1/@5 + proximity, T2 acc@Xm + proximity, T3 llm_match) **plus cost**
+(native memory size, time-per-frame). Redundancy/duplication is already penalized
+*form-neutrally* through the memory-size term in the loop objective — storing an
+object 10× inflates memory and raises the cost penalty, without prescribing an
+object-map-specific duplicate count. We assess input→output performance and
+resource cost, never the internal representation.
+
+## 12b. Open decisions (human-owned)
 
 - ~~Which ~3 dev scenes + GT download~~ **DONE**: dev = `scene0527_00` /
   `scene0406_00` / `scene0426_00` (small/medium/large); GT fetched from kaldir,
