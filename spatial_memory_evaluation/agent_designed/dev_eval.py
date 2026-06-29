@@ -45,29 +45,43 @@ PRIMARY_METRIC: dict[str, str] = {
 # design is ~2.2MB / ~0.7s/frame, well under), so a normal compact/fast build pays
 # nothing — only regressions (bigger memory or slower builds) are penalized.
 MEMORY_BUDGET_BYTES = 50_000_000      # 50 MB/scene: ample for an object map; bloat beyond pays
-TPF_BUDGET_SECONDS = 1.5              # 1.5 s/frame: keeps builds near-real-time (DAAAM ~0.12, ours ~0.7)
-# Per-unit-over-budget weights, scaled so a 2x-over-budget build costs ~the listed
-# value in loop_objective points (accuracy_sum is ~2-3, so these stay sub-dominant).
+# REAL-TIME budget: a memory that can't keep up with the camera is not deployable on
+# a robot. Real-time perception references on this layout: DAAAM ~0.012 s/frame,
+# ClawS ~0.095 s/frame. We set the budget at 0.2 s/frame (~5 fps, generous for
+# "real-time") and penalize HARD above it, so the loop must keep builds near-real-
+# time rather than buying coverage with a slow per-frame pipeline (the current
+# detect-every-frame + caption design runs ~0.4-0.7 s/frame = NOT real-time, and
+# should now feel pressure to speed up: subsample frames, lighter describe, etc.).
+TPF_BUDGET_SECONDS = 0.2              # 0.2 s/frame (~5 fps) = real-time floor
+# Weights. Memory stays a mild LINEAR penalty. TPF is a SATURATING penalty: it ramps
+# up steeply once you exceed real-time (so the loop genuinely feels pressure to be
+# real-time) but CAPS at MAX_TPF_PENALTY so it can never dominate accuracy_sum
+# (~1.8-2.0). Net: accuracy stays primary, but a non-real-time build forfeits up to
+# ~0.5 objective points — meaningful (≈ one track's typical gain), not crushing.
 COST_WEIGHT_MEMORY = 0.20             # -0.20 per (1x budget) of memory over 50MB/scene
-COST_WEIGHT_TPF = 0.30               # -0.30 per (1x budget) of tpf over 1.5s/frame
+COST_WEIGHT_TPF = 0.50               # TPF penalty slope (per 1x over budget, before cap)
+MAX_TPF_PENALTY = 0.50               # hard cap: losing real-time costs at most 0.5 pts
 
 
 def _cost_penalty(build_cost: dict) -> tuple[float, dict]:
-    """Soft-hinge build-cost penalty (>=0). Zero within budget; linear above.
+    """Build-cost penalty (>=0), subtracted from loop_objective. Zero within budget.
 
-    Returns (penalty, breakdown) where penalty subtracts from loop_objective.
+    Memory: mild linear hinge above MEMORY_BUDGET. TPF: saturating hinge above the
+    real-time TPF_BUDGET, capped at MAX_TPF_PENALTY so speed pressure is strong but
+    never overwhelms accuracy.
     """
     mem = build_cost.get("mean_native_memory_size_bytes")
     tpf = build_cost.get("mean_time_per_frame_seconds")
     mem_over = max(0.0, (mem / MEMORY_BUDGET_BYTES) - 1.0) if isinstance(mem, (int, float)) and mem else 0.0
     tpf_over = max(0.0, (tpf / TPF_BUDGET_SECONDS) - 1.0) if isinstance(tpf, (int, float)) and tpf else 0.0
     pen_mem = COST_WEIGHT_MEMORY * mem_over
-    pen_tpf = COST_WEIGHT_TPF * tpf_over
+    pen_tpf = min(MAX_TPF_PENALTY, COST_WEIGHT_TPF * tpf_over)
     return pen_mem + pen_tpf, {
         "memory_over_budget_ratio": round(mem_over, 3),
         "tpf_over_budget_ratio": round(tpf_over, 3),
         "penalty_memory": round(pen_mem, 4),
         "penalty_tpf": round(pen_tpf, 4),
+        "tpf_penalty_capped": pen_tpf >= MAX_TPF_PENALTY,
     }
 
 
