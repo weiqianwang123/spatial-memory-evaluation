@@ -161,17 +161,27 @@ def run_llm_command(
     llm_command: str,
     prompt_path: Path,
     output_path: Path,
+    session_args: str = "",
+    cwd: Path | None = None,
 ) -> None:
     # Resolve to absolute paths: the command runs with cwd=sandbox_dir, so a
     # repo-relative {prompt_path}/{output_path} would break (e.g. `cat` would not
     # find the prompt). Absolute paths work regardless of cwd.
     prompt_path = prompt_path.resolve()
     output_path = output_path.resolve()
+    # cwd defaults to the prompt's dir (per-query). For a persistent agent SESSION
+    # the caller pins a STABLE cwd across queries: the Claude CLI scopes sessions
+    # to the working directory, so --resume only finds the session from the same
+    # cwd where --session-id created it.
+    run_cwd = (cwd or prompt_path.parent).resolve()
     command = llm_command
     for key, value in {
         "prompt_path": prompt_path,
-        "sandbox_dir": prompt_path.parent,
+        "sandbox_dir": run_cwd,
         "output_path": output_path,
+        # {session_args} lets a caller inject --session-id/--resume for a
+        # persistent multi-turn agent; empty (default) keeps stateless behavior.
+        "session_args": session_args,
     }.items():
         command = command.replace("{" + key + "}", str(value))
-    subprocess.run(command, shell=True, cwd=prompt_path.parent, check=True)
+    subprocess.run(command, shell=True, cwd=run_cwd, check=True)

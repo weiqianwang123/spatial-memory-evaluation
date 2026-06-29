@@ -24,6 +24,11 @@ class NativeToolExecutor:
         method = manifest.get("method") if isinstance(manifest.get("method"), Mapping) else {}
         self.method_name = str(method.get("name") or "unknown").lower()
         self.method_family = str(method.get("family") or "unknown").lower()
+        # agent_designed packages declare their OWN tools generically in
+        # capabilities.json -> agent_tools[] (each: name, description, input_schema,
+        # entrypoint "tools/<f>.py:<fn>"). Loaded lazily so other methods are
+        # unaffected.
+        self._agent_tools: list[dict[str, Any]] | None = None
 
     def tool_specs(self) -> list[dict[str, Any]]:
         if self.method_name == "daaam":
@@ -212,9 +217,46 @@ class NativeToolExecutor:
                     },
                 },
             ]
+        if self.method_family == "agent_designed":
+            return self._load_agent_tool_specs()
         return []
 
+    def _load_agent_tool_specs(self) -> list[dict[str, Any]]:
+        """Read self-declared tool specs from capabilities.json -> agent_tools[]."""
+        if self._agent_tools is not None:
+            return [{k: v for k, v in t.items() if k != "entrypoint"} for t in self._agent_tools]
+        self._agent_tools = []
+        cap_path = self.package_dir / "capabilities.json"
+        if cap_path.exists():
+            try:
+                cap = _read_json(cap_path)
+            except Exception:
+                cap = {}
+            tools = cap.get("agent_tools")
+            if isinstance(tools, list):
+                for t in tools:
+                    if isinstance(t, Mapping) and t.get("name") and t.get("entrypoint"):
+                        self._agent_tools.append(dict(t))
+        # expose to the LLM WITHOUT the internal entrypoint field
+        return [{k: v for k, v in t.items() if k != "entrypoint"} for t in self._agent_tools]
+
+    def _execute_agent_tool(self, name: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        """Run a self-declared agent_designed tool via its package entrypoint."""
+        from spatial_memory_evaluation.common.package_io import load_entrypoint
+        self._load_agent_tool_specs()
+        spec = next((t for t in (self._agent_tools or []) if t.get("name") == name), None)
+        if spec is None:
+            return {"status": "error", "message": f"unknown agent tool: {name}"}
+        try:
+            fn = load_entrypoint(self.package_dir, str(spec["entrypoint"]))
+            result = fn(str(self.package_dir), dict(arguments))
+            return result if isinstance(result, dict) else {"status": "ok", "result": result}
+        except Exception as exc:  # tool failure must not crash the loop
+            return {"status": "error", "message": f"{type(exc).__name__}: {exc}"}
+
     def execute(self, name: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        if self.method_family == "agent_designed":
+            return self._execute_agent_tool(name, arguments)
         if name == "get_matching_subjects" and self.method_name == "daaam":
             return self._daaam_get_matching_subjects(arguments)
         if name == "get_objects_in_radius" and self.method_name == "daaam":

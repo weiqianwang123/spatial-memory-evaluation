@@ -32,6 +32,7 @@ pkg_dir() {
     remembr)          echo "memories/remembr/scannet/$s/remembr-track-$s" ;;
     remembr_captions) echo "memories/remembr_captions/scannet/$s/captions-track-$s" ;;
     multiframe_vlm)   echo "memories/multiframe_vlm/scannet/$s/multiframe-vlm-track-$s" ;;
+    agent_designed)   echo "memories/agent_designed/scannet/$s/agent-designed-track-$s" ;;
   esac
 }
 

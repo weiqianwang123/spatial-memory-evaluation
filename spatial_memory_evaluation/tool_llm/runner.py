@@ -19,6 +19,8 @@ def run_tool_llm_query(
     work_dir: Path,
     max_tool_iterations: int = 3,
     response_kind: str = "predictions",
+    session_id: str | None = None,
+    session_started: bool = False,
 ) -> dict[str, Any]:
     """Run one query through an LLM + method-native tool loop.
 
@@ -31,6 +33,14 @@ def run_tool_llm_query(
     - ``"predictions"`` (Track 1/2): the LLM returns ``final.predictions``.
     - ``"answer"`` (Track 3 OpenEQA QA): the LLM returns ``final.answer`` plus
       optional ``final.evidence``.
+
+    ``session_id`` (optional) drives a PERSISTENT multi-turn agent: when set, the
+    llm_command's ``{session_args}`` is filled with ``--session-id <id>`` for the
+    very first turn (``session_started=False``) and ``--resume <id>`` thereafter.
+    The per-scene-session self-eval feeds one scene's queries to ONE agent in
+    sequence: pass ``session_started=False`` for the first query and ``True`` for
+    the rest (after query 1 the session exists). Default (None) = stateless, the
+    main-eval per-query behavior (``{session_args}`` -> "").
     """
 
     executor = NativeToolExecutor(package_dir, manifest)
@@ -78,10 +88,21 @@ def run_tool_llm_query(
             ),
             encoding="utf-8",
         )
+        # Persistent-session arg: open with --session-id on the very first turn,
+        # --resume on every turn after (within and across queries).
+        session_args = ""
+        if session_id:
+            session_args = (f"--resume {session_id}" if session_started
+                            else f"--session-id {session_id}")
+            session_started = True
         run_llm_command(
             llm_command=llm_command,
             prompt_path=prompt_path,
             output_path=output_path,
+            session_args=session_args,
+            # Pin a STABLE cwd for a session so --resume finds it across queries
+            # (the CLI scopes sessions to the working directory).
+            cwd=(work_dir if session_id else None),
         )
         raw_output = output_path.read_text(encoding="utf-8")
         value = _load_json_value(raw_output, output_path)

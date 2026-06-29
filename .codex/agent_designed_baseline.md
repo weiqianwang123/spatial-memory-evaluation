@@ -1,194 +1,329 @@
-# Agent-Designed Memory Baseline
+# Agent-Designed Memory Baseline (Auto-Research Self-Improvement)
 
-Last updated: 2026-06-23
+Last updated: 2026-06-25
 
 This is the project's centerpiece baseline. Instead of evaluating a fixed, human-
-engineered spatial memory, we let a **coding agent design its own memory**: it reads
-the shared modules, a contract, and some training cases, then writes the memory
-construction code, the schema, and the query/tool interface. The harness builds the
-agent's memory, runs it through the same Track 1/2/3 evaluators as every other
-method, and (in the iterative variant) feeds errors back so the agent can improve.
+engineered spatial memory, we let a **coding agent design and continuously improve its
+own semantic-map memory**. The agent reads the shared perception modules, the package
+contract, and a few dev scenes; it writes the memory-construction code, the memory
+schema, and the query/tool interface; it builds the memory; it **evaluates itself on
+its own test cases**; it reads its own failures and logs; it edits its own code; and it
+repeats — an *auto-research* self-improvement loop — until a compute budget or a
+convergence criterion is hit. Only then is the frozen result scored, once, on the
+held-out 10-scene benchmark by the unchanged Track 1/2/3 evaluators.
 
-If an agent-designed memory does well, hand-built scene graphs are not the only
-answer. If it does poorly, that is also a result: current agents cannot yet design
-stable, geometry-consistent, generalizable spatial memory.
+If an agent-designed memory does well, hand-built scene graphs are not the only answer.
+If it does poorly, that is also a result: current coding agents cannot yet self-improve
+their way to stable, geometry-consistent, generalizable spatial memory.
 
 This doc is the design and the contract for the `spatial_memory_evaluation/
-agent_designed/` harness skeleton. Skeleton-first: interfaces and data flow are
-fixed here; the agent-invocation internals are stubs to fill in Phase 4.
+agent_designed/` harness. Skeleton-first: the interfaces, data flow, and the loop's
+control structure are fixed here; the agent-invocation internals are stubs to fill in
+when we implement (we are **not** implementing yet — this doc is the spec).
 
-## 1. Position in the benchmark
+## 1. Intellectual lineage (what we borrow, adapted to semantic mapping)
 
-- The agent-designed memory is just another method, with `method.family =
-  "agent_designed"`. Its output is a normal memory package (see
-  `memory_package_spec.md`) and it is scored by the unchanged Track 1/2/3
-  evaluators, in both `fixed_api` and `tool_llm` modes.
-- It uses the same shared modules registry as hand-built methods, so the
-  perception stack (detector/segmenter/CLIP/VLM) is fair. What the agent designs is
-  the **memory representation and the query/tool interface**, not a stronger
-  detector.
-- After it works on our own benchmark, it is a zero-shot transfer candidate for
-  SG3D and OC-NaVQA (Phase 5), exactly like the other agentic baselines.
+Two recent projects define the shape of the loop. We adapt both, in service of
+*semantic-map memory for spatial QA/localization* rather than their original domains.
 
-## 2. Roles and isolation
+- **AutoResearch** (Karpathy, `github.com/karpathy/autoresearch`) — a compact
+  autonomous research loop. A coding agent is handed a real training setup and a
+  human-owned instruction file (`program.md`); overnight it *modifies the code, runs
+  under a fixed time budget, checks whether the metric improved, keeps or discards, and
+  repeats* (~100 experiments/night), leaving a journal of experiments and a better
+  artifact. **What we borrow:** the fixed per-round build+eval budget, the
+  keep-or-discard-against-best decision rule, the human-owned "skill"/instruction file,
+  and an append-only experiment journal as the loop's memory.
+- **Learning Beyond Gradients** (Jiayi Weng,
+  `trinkle23897.github.io/learning-beyond-gradients`) — "Heuristic Learning": a coding
+  agent improves a *Heuristic System* (rules, state detectors, tests, memory) **without
+  any weight updates**, by reading failures/logs, editing code/tests/memory, rerunning,
+  and writing results back into trials and summaries. Continual learning is kept
+  **explicit**: old capabilities live as regression tests, golden traces, and version
+  diffs (readable, deletable, refactorable), and a healthy system must both *absorb
+  feedback* **and** *compress history*. **What we borrow:** the no-gradient code/memory-
+  editing update rule, the discipline of carrying capabilities as explicit regression
+  tests + golden traces, and the absorb-feedback / compress-history balance so the
+  semantic-map codebase stays maintainable across rounds.
 
-Three LLM/agent roles must stay isolated to avoid leakage and confounds:
+Neither original targets 3D semantic memory. Here the "artifact" being improved is the
+**semantic-map memory + its query interface for ScanNet scenes**; the "metric" is the
+agent's *own* dev-split self-evaluation (aligned to the Track 1/2/3 metrics but owned by
+the agent); and the held-out benchmark plays the role of a one-shot, never-seen test.
 
-1. **Designer agent** (coding agent): writes memory construction + query code.
-   Sees: shared-module docs, training scenes/queries (no answers), contract,
-   example packages, the metric definitions, and — in iterative mode — aggregate
-   scores and failure summaries on the *training* split only.
-2. **Method LLM/VLM** (optional): any LLM/VLM the designed memory itself calls at
-   build or query time (e.g. a captioner). Declared as a shared module.
-3. **Evaluator judge LLM**: scores Track 3 answers / evidence. Must be a different
-   model instance/config from roles 1 and 2, and never sees the designer's code.
+## 2. Position in the benchmark
 
-The designer never sees: test answers, test GT labels, held-out queries, or the
-judge's prompts.
+- The agent-designed memory is just another method, `method.family = "agent_designed"`.
+  Its frozen output is a normal memory package (see `memory_package_spec.md`) scored by
+  the **unchanged** Track 1/2/3 evaluators in both `fixed_api` and `tool_llm` modes, on
+  the **same 10 held-out ScanNet scenes** as DAAAM / ClawS / ReMEmbR / the controls
+  (`scene0015_00, 0050_00, 0077_00, 0084_00, 0131_00, 0193_00, 0207_00, 0222_00,
+  0256_00, 0314_00`). This is what makes its number directly comparable.
+- It uses the same shared modules registry as the hand-built methods, so the perception
+  stack (detector / segmenter / CLIP / VLM / embeddings) is fair. What the agent designs
+  and self-improves is the **memory representation and the query/tool interface**, not a
+  stronger detector. All build/query-time describers/captioners/embedders must be the
+  **local** stack (qwen via ollama), exactly as the other methods — see §6.
+- After it works on our benchmark it is a zero-shot transfer candidate for SG3D /
+  OC-NaVQA (deferred), like the other agentic baselines.
 
-## 3. Data splits
+## 3. The self-improvement loop (centerpiece)
 
 ```text
-train  : scenes + queries WITH answers visible only to the harness, never to the
-         designer. The designer may see the queries and a small number of WORKED
-         examples (depending on variant), plus its own training-split scores.
-heldout: scenes + queries used to score the final package. Never shown to the
-         designer in any form.
-transfer (Phase 5): SG3D / OC-NaVQA, zero-shot.
+  ┌─ round r (fixed build+eval budget B_r) ───────────────────────────────────┐
+  │ 1. PROPOSE   designer agent edits build_memory.py / query_*.py / memory     │
+  │              schema / its own dev tests, given: contract, shared modules,    │
+  │              the dev scenes, last round's eval report + failure cases + logs,│
+  │              and the running experiment journal. (no held-out scenes, ever)  │
+  │ 2. BUILD     run build_memory.py on each DEV scene -> a memory package        │
+  │              (validated by the existing package validator).                  │
+  │ 3. SELF-EVAL run the agent's OWN test cases over the package via the          │
+  │              unchanged Track 1/2/3 evaluators -> dev score + per-case failures│
+  │ 4. REFLECT   designer reads the dev report, failing cases, evidence, and      │
+  │              build logs; writes a short rationale into the journal.           │
+  │ 5. KEEP/DISCARD  if dev score improves over best-so-far -> promote to best    │
+  │              and snapshot a version diff + refresh golden traces; else revert │
+  │              the code to best-so-far (keep the journal note about why).       │
+  └──> repeat until budget exhausted OR K consecutive rounds with no dev gain ────┘
+  FREEZE best-so-far design ── then, ONCE: score on the 10 held-out scenes.
 ```
 
-The split manifest lives under `benchmarks/agent_designed/<dataset>/splits.json`
-(created in Phase 4). For ScanNet++ the current single scene `036bce3393` is too
-small for a real split; the first skeleton uses it as a smoke "train==heldout"
-degenerate split, clearly flagged, until more scenes are prepared.
+Mapping to the lineage: step 1/5 is AutoResearch's *edit → keep-or-discard-vs-best*;
+the no-gradient *edit code/tests/memory* update and the journal/golden-trace bookkeeping
+are Learning Beyond Gradients. The freeze-then-score-once on held-out is our fairness
+guarantee — the loop never touches the 10 benchmark scenes.
 
-## 4. Inputs given to the designer
+## 4. Roles and isolation
 
-The workspace builder (`agent_designed/workspace.py`) assembles a sandbox dir:
+Three LLM/agent roles stay isolated to avoid leakage and confounds:
+
+1. **Designer agent** (the coding agent, default Claude Code / Bedrock): the only role
+   that *writes and edits code*. It runs the loop in §3. It sees: shared-module docs,
+   the package contract, the metric definitions, the **dev** scenes + the dev cases it
+   authors, its **own dev-split** scores/failures/logs, and the experiment journal.
+   The designer is a *development-time* component, **not** a runtime memory component —
+   so using a strong coding LLM here does not violate the "local describers only" rule
+   (§6); it is analogous to the human engineer who wrote DAAAM/ClawS.
+2. **Method LLM/VLM** (runtime): any model the *designed memory itself* calls at build
+   or query time (captioner, describer, embedder). Must be the shared **local** stack
+   (qwen3.5:4b / qwen3-embedding via ollama), declared as a shared module and metered.
+3. **Evaluator judge LLM**: scores Track 3 answers/evidence (sonnet, medium tier).
+   A different model/config from roles 1–2; never sees the designer's code or journal.
+
+The designer never sees: any held-out (10-scene) data, the held-out GT, the held-out
+queries, or the judge's prompts.
+
+## 5. Data splits
 
 ```text
-<workspace>/
-  CONTRACT.md            # what to build, the package contract, the rules
-  shared_modules.md      # how to call shared detector/segmenter/CLIP/VLM/embeddings
-  metrics.md             # Track 1/2/3 metric definitions (from this repo's docs)
-  examples/              # 1-2 example memory packages (minimal + one real)
-  train/                 # training scenes (RGB-D/pose/intrinsics links) + queries
-  starter/               # empty build_memory.py / query_*.py templates to fill in
-  README.md              # entrypoints the harness will call + how to run locally
+dev      : ~3 ScanNet scenes OUTSIDE the held-out 10. The designer has FULL access
+           (RGB-D/pose/intrinsics + GT-derivation tooling) and AUTHORS ITS OWN test
+           cases here (object-location / referring / QA, aligned to T1/T2/T3 metrics).
+           This is the only data the self-improvement loop ever evaluates on.
+held-out : the 10 ScanNet scenes shared by all methods. Used ONCE, after FREEZE, for
+           the reported score. Never shown to the designer in any form.
+transfer : SG3D / OC-NaVQA, zero-shot (deferred).
 ```
 
-What the workspace must NOT contain: test answers, held-out queries, GT label files,
-evaluator adapter code, or the judge prompt. The workspace builder enforces this and
-records a manifest of what was provided.
+**Why the agent authors its own dev test cases.** The user's framing is auto-research:
+the agent improves against *its own* evaluation, not a held-out leaderboard. On the dev
+scenes the agent has GT geometry, so it can generate faithful self-tests (e.g. "where is
+the <label>?" with GT bbox centers, referring utterances with GT targets, QA pairs) and
+maintain them as regression tests + golden traces (Learning Beyond Gradients). The
+harness *provides the GT-derivation tooling* (e.g. `track2/scannet_bbox.py`, the Track 1
+data builder) on the dev scenes so the agent's self-tests are metric-faithful, but the
+agent decides which cases to keep and chase. Self-eval uses the unchanged Track 1/2/3
+evaluators so dev scores are on the same scale as the held-out report.
 
-Shared modules are exposed through the same registry adapter as the methods, so the
-designer calls a documented Python API (or CLI) rather than re-downloading models.
+**Dev-scene acquisition (open item, confirmed needed).** A scan of the local ScanNet
+mirror found **27** candidate scenes that appear in BOTH ScanEnts3D (referring) and
+OpenEQA-ScanNet (QA), have a local `.sens`, and are NOT in the held-out 10 — e.g.
+`scene0356_00, scene0406_00, scene0426_00, scene0435_00, scene0462_00, scene0500_00,
+…`. These have frames (`.sens`) locally but **not** their GT geometry: the 4 ScanNet
+annotation files per scene (`_vh_clean_2.ply`, `.aggregation.json`,
+`_vh_clean_2.0.010000.segs.json`, `.txt`) must be downloaded from
+`kaldir.vc.in.tum.de/scannet/v2/scans/<scene>/...`, exactly as was done for the 10
+held-out scenes (gating is a keypress; see `eval_set_inventory.md` /
+`daaam-native-build-env`). Pick ~3 of the 27 spanning small/medium/large room sizes;
+final choice is an open decision (§11).
 
-## 5. What the designer must output
+The split manifest will live under `benchmarks/agent_designed/scannet/splits.json`.
 
-A directory that the harness packages (or that already is a package) providing:
+## 6. Constraints (anti-leakage / fairness)
 
-1. `build_memory.py` — builds memory from posed RGB-D for one scene/episode and
-   writes a memory package under `memories/agent_designed/<dataset>/<scene>/<run>/`.
-2. memory schema (`schema.md`) and any `schemas/*.json`.
-3. query/tool interface implementing the fixed-API entrypoints it claims to support:
-   - `query_object` for Track 1,
-   - `resolve_referring_expression` for Track 2,
-   - `answer_question` for Track 3,
-   and/or native tools for `tool_llm` mode.
+- **Held-out isolation**: the loop never builds, evals, reads, or is told about the 10
+  scenes. Enforced structurally — `build_workspace` only ever copies dev scenes in.
+- **No per-scene hardcoding**: a leakage validator scans the designed code for embedded
+  answer strings and scene-id-conditioned branches (over both dev and held-out ids).
+- **Same perception + vocabulary** as hand-built methods (shared modules registry, same
+  OV class list). The agent designs *representation + query logic*, not perception.
+- **Local runtime models only**: every build/query-time describer/captioner/embedder is
+  the local qwen stack via ollama — no Claude/Bedrock inside the *memory* (the designer
+  agent is development-time only, §4).
+- **Budget**: a compute/token budget per round and per full loop, recorded (designer
+  tokens + wall-clock + #rounds, and the runtime build cost the package incurs).
+- **Reproducible**: re-running the frozen `build_memory.py` on a scene yields an
+  equivalent package; every query returns evidence.
+
+## 7. What the designer maintains and outputs
+
+A working directory that *is* (or that the harness packages into) a memory package,
+plus the loop's bookkeeping — its "Heuristic System":
+
+1. `build_memory.py` — builds memory from posed RGB-D for one scene and writes a package
+   under `memories/agent_designed/scannet/<scene>/<run>/`.
+2. memory schema (`schema.md`) + any `schemas/*.json`.
+3. query/tool interface for the tracks it claims: `query_object` (T1),
+   `resolve_referring_expression` (T2), `answer_question` (T3), and/or native tools for
+   `tool_llm` mode.
 4. `capabilities.json` declaring which tracks are `supported` vs `invalid`.
-5. `README.md` describing how to build and query.
-6. evidence format (what each prediction returns as provenance).
+5. `README.md` — how to build and query.
+6. evidence format (provenance returned per prediction).
+7. **dev test cases** (`dev_tests/`) — the agent's self-authored cases + GT, kept as
+   regression tests.
+8. **experiment journal** (`journal.jsonl`) — one row per round: what changed, dev score
+   before/after, keep/discard decision, rationale, budget spent.
+9. **golden traces / version diffs** of best-so-far, so a regression in a later round is
+   detectable and revertible (Learning Beyond Gradients' "compress history").
 
 The designer is free to choose the memory form (object table, graph, vector DB,
 captions, hybrid) — that is the point of the baseline.
 
-## 6. Constraints (anti-leakage / fairness)
+## 8. Harness control flow (skeleton)
 
-- No access to test answers, GT labels, or held-out queries.
-- No test-query-specific hardcoded rules. Enforced two ways: (a) the held-out split
-  is never shown; (b) a leakage validator scans the designed code for embedded
-  answer strings / scene-id-conditioned branches over held-out scenes.
-- Same raw inputs and the same shared modules as hand-built methods.
-- A compute/token budget per build and per iterative round (recorded).
-- The produced memory must be saveable and reproducible: re-running `build_memory.py`
-  on the same scene must yield an equivalent package.
-- Every query must return evidence.
-
-## 7. Harness control flow
-
-`agent_designed/harness.py` (skeleton) orchestrates one run:
+`agent_designed/harness.py` orchestrates one loop:
 
 ```text
-1. workspace = build_workspace(variant, dataset, train_split)      # workspace.py
-2. design    = invoke_designer(workspace, feedback=None)           # designer.py (STUB)
-3. for scene in train_split.scenes (or heldout in final scoring):
-       package = run_build(design, scene)                          # builds a package
-       report  = validate_package(package)                         # existing validator
-4. leakage   = scan_for_leakage(design, heldout_split)             # leakage.py (STUB)
-5. scores    = evaluate(package, tracks=[1,2,3], modes=[...])      # existing evaluators
-6. if variant == "iterative" and round < max_rounds:
-       feedback = summarize_training_failures(scores)              # train split only
-       goto 2 with feedback
-7. final     = evaluate_on_heldout(best_design)                    # heldout scoring
-8. write run report under results/agent_designed/<variant>/<timestamp>/
+1. workspace   = build_workspace(dataset, dev_split)              # workspace.py
+2. best        = None
+3. for r in range(max_rounds):
+4.     design  = invoke_designer(workspace, history=journal)      # designer.py (STUB)
+5.     for scene in dev_split.scenes:
+6.         package = run_build(design, scene)                     # build_memory.py
+7.         report  = validate_package(package)                    # existing validator
+8.     dev_score   = evaluate(packages, design.dev_tests,         # existing T1/2/3
+                              tracks=[1,2,3], modes=[...])         #   evaluators
+9.     leakage     = scan_for_leakage(design, heldout_ids)        # leakage.py (STUB)
+10.    journal.append(round_record(design, dev_score, ...))
+11.    if improved(dev_score, best): best = snapshot(design)      # keep
+12.    else: revert(design, best)                                 # discard
+13.    if converged(journal, K) or budget_exhausted(): break
+14. final = evaluate_on_heldout(best, the_10_scenes)              # ONCE, frozen
+15. write run report under results/agent_designed/<timestamp>/
 ```
 
-Steps 3/5/7 reuse the unchanged Track 1/2/3 evaluators. Steps 2/4/6 are the
-agent-designed-specific pieces and start as stubs with clear TODOs.
+Steps 6/7/8/14 reuse the unchanged validator + Track 1/2/3 evaluators. Steps 4/9 (and
+the keep/discard policy 11–13) are the agent-designed-specific pieces, stubbed with
+clear TODOs. Step 14 is the only time the held-out 10 scenes are touched.
 
-## 8. Variants (increasing capability)
+## 9. Variants (ablations of the loop)
 
-| Variant | Designer sees | Iterates? | Tests |
+The headline result is the **full self-improvement loop** (`auto_research`). The others
+are ablations that isolate where the gains come from:
+
+| Variant | Loops? | Self-authored dev tests? | Tests the question |
 |---|---|---|---|
-| `prompt_only` | only contract + metrics + shared modules | no | can a spec alone yield usable memory? |
-| `few_example` | + a few worked training examples + error feedback | no | does a little supervision help? |
-| `coding_agent` | + full training scenes/queries, writes full build+query code | no | full coding-agent design |
-| `iterative` | + its own training-split scores each round | yes | self-improvement loop |
+| `one_shot` | no (1 round) | n/a (provided dev cases) | can a coding agent design usable memory in one pass? |
+| `loop_fixed_tests` | yes | no — harness-provided dev cases | does iteration help, holding the eval fixed? |
+| `auto_research` | yes | **yes** — agent owns its dev tests | full auto-research self-improvement (centerpiece) |
 
-All variants share one workspace contract; they differ only in what
-`build_workspace` exposes and whether `harness` loops.
+All variants share one workspace contract; they differ only in whether `harness` loops
+and whether the agent authors its own dev cases.
 
-## 9. Metrics and reporting
+## 10. Metrics and reporting
 
-Primary score is the agent-designed package's performance on the **held-out** split
-across Track 1/2/3 (same metrics as other methods). Secondary, baseline-specific:
+Primary score is the **frozen** package's performance on the **held-out 10 scenes**
+across Track 1/2/3 (same metrics as every other method — T1 success@{1,5} + proximity,
+T2 acc@{0.25,0.5}m + proximity, T3 llm_match + answered_rate). Secondary,
+baseline-specific:
 
-- build cost the agent incurred (size / time-per-frame / peak — from Track 1
-  accounting);
-- designer cost (tokens / wall-clock / number of iterations);
-- robustness: variance across scenes; reproducibility check pass/fail;
-- transfer score on SG3D / OC-NaVQA (Phase 5).
+- **dev-score trajectory**: per-round dev score (the loop's learning curve) — the
+  AutoResearch "progress" artifact;
+- **designer cost**: tokens / wall-clock / number of rounds to convergence;
+- **runtime build cost** the produced memory incurs (size / time-per-frame, from the
+  package's build_log.json, comparable to the other methods);
+- **robustness**: variance across held-out scenes; reproducibility check pass/fail;
+  dev↔held-out generalization gap (overfitting to self-authored tests is itself a
+  finding);
+- transfer score on SG3D / OC-NaVQA (deferred).
 
 Run report: `results/agent_designed/<variant>/<timestamp>/{run_summary.json,
-design_manifest.json, eval_report.md}` plus the per-track eval outputs.
+journal.jsonl, design_manifest.json, eval_report.md}` plus the per-track eval outputs.
+To avoid implying the agent "won" unfairly, agent_designed rows are reported in their
+own section alongside — not merged into — the hand-built-method table.
 
-## 10. Skeleton scope (this refactor)
+## 11. Implementation status (everything ready except the agent launch)
 
-Implemented as importable skeleton with stable signatures and TODOs:
+IMPLEMENTED and runnable (the seam-off harness completes with
+`status="ready_for_designer"`); the SINGLE un-fired seam is `invoke_designer`:
 
-- `agent_designed/__init__.py`
-- `agent_designed/contract.py` — workspace contract constants, allowed/forbidden
-  inputs, the entrypoint names the harness will call.
-- `agent_designed/workspace.py` — `build_workspace(...)` assembles the sandbox and
-  the provided-inputs manifest; enforces anti-leakage on what gets copied in.
-- `agent_designed/designer.py` — `invoke_designer(...)` STUB that documents how a
-  coding agent (default Claude Code / Bedrock) is launched and what it returns.
-- `agent_designed/leakage.py` — `scan_for_leakage(...)` STUB for embedded-answer /
-  held-out-scene-conditioning checks.
-- `agent_designed/harness.py` — `run_agent_designed(...)` orchestrating the control
-  flow above by calling the existing validator + Track 1/2/3 evaluators.
-- `scripts/agent_designed/run_baseline.py` — thin CLI over the harness.
+- `agent_designed/contract.py` — contract constants, variants
+  (`one_shot`/`loop_fixed_tests`/`auto_research`), entrypoint names.
+- `agent_designed/splits.py` — held-out 10 + DEV scene-id constants, disjointness
+  guard, `splits.json` writer. Default DEV = `scene0527_00` (small),
+  `scene0406_00` (medium), `scene0426_00` (large) — all prepped (GT + layout +
+  T1/T2/T3 benchmarks). Change via `--dev-scene-id` / edit `DEFAULT_DEV_SCENE_IDS`.
+- `agent_designed/workspace.py` (+ `shared_modules_doc.py`) — `build_workspace(...)`
+  fully materializes the DEV-only sandbox: CONTRACT/metrics/shared_modules docs,
+  copied example packages, symlinked DEV layouts, starter templates, empty journal,
+  provided-inputs manifest. Held-out isolation is structural (only DEV ids linked;
+  held-out ids appear only as the CONTRACT blocklist).
+- `agent_designed/journal.py` — append-only round journal + best-so-far
+  snapshot/revert + no-gain convergence (resume-from-journal safe).
+- `agent_designed/dev_eval.py` — scores a package on the agent's own dev tests via
+  the unchanged Track 1/2/3 evaluators; reduces to one dev score the loop maximizes.
+- `agent_designed/leakage.py` — `scan_for_leakage(...)` over all written artifacts
+  (verified to catch planted held-out ids); `scanner_complete=False` (no data-flow).
+- `agent_designed/harness.py` — `run_agent_designed(...)` runs the full §8 loop via
+  the existing validator + evaluators; `evaluate_on_heldout` + `_build_dev_packages`
+  are gated behind a real design (reached only once the seam is enabled).
+- `agent_designed/designer.py` — `invoke_designer(...)` is THE SEAM: documents the
+  exact `claude -p ... --add-dir <workspace> --permission-mode bypassPermissions
+  --max-turns N` coding-agent launch; returns `status="skipped"` until enabled.
+- `scripts/agent_designed/` — `run_baseline.py` (CLI), `download_scannet_gt.sh`
+  (kaldir GT fetch, un-gated), `prepare_dev_scene.sh` (one-shot GT→layout→benchmarks),
+  `split_track3_by_scene.py` (per-scene OpenEQA dirs).
 
-Not in scope this refactor (Phase 4+): the real designer invocation, the real
-leakage scanner, multi-scene splits, and SG3D/NaVQA transfer.
+Still to do when enabling the seam: the coding-agent launch in `invoke_designer`,
+the per-DEV-scene `build_memory` call in `_build_dev_packages`, `evaluate_on_heldout`,
+and (later) SG3D/NaVQA transfer.
 
-## 11. Open decisions (human-owned)
+## 12. Decisions
 
-- Final train/heldout scene split for ScanNet++ (need more scenes than `036bce3393`).
-- Compute/token budget per variant.
-- Whether the designer may call a method LLM/VLM at query time, and how it is
-  metered separately from the evaluator judge.
-- Exact leakage-scan heuristics vs a held-out-only guarantee.
-- How `agent_designed` rows are presented next to hand-built methods in the main
-  table (separate section vs unified, to avoid implying the agent "won" unfairly).
+### Metrics stay FORM-NEUTRAL — no dedup / precision / map-fidelity metrics (DECIDED)
+
+We deliberately do **NOT** add deduplication / precision / `false_memory_ratio` /
+`duplicate_count` style metrics to any track, even though `common/matching.py`
+already implements `inventory_metrics`. Reason: those metrics presuppose the memory
+is an **object map** (a enumerable list of 3D-centered instances matched 1-to-1
+against GT). That assumption breaks the central design rule of this baseline:
+
+- The agent (and the other methods) may choose ANY memory form — object map, scene
+  graph, vector DB, captions, hybrid. Caption/raw-frame/implicit memories have no
+  object inventory, so a dedup metric is undefined for them.
+- Scoring dedup would covertly **force every design to be an object map**, removing
+  exactly the representational freedom this benchmark is meant to protect.
+
+Therefore we evaluate ONLY the black-box behavior: **answer quality** (T1
+success@1/@5 + proximity, T2 acc@Xm + proximity, T3 llm_match) **plus cost**
+(native memory size, time-per-frame). Redundancy/duplication is already penalized
+*form-neutrally* through the memory-size term in the loop objective — storing an
+object 10× inflates memory and raises the cost penalty, without prescribing an
+object-map-specific duplicate count. We assess input→output performance and
+resource cost, never the internal representation.
+
+## 12b. Open decisions (human-owned)
+
+- ~~Which ~3 dev scenes + GT download~~ **DONE**: dev = `scene0527_00` /
+  `scene0406_00` / `scene0426_00` (small/medium/large); GT fetched from kaldir,
+  layouts + T1/T2/T3 benchmarks built. Change freely via `--dev-scene-id`.
+- Whether the agent **authors its own dev test cases** (centerpiece intent) vs uses
+  harness-provided dev cases — and, if self-authored, any guardrail that its dev cases
+  stay metric-faithful (e.g. GT pulled only via the provided tooling).
+- Compute/token budget per round and per loop; `max_rounds` and the no-gain
+  convergence window `K`.
+- Whether the designer may call a runtime method LLM/VLM and how it is metered vs the
+  evaluator judge.
+- Exact leakage-scan heuristics vs the structural held-out-only guarantee.
+- How the loop persists across days (resume from journal) and how much human shaping the
+  `program.md`-style instruction file is allowed to carry.
