@@ -119,20 +119,26 @@ def score_all_scenes() -> dict:
     )
 
     # Aggregate to dev_eval's reported shape (per_track means + proximity + sum loop_objective).
+    LAT_KEY = dev_eval.QUERY_LATENCY_KEY
     track_scores = {t: [] for t in PRIMARY}
     track_prox = {t: [] for t in PROX}
+    track_lat = {t: [] for t in PRIMARY}
     per_eval = []
     for scene, by_track in per_scene.items():
         for track, summary in by_track.items():
             m = summary.get("metrics") if isinstance(summary, dict) else None
             s = (m or {}).get(PRIMARY[track]) if m else None
             px = (m or {}).get(PROX[track]) if (m and track in PROX) else None
+            lat = (m or {}).get(LAT_KEY) if m else None
             per_eval.append({"track": track, "scene": scene,
-                             "status": summary.get("status"), "metric": s, "proximity": px})
+                             "status": summary.get("status"), "metric": s, "proximity": px,
+                             "query_latency_ms": lat})
             if isinstance(s, (int, float)):
                 track_scores[track].append(float(s))
             if isinstance(px, (int, float)):
                 track_prox[track].append(float(px))
+            if isinstance(lat, (int, float)):
+                track_lat[track].append(float(lat))
 
     per_track, means = {}, []
     for t, vals in track_scores.items():
@@ -142,6 +148,10 @@ def score_all_scenes() -> dict:
             if pv:
                 entry["proximity_key"] = PROX[t]
                 entry["proximity_mean"] = sum(pv) / len(pv)
+            lv = track_lat.get(t) or []
+            if lv:
+                # VISIBLE-ONLY (not in loop_objective): end-to-end query->answer latency.
+                entry["query_latency_ms_mean"] = sum(lv) / len(lv)
             per_track[t] = entry
             means.append(entry["mean"])
 
@@ -150,9 +160,17 @@ def score_all_scenes() -> dict:
     accuracy_sum = sum(means) if means else None
     # Weighted objective: accuracy primary minus a soft build-cost penalty (memory
     # bloat / loss of real-time). Same logic as dev_eval so loop + manual agree.
+    # Query latency is REPORTED (below) but NOT in the penalty — a visible signal so
+    # the designer can see compute deferred to query time, without scoring it yet.
     penalty, breakdown = dev_eval._cost_penalty(build_cost)
     build_cost["cost_penalty"] = round(penalty, 4)
     build_cost["cost_penalty_breakdown"] = breakdown
+    all_lat = [v for vals in track_lat.values() for v in vals]
+    build_cost["query_latency_ms_mean"] = (sum(all_lat) / len(all_lat)) if all_lat else None
+    build_cost["query_latency_note"] = (
+        "end-to-end query->answer latency; REPORTED ONLY, not in loop_objective. "
+        "High here + low build time_per_frame = heavy compute deferred to query time."
+    )
     return {
         "status": "ok" if means else "no_dev_evals_ran",
         "per_track": per_track,
@@ -289,6 +307,8 @@ def main() -> int:
             "mean_time_per_frame_seconds": sbc.get("mean_time_per_frame_seconds"),
             "cost_penalty": sbc.get("cost_penalty"),
             "cost_penalty_breakdown": sbc.get("cost_penalty_breakdown"),
+            # visible-only end-to-end query latency (not scored)
+            "query_latency_ms_mean": sbc.get("query_latency_ms_mean"),
         },
     }
     append_history(row)
@@ -298,7 +318,14 @@ def main() -> int:
     print(f"[round {rnd}] loop_objective={obj}  best_before={best_before}  -> {decision.upper()} (commit {commit})")
     for t, info in (scored.get("per_track") or {}).items():
         extra = f"  [{info.get('proximity_key')}={info.get('proximity_mean'):.3f}]" if info.get("proximity_key") else ""
-        print(f"    {t:26s} {info['metric_key']}={info['mean']:.3f}{extra}")
+        lat = info.get("query_latency_ms_mean")
+        latstr = f"  (query_latency={lat/1000:.1f}s)" if isinstance(lat, (int, float)) else ""
+        print(f"    {t:26s} {info['metric_key']}={info['mean']:.3f}{extra}{latstr}")
+    tpf = sbc.get("mean_time_per_frame_seconds")
+    qlat = sbc.get("query_latency_ms_mean")
+    print(f"  build_TPF={tpf:.3f}s/frame (SCORED)  |  query_latency="
+          f"{(qlat/1000 if isinstance(qlat,(int,float)) else float('nan')):.1f}s/query (REPORTED, NOT scored)")
+    print(f"  cost_penalty={sbc.get('cost_penalty')}  [build-TPF + memory only]")
     print(f"history -> {HISTORY.name}   plot -> {PROGRESS_PNG.name}")
     print("=" * 64)
     return 0

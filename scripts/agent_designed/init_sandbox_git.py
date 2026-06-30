@@ -24,8 +24,14 @@ __pycache__/
 *.pyc
 memories/**/_dev_eval/
 _run_logs/
+# The experiment journal must NOT be git-tracked: autoresearch_round.py appends a
+# round's result row AFTER its commit, so a later REVERT's `git reset --hard` would
+# silently delete the prior KEEP's uncommitted row, corrupting best-so-far. Keeping
+# it untracked makes reverts touch only design files, never the journal.
+history.jsonl
+progress.png
 # keep: starter/ (design code), dev_tests/ (fixed tests), memories/ packages,
-#       history.jsonl, progress.png, *.md, sandbox_config.json, splits.json
+#       *.md, sandbox_config.json, splits.json
 """
 
 
