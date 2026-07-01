@@ -67,33 +67,33 @@ scoring center) lifting T1 **0.72→0.82** and T2 **0.37→0.51**.*
 
 ## Environment setup
 
-The evaluators run in a conda env; heavy models (detector, VLM, embeddings) are shared so all
-methods are compared fairly.
+**➡️ Full, machine-agnostic instructions are in [docs/SETUP.md](docs/SETUP.md)** — it covers the
+three layers (eval env, shared modules + LLM stack, and each baseline incl. the fiddly DAAAM env).
+Quick version for the **benchmark evaluators + the auto-designed memory** (no baseline repos needed):
 
 ```bash
-# 1. Create the evaluation env
-conda env create -f environment.evaluation.yml     # env name: spatial-memory-eval
+# 1. Evaluation env
+conda env create -f environment.evaluation.yml      # env: spatial-memory-eval, python 3.10
 conda activate spatial-memory-eval
-pip install -e .                                    # installs the spatial_memory_evaluation package
+pip install -e .
+#   (environment.evaluation.yml pins two baseline repos by LOCAL PATH — only needed for the
+#    ClawS/HOV-SG baselines; comment them out for the evaluators-only setup. See docs/SETUP.md.)
 
-# 2. Local LLM stack (answering agent + captioner/embeddings) via Ollama
-ollama pull qwen3.5:4b            # vision-capable describer (VILA substitute)
-ollama pull qwen3-embedding:0.6b  # 1024-d text embeddings
-# (ollama serves at localhost:11434)
+# 2. Local LLM stack (Ollama): agent-designed captioner + embeddings
+ollama pull qwen3.5:4b            # 4.7B vision describer (VILA substitute)
+ollama pull qwen3-embedding:0.6b  # 0.6B, 1024-d text embeddings
 
-# 3. Shared perception modules (on NAS; see .codex/modules.md and path_registry.md)
-#    YOLO-World-L + ScanNet200 class list are the shared open-vocab detector for all
-#    detector-based methods. cudnn must be disabled before importing ultralytics:
-#    import torch; torch.backends.cudnn.enabled = False
+# 3. Shared perception modules on NAS (YOLO-World-L + ScanNet200 class list); see
+#    .codex/modules.md + path_registry.md. NB: torch.backends.cudnn.enabled=False before ultralytics.
 
-# 4. Cloud judge / answering agent (Track 3 LLM-Match + tool_llm agent) via Bedrock
-export CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2
-#   answer agent: us.anthropic.claude-haiku-4-5-20251001-v1:0
-#   T3 judge:     us.anthropic.claude-sonnet-4-6
+# 4. Cloud LLM (Bedrock): answering agent + Track 3 judge
+export CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2   # haiku agent + sonnet judge
 ```
 
-Generated artifacts (`memories/`, `results/`, `benchmarks/`, `data/`) are gitignored; prefer the
-NAS paths recorded in `.codex/path_registry.md`.
+Baselines (DAAAM / ClawS / ReMEmbR / HOV-SG) each need their own repo/env — **see
+[docs/SETUP.md](docs/SETUP.md) Layer 3** (DAAAM in particular needs a separate conda env + a
+colcon-built Hydra workspace + TensorRT FastSAM). Generated artifacts (`memories/`, `results/`,
+`benchmarks/`, `data/`) are gitignored; use the NAS paths in `.codex/path_registry.md`.
 
 ---
 

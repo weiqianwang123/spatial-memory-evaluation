@@ -1,8 +1,14 @@
-# Install these into the existing spatial-rag conda env to make it a shared
-# SpatialRAG + OpenEQA evaluation environment.
--e /home/robin_wang/ClawS-SpatialRAG
+# Evaluation env dependencies. Install into your eval conda env:
+#     pip install -r requirements.evaluation.txt && pip install -e .
+# Full, machine-agnostic instructions (incl. per-baseline setup): docs/SETUP.md
+#
+# NOTE: the two `-e /home/robin_wang/<repo>` lines below are LOCAL-PATH baseline
+# repos, only needed to run the ClawS / HOV-SG baselines. For the benchmark
+# evaluators + the auto-designed memory alone they are NOT required. On a new
+# machine, clone those repos (see docs/SETUP.md Layer 3) and edit these paths, or
+# comment them out if you are not running those baselines.
 
-# Internal LLM-Match evaluator deps missing from the original spatial-rag env.
+# --- Core evaluator + LLM-Match deps (always needed) ---
 openai==1.3.7
 tenacity==8.2.3
 pillow==10.3.0
@@ -13,7 +19,10 @@ pypng==0.20220715
 matplotlib==3.8.0
 natsort==8.4.0
 
-# HOV-SG get_object baseline.
+# --- ClawS / SpatialRAG baseline (local repo; optional — edit path per machine) ---
+-e /home/robin_wang/ClawS-SpatialRAG
+
+# --- HOV-SG baseline (local repo + its deps; optional) ---
 -e /home/robin_wang/HOV-SG
 git+https://github.com/facebookresearch/segment-anything.git
 torchmetrics>=1.4
