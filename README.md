@@ -133,16 +133,27 @@ bash scripts/methods/eval_all_scannet.sh all tool_llm daaam,claws,remembr,rememb
 
 ### Held-out results (10 ScanNet scenes, `tool_llm`)
 
-| Method | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | real-time build |
-|---|---|---|---|---|
-| **agent-designed** (run2, frozen) | **0.774** | **0.360** | 0.502 | ~0.9 s/f |
-| DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 0.012 s/f |
-| ClawS (object_map) | 0.290 | 0.351 | 0.340 | 0.095 s/f |
-| ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | n/a (sparse) |
+| Method | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | memory / scene | build time / video-frame † |
+|---|---|---|---|---|---|
+| **agent-designed** (run2, frozen) | **0.774** | **0.360** | 0.502 | 3.1 MB | 0.19 s (full pipeline) |
+| DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 21.9 MB | see † (packaging-only log is not comparable) |
+| ClawS (object_map) | 0.290 | 0.351 | 0.340 | 5.1 MB | ~0.10 s (process_frame) |
+| ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | 0.3 MB | ~0.29 s (VLM caption, 6% frames) |
 
-The agent-designed memory is best-or-tied-best on every track. Full analysis, the run3 deep-dive
-(where a *more aggressive* design under-performed the plain object map — a real negative result),
-and the baseline fairness audit are in `.codex/agent_designed_run3_analysis.md` and
+The agent-designed memory is best-or-tied-best on every track, at a compact ~3 MB.
+
+† **Build-time caveat (read before comparing speed).** These numbers are NOT a clean
+apples-to-apples "who is more real-time". Only the agent-designed value is an end-to-end
+full-pipeline measurement over *every* frame. ReMEmbR captions only ~6 % of frames (~1 / 3 s)
+at ~5 s/caption; normalized to the video timeline that is ~0.29 s per video-frame. ClawS's
+~0.10 s is its `process_frame` cost from a pre-built DB. **DAAAM's build_log records only the
+packaging step (`--skip-daaam-run`), not the native DSG construction (FastSAM-TRT segmentation +
+Hydra + async DAM grounding), so its per-frame number is a large under-estimate and is omitted
+here.** Do not read this column as "method X is N× more real-time" across methods.
+
+Full analysis, the run3 deep-dive (where a *more aggressive* design under-performed the plain
+object map — a real negative result), and the baseline fairness audit are in
+`.codex/agent_designed_run3_analysis.md` and
 `.codex/scannet_10scene_results.md`.
 
 ---
