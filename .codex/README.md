@@ -14,6 +14,8 @@ For the agentic benchmark direction, read these in order:
 
 Results & analysis:
 - `scannet_10scene_results.md`: unified 5-method × 10-scene × 3-track held-out results.
+- `agent_designed_run4_heldout.md`: **run4 held-out results (the current agent baseline)** — the
+  first auto-designed memory to beat the previous best on the held-out total (wins T2/T3).
 - `agent_designed_run3_analysis.md`: deep analysis of the agent-designed memory
   (run3 vs run2 vs baselines, held-out; T1/T2/T3 attribution, real-time caveat,
   baseline fairness audit). Supersedes the earlier run2-only snapshots.

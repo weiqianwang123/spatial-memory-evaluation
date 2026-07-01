@@ -135,12 +135,15 @@ bash scripts/methods/eval_all_scannet.sh all tool_llm daaam,claws,remembr,rememb
 
 | Method | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | memory / scene | build time / video-frame † |
 |---|---|---|---|---|---|
-| **agent-designed** (run2, frozen) | **0.774** | **0.360** | 0.502 | 3.1 MB | 0.19 s (full pipeline, every frame) |
+| **agent-designed** (auto-forged) | **0.690** | **0.426** | **0.570** | 4.7 MB | 0.19 s (full pipeline, every frame) |
 | DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 21.9 MB | ~0.044 s (per-frame CV; DAM grounding async) |
 | ClawS (object_map) | 0.290 | 0.351 | 0.340 | 5.1 MB | ~0.10 s (process_frame) |
 | ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | 0.3 MB | ~0.29 s (VLM caption, 6% frames) |
 
-The agent-designed memory is best-or-tied-best on every track, at a compact ~3 MB.
+The auto-forged memory (the loop's best design, frozen and scored once on the 10 unseen scenes)
+is **best on every track** vs the hand-built baselines, at a compact ~5 MB. It wins T2/T3 and its
+three-track total (1.686) is the strongest achieved — see
+[.codex/agent_designed_run4_heldout.md](.codex/agent_designed_run4_heldout.md).
 
 † **Build-time caveat (read before comparing speed).** These numbers are NOT a clean
 apples-to-apples "who is more real-time"; only the agent-designed value is an end-to-end
