@@ -128,12 +128,14 @@ bash scripts/methods/eval_all_scannet.sh all tool_llm daaam,claws,remembr,rememb
 
 | 方法 | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | 记忆/场景 | 构建时间/视频帧 † |
 |---|---|---|---|---|---|
-| **AI 自设计** (run2, 冻结) | **0.774** | **0.360** | 0.502 | 3.1 MB | 0.19 秒(全流程,每帧) |
+| **AI 自设计** (自动锻造) | **0.690** | **0.426** | **0.570** | 4.7 MB | 0.19 秒(全流程,每帧) |
 | DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 21.9 MB | ~0.044 秒(每帧 CV;DAM 描述异步) |
 | ClawS (object_map) | 0.290 | 0.351 | 0.340 | 5.1 MB | ~0.10 秒(process_frame) |
 | ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | 0.3 MB | ~0.29 秒(VLM 描述,仅 6% 帧) |
 
-AI 自设计的记忆在每个赛道上都是最优或并列最优,且记忆紧凑(~3 MB)。
+自动锻造出的记忆(循环里最优的设计,冻结后在 10 个未见场景上评测一次)在每个赛道上都**优于**
+所有人工 baseline,且记忆紧凑(~5 MB)。它赢下 T2/T3,三轨总分(1.686)是目前最强 —— 详见
+[.codex/agent_designed_run4_heldout.md](.codex/agent_designed_run4_heldout.md)。
 
 † **构建时间口径说明(比速度前必读)。** 这些数字**不是**干净的"谁更实时"横向对比;只有 AI 自设计
 的值是端到端全流程实测(YOLO-World + 反投影 + 摊销式 qwen 描述/嵌入,覆盖*每一帧*)。DAAAM 的
