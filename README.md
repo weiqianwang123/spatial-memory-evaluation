@@ -1,5 +1,7 @@
 # 🔥 MemForge
 
+**English** | [中文](README.zh-CN.md)
+
 **A benchmark for spatial memory as an external resource for embodied agents — and an
 auto-research loop where a coding agent *forges* its own memory and self-improves against it.**
 
