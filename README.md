@@ -1,10 +1,13 @@
-# Spatial Memory Evaluation
+# 🔥 MemForge
 
 **A benchmark for spatial memory as an external resource for embodied agents — and an
-auto-research loop where a coding agent designs its own memory and self-improves against it.**
+auto-research loop where a coding agent *forges* its own memory and self-improves against it.**
+
+> **MemForge** = **Mem**ory + **Forge**: the project both *evaluates* spatial-memory methods and
+> lets an AI *forge* (design + iteratively refine) a new one against real metrics.
 
 Robots that operate over long horizons need a *spatial memory*: a persistent, queryable
-representation of everything they have seen. This project asks two questions:
+representation of everything they have seen. MemForge asks two questions:
 
 1. **How good is a given spatial-memory method** when an agent must actually *use* it to
    answer questions? We evaluate each method's **native memory format** — no re-implementation,
