@@ -126,12 +126,21 @@ bash scripts/methods/eval_all_scannet.sh all tool_llm daaam,claws,remembr,rememb
 
 ### Held-out 结果(10 个 ScanNet 场景,`tool_llm`)
 
-| 方法 | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | 实时构建 |
-|---|---|---|---|---|
-| **AI 自设计** (run2, 冻结) | **0.774** | **0.360** | 0.502 | ~0.9 秒/帧 |
-| DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 0.012 秒/帧 |
-| ClawS (object_map) | 0.290 | 0.351 | 0.340 | 0.095 秒/帧 |
-| ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | 不适用(稀疏) |
+| 方法 | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | 记忆/场景 | 构建时间/视频帧 † |
+|---|---|---|---|---|---|
+| **AI 自设计** (run2, 冻结) | **0.774** | **0.360** | 0.502 | 3.1 MB | 0.19 秒(全流程) |
+| DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 21.9 MB | 见 †(仅打包的日志不可比) |
+| ClawS (object_map) | 0.290 | 0.351 | 0.340 | 5.1 MB | ~0.10 秒(process_frame) |
+| ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | 0.3 MB | ~0.29 秒(VLM 描述,仅 6% 帧) |
+
+AI 自设计的记忆在每个赛道上都是最优或并列最优,且记忆紧凑(~3 MB)。
+
+† **构建时间口径说明(比速度前必读)。** 这些数字**不是**干净的"谁更实时"横向对比。只有 AI
+自设计的值是对*每一帧*的端到端全流程实测。ReMEmbR 只描述约 6% 的帧(~1 帧/3 秒),每次描述约 5 秒;
+归一化到视频时间轴约为每视频帧 0.29 秒。ClawS 的 ~0.10 秒是它从预建 DB 得到的 `process_frame` 成本。
+**DAAAM 的 build_log 只记录了打包步骤(`--skip-daaam-run`),不含原生 DSG 构建(FastSAM-TRT 分割 +
+Hydra + 异步 DAM grounding),所以它的每帧数值严重低估,此处略去。** 请勿把这一列解读为"某方法比另一个
+实时 N 倍"。
 
 AI 自设计的记忆在每个赛道上都是最优或并列最优。完整分析、run3 深度复盘(一个*更激进*的设计反而
 不如朴素物体地图 —— 一个真实的负面结果)以及 baseline 公平性审计,见
