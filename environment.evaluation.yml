@@ -1,3 +1,9 @@
+# Evaluation environment. Full machine-agnostic setup (shared modules, LLM stack,
+# per-baseline config incl. the separate DAAAM env) is in docs/SETUP.md.
+# NOTE: the two `-e /home/robin_wang/<repo>` lines are LOCAL-PATH baseline repos
+# (ClawS, HOV-SG) — only needed to run those baselines. For the benchmark evaluators
+# + the auto-designed memory alone they are NOT required. On a new machine, clone
+# those repos (docs/SETUP.md Layer 3) and edit the paths, or remove these lines.
 name: spatial-memory-eval
 channels:
   - conda-forge
@@ -10,7 +16,7 @@ dependencies:
   - pillow>=10
   - tqdm>=4.66
   - pip:
-      - -e /home/robin_wang/ClawS-SpatialRAG
+      # --- core evaluator deps (always needed) ---
       - sqlite-vec>=0.1.6
       - aiohttp>=3.9
       - lz4>=4.3
@@ -21,13 +27,15 @@ dependencies:
       - pypng==0.20220715
       - matplotlib==3.8.0
       - natsort==8.4.0
-      - -e /home/robin_wang/HOV-SG
-      - git+https://github.com/facebookresearch/segment-anything.git
-      - torchmetrics>=1.4
-      - pyvista>=0.48
-      - scikit-fmm>=2025.6.23
-      - pathos>=0.3.3
       - torch>=2.2
       - transformers>=4.40
       - sentence-transformers>=3.0
       - ultralytics>=8.2
+      # --- baseline repos (LOCAL PATHS; optional — see docs/SETUP.md Layer 3) ---
+      - -e /home/robin_wang/ClawS-SpatialRAG      # ClawS baseline
+      - -e /home/robin_wang/HOV-SG                # HOV-SG baseline
+      - git+https://github.com/facebookresearch/segment-anything.git  # HOV-SG dep
+      - torchmetrics>=1.4                          # HOV-SG dep
+      - pyvista>=0.48                              # HOV-SG dep
+      - scikit-fmm>=2025.6.23                      # HOV-SG dep
+      - pathos>=0.3.3                              # HOV-SG dep
