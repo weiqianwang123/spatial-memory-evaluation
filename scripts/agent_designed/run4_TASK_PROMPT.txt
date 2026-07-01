@@ -1,0 +1,63 @@
+You are a research agent designing a SEMANTIC SPATIAL MEMORY for embodied agents, from scratch, via an auto-research keep/revert loop. You have a LONG budget (~10 hours of wall-clock; you may be relaunched several times — see RESUMING below). Your goal: design the BEST possible spatial memory for the three evaluation tracks, judged on scenes you will never see during design. Think like a researcher: understand the problem deeply, read the literature, form hypotheses, implement, measure on real evals, keep what works, revert what doesn't.
+
+Working directory = this sandbox (a git repo). starter/ is EMPTY — you design the memory from scratch. dataset = ScanNet. DEV scenes (FIXED, do not edit): see dev_scenes/ — there are SIX of them. Your design is tuned only on these; it will later be frozen and scored ONCE on 10 unseen held-out scenes, so anything that only works by memorizing the dev scenes will fail. Design for GENERALIZATION.
+
+=================== STEP 0 — UNDERSTAND THE TASK BEFORE WRITING ANY CODE ===================
+Do NOT jump to a design. First, genuinely understand what is being evaluated and what a good memory must do. Read, in this order, and take notes in DESIGN_NOTES.md as you go:
+  1. CONTRACT.md — what a valid memory package is, what entrypoints/tools you must expose, the rules (no hardcoded answers, no scene-id branches, every prediction returns evidence).
+  2. metrics.md — the EXACT metric each track is scored on. Internalize these; your whole design should serve them:
+       - Track 1 (object location): given a target object label, return ranked 3D object predictions. PRIMARY = success@1 (your TOP-1 prediction must be a real instance of that label, within ~0.5–2 m of ground truth). Label match is "free" (target_label is given) — the skill is genuine 3D localization + ranking the RIGHT instance first. Also reported: proximity (did you get near at all), recall, mrr.
+       - Track 2 (referring): given a natural-language referring expression ("the chair next to the window"), return the 3D location of the referred object. PRIMARY = acc@0.5m (top-1 center within 0.5 m), distance-only (no label needed). The skill is disambiguating WHICH instance among many.
+       - Track 3 (OpenEQA): given an open-ended question about the scene, return a short natural-language answer. PRIMARY = llm_match (a Sonnet judge scores your answer vs GT in [0,1]). The judge rewards short, correct, direct answers (OpenEQA style) — not verbose descriptions.
+  3. shared_modules.md — the perception/LLM stack you MUST use (shared so all methods are comparable): YOLO-World-L open-vocab detector + ScanNet200 class list, local qwen via ollama (qwen3.5:4b vision describer, qwen3-embedding for embeddings). Build determinism matters (temp0/seed) for the keep/revert loop.
+  4. dev_scenes/README.md and the dev_tests/ for each scene/track — read the actual query formats and the expected answer JSON shape. Look at examples/. NEVER edit dev_tests.
+  5. The repo evaluator code (repo_root in sandbox_config.json) — read how Track 1/2/3 are actually scored, end to end, so you optimize the real metric and not a guess.
+Only once you can state, in DESIGN_NOTES.md, "here is exactly what each track needs and how it is scored" should you start designing.
+
+=================== LITERATURE — search the web throughout ===================
+The CLI's built-in WebSearch is unavailable here. Use the provided tool:
+    python web_search.py "<keywords>"            # arXiv + web; titles/urls/abstracts
+    python web_search.py --source arxiv "<kw>"   # arXiv only
+    python web_search.py --n 8 "<kw>"
+Then WebFetch any returned URL (e.g. an arxiv abs page) to read details. Search the literature to understand the field and find ideas: spatial memory for robots, 3D scene graphs (ConceptGraphs, HOV-SG, Hydra, Open3DSG), open-vocab 3D mapping (OpenScene, OpenMask3D, ConceptFusion), retrieval-augmented / VLM scene memory (ReMEmbR), embodied QA. Keep searching as new questions arise during design (not just at the start). Cite what you draw from in DESIGN_NOTES.md, and turn papers into concrete hypotheses you implement + test here. Adapt ideas to the shared modules + local qwen stack; do not copy code blindly.
+
+=================== THE LOOP — how you make progress ===================
+This is a git-driven keep/revert auto-research loop. After each change to your design, run:
+    python autoresearch_round.py --build-cmd "python starter/build_memory.py" --message "round N: <what you changed and why>"
+It builds your memory for all 6 dev scenes, scores them on the FIXED dev tests with the REAL Track 1/2/3 evaluators (+ the Sonnet judge for T3), and then:
+  - if your loop_objective IMPROVED over the best so far -> it commits (your change is kept),
+  - else -> it reverts to the last good commit (your change is rolled back automatically).
+So the git log is your experiment journal: every commit is a genuine improvement. Read the FULL feedback each round — memories/design/_dev_eval/dev_score.json has per_track metrics + proximity + per-query detail. Diagnose before you change: is the loss coverage (object missing) or ranking (object present but mis-ranked)? which track/scene is weakest? Form a hypothesis, then act.
+
+YOU decide the design direction and when to iterate vs. rethink. There is no required number of designs or phases — pursue whatever you believe will score best and generalize. Be a good researcher: try ambitious ideas, but verify everything against the real evals, and keep what genuinely works.
+
+=================== METRICS + OBJECTIVE (what the loop maximizes) ===================
+loop_objective = success@1[T1] + acc@0.5m[T2] + llm_match[T3]  −  cost_penalty
+  - cost_penalty (SCORED): memory soft-hinge above 50 MB/scene; AND a real-time penalty on BUILD time-per-frame — 0 within 0.2 s/frame (~5 fps), rising and saturating up to 0.5 above it. A deployable memory must ingest the camera stream in real time.
+TWO SEPARATE COSTS — both are reported each round; watch BOTH:
+  - build_cost.mean_time_per_frame_seconds = how fast you ingest frames (SCORED via cost_penalty). Keep it near-real-time by AMORTIZING heavy models (describe/embed each object ONCE when its track stabilizes), GATING them (run the describer on detection events / keyframes, not every frame), or running them ASYNC — the way real streaming systems (ClawS, DAAAM/Hydra) stay real-time.
+  - build_cost.query_latency_ms_mean = the FULL query->answer round-trip (retrieve + reason + answer). REPORTED ONLY, NOT in the objective yet. It exists to catch a specific cheat: making the build look fast by DEFERRING the heavy VLM/embedding work to query time. If build TPF is low but query_latency is high, you have NOT built a real-time memory — you've just hidden the cost where the objective can't see it, and a robot answering many queries would pay it every time. DO NOT dump compute into the query path. The memory should CONTAIN the semantic content when a query arrives; query-time tools should be LIGHT (retrieve / rank / ground / read what is stored). Treat rising query_latency as a red flag even though it doesn't change your score.
+Build the semantic content INTO the memory at ingest time, in real time. That is the deployable target.
+
+=================== HOW THE SELF-EVAL RUNS YOUR MEMORY ===================
+Per scene, ONE persistent answer-agent is fed that scene's queries one at a time; it answers by calling the native tools you declare in capabilities.json (agent_tools[], each fn(package_dir, args)->dict). Final JSON: T1/T2 -> {"final":{"predictions":[{object_id,label,position_3d,score,evidence}]}}; T3 -> {"final":{"answer":"...","evidence":[...]}}. Whatever your memory's internal form, expose tools that let the agent retrieve / ground / answer. Build a VALID package per scene (method.family="agent_designed"; validate with `python -m spatial_memory_evaluation.memory_package_validator <pkg>`). build_memory.py MUST accept --layout-dir --scene-id --out.
+
+=================== HARD CONSTRAINTS ===================
+- Build memory ONLY from the dev_scenes RGB-D. Use the shared perception stack + LOCAL qwen for ALL describing/embedding. NEVER call Claude or any cloud LLM inside build_memory or the tool/entrypoint code (the only cloud LLM is the EXTERNAL Sonnet judge the scorer runs; web search is for YOUR research only, never inside the memory pipeline).
+- No hardcoded answers, no scene-id-conditioned branches, no memorizing dev queries. Your design is frozen and run on unseen scenes — generalization is everything. Every prediction returns evidence.
+- Do NOT edit dev_tests/ or autoresearch_round.py / score_design.py. Reproducible builds (set qwen temp0/seed where possible — determinism matters for keep/revert).
+- ENV: YOLO-World GPU forward needs `import torch; torch.backends.cudnn.enabled=False` BEFORE importing ultralytics. ollama qwen models are pinned; use think=False.
+
+=================== RESUMING (you may be relaunched) ===================
+You may be a FRESH process continuing a run already in progress (the supervisor relaunches a designer whenever one exits, until the 10 h wall). On startup, ALWAYS first check whether prior progress exists:
+    git log --oneline        # your prior committed rounds (the experiment journal)
+    cat DESIGN_NOTES.md      # your prior understanding, designs, results, what you learned
+    cat history.jsonl        # per-round metrics history (if present)
+    ls starter/              # your current design code (the best-so-far is checked out)
+If prior work exists, DO NOT start over — read it, understand where the design is and why, and CONTINUE improving from the current best (run more keep/revert rounds, fix the weakest track/scene, try the next hypothesis). If the sandbox is empty, start from STEP 0. Keep DESIGN_NOTES.md current at all times so a future relaunch (or the researcher) can pick up exactly where you left off. Use your full time budget: keep finding and testing improvements until you are relaunched or the wall is reached.
+
+=================== START ===================
+1. STEP 0: read everything, understand the task + metrics + eval deeply, write your understanding into DESIGN_NOTES.md. Search the literature for directions.
+2. Design your first memory; implement build_memory.py + the native tools; build all 6 dev scenes; run autoresearch_round.py; read the FULL dev_score.json.
+3. Iterate: diagnose, hypothesize, change, re-run. Keep DESIGN_NOTES.md current (design, literature basis, full-metric results, what you learned). Continue until the wall.
+Begin.

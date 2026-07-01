@@ -134,6 +134,11 @@ def _metric(summary: dict[str, Any], key: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+# Key the evaluators emit for end-to-end query->answer latency (the full retrieve+
+# reason+answer round-trip, so any compute deferred to query time IS counted here).
+QUERY_LATENCY_KEY = "mean_query_latency_ms"
+
+
 def _prime_batch_judge(judge: Callable, package_dir: Path, t3_dir: Path) -> None:
     """Collect (question, gt, predicted) for a scene and prime a batched judge.
 
@@ -284,6 +289,7 @@ def evaluate_dev(
     per_eval: list[dict[str, Any]] = []
     track_scores: dict[str, list[float]] = {t: [] for t in PRIMARY_METRIC}
     track_prox: dict[str, list[float]] = {t: [] for t in PROXIMITY_METRIC}
+    track_latency_ms: dict[str, list[float]] = {t: [] for t in PRIMARY_METRIC}
     build_cost_rows: list[dict[str, Any]] = []
 
     for scene in dev_scene_ids:
@@ -299,12 +305,16 @@ def evaluate_dev(
                 llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track1_object_location"])
             px = _metric(summary, PROXIMITY_METRIC["track1_object_location"])
+            lat = _metric(summary, QUERY_LATENCY_KEY)
             per_eval.append({"track": "track1_object_location", "scene": scene,
-                             "status": summary.get("status"), "metric": s, "proximity": px})
+                             "status": summary.get("status"), "metric": s, "proximity": px,
+                             "query_latency_ms": lat})
             if s is not None:
                 track_scores["track1_object_location"].append(s)
             if px is not None:
                 track_prox["track1_object_location"].append(px)
+            if lat is not None:
+                track_latency_ms["track1_object_location"].append(lat)
 
         # Track 2
         t2_dir = dev_tests_root / "track2" / scene
@@ -314,12 +324,16 @@ def evaluate_dev(
                 llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track2_scanrefer"])
             px = _metric(summary, PROXIMITY_METRIC["track2_scanrefer"])
+            lat = _metric(summary, QUERY_LATENCY_KEY)
             per_eval.append({"track": "track2_scanrefer", "scene": scene,
-                             "status": summary.get("status"), "metric": s, "proximity": px})
+                             "status": summary.get("status"), "metric": s, "proximity": px,
+                             "query_latency_ms": lat})
             if s is not None:
                 track_scores["track2_scanrefer"].append(s)
             if px is not None:
                 track_prox["track2_scanrefer"].append(px)
+            if lat is not None:
+                track_latency_ms["track2_scanrefer"].append(lat)
 
         # Track 3
         t3_dir = dev_tests_root / "track3" / scene
@@ -328,10 +342,14 @@ def evaluate_dev(
                 "track3_openeqa", package_dir, t3_dir, scene, mode,
                 llm_command, judge, output_root)
             s = _metric(summary, PRIMARY_METRIC["track3_openeqa"])
+            lat = _metric(summary, QUERY_LATENCY_KEY)
             per_eval.append({"track": "track3_openeqa", "scene": scene,
-                             "status": summary.get("status"), "metric": s, "proximity": None})
+                             "status": summary.get("status"), "metric": s, "proximity": None,
+                             "query_latency_ms": lat})
             if s is not None:
                 track_scores["track3_openeqa"].append(s)
+            if lat is not None:
+                track_latency_ms["track3_openeqa"].append(lat)
 
     per_track: dict[str, Any] = {}
     track_means: list[float] = []
@@ -343,6 +361,14 @@ def evaluate_dev(
             if prox:
                 entry["proximity_key"] = PROXIMITY_METRIC[track]
                 entry["proximity_mean"] = sum(prox) / len(prox)
+            lats = track_latency_ms.get(track) or []
+            if lats:
+                # VISIBLE-ONLY diagnostic (NOT in loop_objective): end-to-end
+                # query->answer latency. Surfaced so the designer can see when it
+                # has pushed heavy compute (VLM/embedding) to query time instead of
+                # into the built memory. High here + low build TPF = work relocated,
+                # not eliminated.
+                entry["query_latency_ms_mean"] = sum(lats) / len(lats)
             per_track[track] = entry
             track_means.append(mean)
 
@@ -353,10 +379,23 @@ def evaluate_dev(
     # Weighted objective: accuracy is primary; subtract a soft build-cost penalty so
     # the loop won't bloat memory or lose real-time for a tiny accuracy gain. Within
     # budget the penalty is 0 (objective == accuracy_sum).
+    # NOTE: the penalty uses BUILD time-per-frame (+memory) only. Query latency is
+    # measured and REPORTED (query_latency block below + per-track), but deliberately
+    # NOT in the objective yet — it is a visible signal to discourage deferring all
+    # compute to query time, not a scored term.
     penalty, penalty_breakdown = _cost_penalty(build_cost)
     loop_objective = (accuracy_sum - penalty) if accuracy_sum is not None else None
     build_cost["cost_penalty"] = round(penalty, 4)
     build_cost["cost_penalty_breakdown"] = penalty_breakdown
+    # Visible (non-objective) end-to-end query latency summary across all tracks.
+    all_lat = [v for vals in track_latency_ms.values() for v in vals]
+    build_cost["query_latency_ms_mean"] = (sum(all_lat) / len(all_lat)) if all_lat else None
+    build_cost["query_latency_note"] = (
+        "end-to-end query->answer latency (full retrieve+reason+answer round-trip); "
+        "REPORTED ONLY, not in loop_objective. High query latency with low build "
+        "time_per_frame means heavy compute was deferred to query time rather than "
+        "built into memory — avoid relying on that."
+    )
     return DevEvalResult(
         per_track=per_track, per_eval=per_eval,
         build_cost=build_cost,

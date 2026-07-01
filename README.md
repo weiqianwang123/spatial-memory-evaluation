@@ -1,151 +1,219 @@
 # Spatial Memory Evaluation
 
-Standalone framework for evaluating spatial-memory methods as an external
-resource for embodied agents.
+**A benchmark for spatial memory as an external resource for embodied agents — and an
+auto-research loop where a coding agent designs its own memory and self-improves against it.**
 
-The design is package-first: every method exports a minimal memory package, then
-evaluators consume that package through either declared fixed Python APIs or a
-per-query LLM + native-tool agentic loop. The method's native memory format is
-preserved inside the package; unsupported fixed APIs are reported as `invalid`
-instead of guessed or silently approximated.
+Robots that operate over long horizons need a *spatial memory*: a persistent, queryable
+representation of everything they have seen. This project asks two questions:
 
-The benchmark has **three tracks** (refactor 2026-06-23) plus an agent-designed
-memory baseline:
+1. **How good is a given spatial-memory method** when an agent must actually *use* it to
+   answer questions? We evaluate each method's **native memory format** — no re-implementation,
+   no guessed APIs — through either its declared Python API or a per-query LLM + native-tool loop.
+2. **Can an AI design a better spatial memory than hand-built systems?** A coding agent is
+   given the metrics, the perception stack, and a blank slate, and runs a git-driven
+   *keep/revert* auto-research loop: propose code → build memory → self-evaluate → keep if it
+   improved, revert if not → repeat for hours.
 
-| Track | Capability key | Tests | Dataset |
-|---|---|---|---|
-| Track 1 | `track1_object_location` | object-level location query + build cost | ScanNet++ |
-| Track 2 | `track2_scanrefer` | instance-level referring query | ScanRefer / ScanNet |
-| Track 3 | `track3_openeqa` | general spatial QA | OpenEQA (ScanNet + HM3D) |
+Everything is **package-first**: every method (hand-built or agent-designed) exports a minimal
+*memory package*, and the same evaluators score them all on the same scenes.
 
-The **agent-designed memory baseline** (the project's centerpiece) lets a coding
-agent design its own memory + tools under a fixed contract, then scores it with
-the same Track 1/2/3 evaluators. OC-NaVQA and SG3D are deferred zero-shot transfer
-targets, not main-line tracks. See `.codex/agent_designed_baseline.md`.
+---
 
-## Current Workflow
+## The Benchmark — three tracks (+ a fourth in progress)
 
-```text
-method repo / native outputs
-  -> exporter
-  -> memories/<method>/<dataset>/<scene-or-episode>/<run-id>/
-  -> package validator
-  -> fixed API eval or tool-LLM agentic eval (Track 1/2/3)
-  -> results/<method>/<evaluation>/<timestamp>/
+| Track | Capability key | What it tests | Primary metric | Data |
+|---|---|---|---|---|
+| **1** | `track1_object_location` | locate a named object in 3D | success@1 | ScanNet |
+| **2** | `track2_scanrefer` | resolve a referring expression to one instance | acc@0.5m | ScanRefer / ScanNet |
+| **3** | `track3_openeqa` | answer open-ended spatial questions | LLM-Match | OpenEQA (ScanNet) |
+| **4** *(WIP)* | `track4_oc_navqa` | long-horizon robot-trajectory QA | per-type* | OC-NaVQA / CODa |
+
+\* Track 4 scores per question type: position (L2), binary (accuracy), time/duration (min-error), text (LLM judge).
+
+**Two evaluation interfaces**, both preserving the method's real memory:
+- `fixed_api` — call the package's declared native query entrypoint (deterministic, fast).
+- `tool_llm` — a per-query LLM agent calls the method's native retrieval tools and produces the
+  answer. This is the fair cross-method protocol (same agent, same scenes; only the memory differs).
+
+Unsupported APIs are reported as `invalid` with a reason — never silently approximated.
+
+---
+
+## Auto-designed memory (the centerpiece)
+
+Instead of hand-building a memory, a coding agent designs one from scratch under a fixed contract,
+then improves it with a git-driven keep/revert loop (Karpathy-style AutoResearch):
+
+```
+propose code → build memory (all dev scenes) → score on the real Track 1/2/3 evaluators
+   → loop_objective improved?  ─ yes → git commit (kept)
+                               └ no  → git reset  (reverted)
+   → repeat until the time budget runs out
 ```
 
-The package contract is defined in
-[.codex/memory_package_spec.md](.codex/memory_package_spec.md).
+The git log *is* the experiment journal — every commit is a genuine improvement. The most recent
+run (**run4**: blind/pure-discovery, 6 dev scenes, 14 h budget, T2 on the held-out-matched 15-query
+subset) climbed steadily on all three tracks:
 
-## Project Layout
+![run4 auto-design progress](docs/run4_autodesign_progress.png)
 
-- `.codex/`: planning notes, baseline registry, package spec, agent-designed
-  baseline design, and agent context.
-- `spatial_memory_evaluation/common/`: shared package loading, label
-  normalization, JSONL, object matching, build accounting, reporting.
-- `spatial_memory_evaluation/track1/`: object-level location query + build-cost
-  benchmark builder and evaluator.
-- `spatial_memory_evaluation/track2/`: ScanRefer referring-query evaluator
-  (skeleton; emits `data_unavailable` until ScanRefer is acquired).
-- `spatial_memory_evaluation/track3/`: OpenEQA general-QA evaluator (ScanNet +
-  HM3D; LLM-Match judge pluggable).
-- `spatial_memory_evaluation/agent_designed/`: agent-designed memory baseline
-  harness skeleton (contract, workspace, designer stub, leakage stub, harness).
-- `spatial_memory_evaluation/tool_llm/`: per-query LLM + native-tool runner.
-- `spatial_memory_evaluation/shared_modules/`: detector/segmenter/CLIP registry.
-- `spatial_memory_evaluation/schemas/memory_package/`: JSON schemas for the
-  minimal memory package.
-- `examples/minimal_memory_package/`: small valid package fixture
-  (`track1_object_location` supported via `query_object`).
-- `examples/multiframe_vlm_control/`, `examples/caption_control_package/`:
-  no-explicit-memory control fixtures (`explicit_memory=false`, all fixed APIs
-  `invalid`).
-- `benchmarks/`, `memories/`, `results/`, `data/`, `sandboxes/`: generated;
-  ignored by Git.
-- `scripts/`: build-data, evaluate, package, method, and agent-designed CLIs.
+*Green step = best-so-far `loop_objective`; ● keep, × revert. run4 discovered — with no prior
+hints — an object-centric 3D semantic map (YOLO-World detect → depth back-project → multi-view
+fuse → amortized qwen caption/embed), then self-improved it: spatial-relation re-ranking for T2,
+synonym-expanded coverage for T1, and bbox-volumetric-center prediction (which matches the GT
+scoring center) lifting T1 **0.72→0.82** and T2 **0.37→0.51**.*
 
-## Minimal Package
+---
 
-A valid package contains:
+## Environment setup
 
-```text
-manifest.json
-capabilities.json
-schema.md
-memory/
-evidence/
-raw_links/
-schemas/
-tools/
-build_log.json
-```
-
-The fixed API capabilities are declared in `capabilities.json`:
-
-- `track1_object_location`
-- `track2_scanrefer`
-- `track3_openeqa`
-
-Each track is either `supported` with a package-local Python entrypoint, or
-`invalid` with a reason. A valid package does not need to support every track.
-
-## Validate A Package
+The evaluators run in a conda env; heavy models (detector, VLM, embeddings) are shared so all
+methods are compared fairly.
 
 ```bash
-python scripts/package/validate_memory_package.py examples/minimal_memory_package
-# or
-python -m spatial_memory_evaluation.memory_package_validator examples/minimal_memory_package
+# 1. Create the evaluation env
+conda env create -f environment.evaluation.yml     # env name: spatial-memory-eval
+conda activate spatial-memory-eval
+pip install -e .                                    # installs the spatial_memory_evaluation package
+
+# 2. Local LLM stack (answering agent + captioner/embeddings) via Ollama
+ollama pull qwen3.5:4b            # vision-capable describer (VILA substitute)
+ollama pull qwen3-embedding:0.6b  # 1024-d text embeddings
+# (ollama serves at localhost:11434)
+
+# 3. Shared perception modules (on NAS; see .codex/modules.md and path_registry.md)
+#    YOLO-World-L + ScanNet200 class list are the shared open-vocab detector for all
+#    detector-based methods. cudnn must be disabled before importing ultralytics:
+#    import torch; torch.backends.cudnn.enabled = False
+
+# 4. Cloud judge / answering agent (Track 3 LLM-Match + tool_llm agent) via Bedrock
+export CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-west-2
+#   answer agent: us.anthropic.claude-haiku-4-5-20251001-v1:0
+#   T3 judge:     us.anthropic.claude-sonnet-4-6
 ```
 
-## Build Benchmarks And Evaluate
+Generated artifacts (`memories/`, `results/`, `benchmarks/`, `data/`) are gitignored; prefer the
+NAS paths recorded in `.codex/path_registry.md`.
+
+---
+
+## Running the baselines
+
+Five hand-built / control methods are adapted onto the package contract: **DAAAM** (Hydra 3D scene
+graph), **ClawS** (object-map + sqlite-vec), **ReMEmbR** (caption memory), plus **LLM-with-captions**
+and **Multi-frame-VLM** controls.
+
+**Build the benchmark data** (per dataset; done once):
 
 ```bash
-# Track 1: object-level location query + build cost (ScanNet++).
-python scripts/build_track1_data.py --scene-id 036bce3393
-python scripts/evaluate_track1.py memories/<method>/scannetpp/036bce3393/<run-id> --mode fixed_api
-
-# Track 2: ScanRefer referring query (data acquisition pending).
-python scripts/build_track2_data.py --scannet-split val
-python scripts/evaluate_track2.py memories/<method>/.../<run-id> --mode fixed_api
-
-# Track 3: OpenEQA general QA (ScanNet now; HM3D pending).
+python scripts/build_track1_data.py --scene-id <scene> --dataset scannet
+python scripts/build_track2_data.py --scene-id <scene>
 python scripts/build_track3_data.py --dataset scannet
-python scripts/evaluate_track3.py memories/<method>/.../<run-id> --dataset scannet --mode fixed_api
 ```
 
-Each evaluator supports `--mode fixed_api` and `--mode tool_llm` (per-query LLM +
-method-native tools, for methods that declare native retrieval tools). If a
-package honestly declares an unsupported fixed API, the result is `invalid` for
-that method/track rather than coerced into an approximate score. Track 2/3 emit a
-`data_unavailable` result until their datasets are built (see
-`.codex/path_registry.md`).
-
-No-explicit-memory controls (Multi-frame VLM, LLM-with-captions;
-`explicit_memory=false`) are control-only for fixed API: their result is a
-distinct `invalid` with `reason_code=control_no_explicit_memory` and
-`control=true`.
-
-Track 1 fair-comparison runs should use the shared detector vocabulary in
-`spatial_memory_evaluation/assets/class_lists/detector_coverable.txt`. Any
-detector/segmenter/CLIP/checkpoint/class-list override is a module ablation
-unless all compared methods use the same setting.
-
-## Agent-Designed Memory Baseline
+**Evaluate one package** on one track/scene:
 
 ```bash
-python scripts/agent_designed/run_baseline.py --variant coding_agent --dataset scannetpp \
-  --train-scene-id 036bce3393 --heldout-scene-id <held-out-scene>
+python scripts/evaluate_track1.py <package_dir> --dataset scannet --scene-id <scene> \
+    --mode tool_llm --llm-command "<agent CLI template>" --output <out.json>
 ```
 
-This assembles a designer workspace, (Phase 4) invokes a coding agent to design a
-memory, scans for leakage, then builds and scores the designed package on Track
-1/2/3. The designer invocation and per-scene build are Phase-4 stubs; see
-`.codex/agent_designed_baseline.md`.
+**Run everything** — all methods × 10 held-out scenes × 3 tracks (the driver wires up the shared
+detector, the Haiku agent, and the Sonnet judge):
 
-## Next Work
+```bash
+# scripts/methods/eval_all_scannet.sh <track|all> <fixed_api|tool_llm> <methods_csv>
+bash scripts/methods/eval_all_scannet.sh all tool_llm daaam,claws,remembr,remembr_captions,multiframe_vlm
+```
 
-1. Acquire ScanRefer + HM3D data; turn Track 2/3 skeletons into real evals.
-2. Freeze method packages (ClawS, ConceptGraphs, DualMap, HOV-SG, DAAAM) on the
-   3-track contract; run Track 1 fixed_api + tool_llm.
-3. Implement the agent-designed designer invocation + leakage scanner (Phase 4).
-4. Zero-shot transfer to SG3D / OC-NaVQA (Phase 5).
+### Held-out results (10 ScanNet scenes, `tool_llm`)
+
+| Method | T1 success@1 | T2 acc@0.5m | T3 LLM-Match | real-time build |
+|---|---|---|---|---|
+| **agent-designed** (run2, frozen) | **0.774** | **0.360** | 0.502 | ~0.9 s/f |
+| DAAAM (scene_graph) | 0.386 | 0.330 | 0.367 | 0.012 s/f |
+| ClawS (object_map) | 0.290 | 0.351 | 0.340 | 0.095 s/f |
+| ReMEmbR (caption) | 0.045 | 0.000 | 0.498 | n/a (sparse) |
+
+The agent-designed memory is best-or-tied-best on every track. Full analysis, the run3 deep-dive
+(where a *more aggressive* design under-performed the plain object map — a real negative result),
+and the baseline fairness audit are in `.codex/agent_designed_run3_analysis.md` and
+`.codex/scannet_10scene_results.md`.
+
+---
+
+## Running the auto-design loop yourself
+
+```bash
+# 1. Prepare dev scenes (download GT + extract RGB-D layout + build track1/2/3 dev tests)
+bash scripts/agent_designed/prepare_dev_scene.sh <scene_id>
+
+# 2. Create a fresh, self-contained sandbox (blank starter/, dev scenes, docs, harness)
+python scripts/agent_designed/make_sandbox.py --variant loop_fixed_tests \
+    --sandbox-root ~/my_autodesign_run \
+    --dev-scene-id <scene_a> --dev-scene-id <scene_b> ...
+
+# 3. Drop in the task prompt + init git, then let the coding agent run the loop.
+#    Each round the agent edits starter/ and calls:
+python autoresearch_round.py --build-cmd "python starter/build_memory.py" \
+    --message "round N: <what changed and why>"
+#    -> builds all dev scenes, scores on the fixed dev tests, and keeps or reverts automatically.
+```
+
+For a long unattended run, `scripts/agent_designed/run4_supervisor.sh <sandbox> <wall_seconds>`
+keeps a designer agent working to a hard time budget, relaunching it if it exits early (the sandbox
+persists, so a relaunch reads its own DESIGN_NOTES / history / git log and continues).
+
+The scored objective:
+
+```
+loop_objective = success@1[T1] + acc@0.5m[T2] + llm_match[T3] − cost_penalty
+```
+
+`cost_penalty` keeps the build near real-time (≤0.2 s/frame) and the memory compact (≤50 MB/scene).
+End-to-end query latency is measured and reported (but not scored) so the loop can't cheat by
+deferring heavy compute to query time.
+
+---
+
+## The minimal memory package
+
+Every method exports the same shape, consumed by the same evaluators:
+
+```text
+manifest.json        # method + dataset metadata
+capabilities.json    # which fixed APIs / agent tools are supported (else "invalid" + reason)
+memory/              # the method's NATIVE memory (object table, DB, captions, DSG, ...)
+tools/               # package-local Python entrypoints (query_object, resolve_referring, ...)
+schema.md  schemas/  evidence/  raw_links/  build_log.json
+```
+
+Validate a package:
+
+```bash
+python -m spatial_memory_evaluation.memory_package_validator <package_dir>
+```
+
+The full contract is in [.codex/memory_package_spec.md](.codex/memory_package_spec.md).
+
+---
+
+## Repository layout
+
+- `spatial_memory_evaluation/track{1,2,3,4}/` — per-track benchmark builders + evaluators.
+- `spatial_memory_evaluation/tool_llm/` — per-query LLM + native-tool runner (the fair protocol).
+- `spatial_memory_evaluation/agent_designed/` — auto-design harness: dev-eval scorer, per-scene
+  session eval, contract/workspace.
+- `spatial_memory_evaluation/common/`, `schemas/`, `assets/` — shared IO, schemas, class lists.
+- `scripts/build_track*_data.py`, `scripts/evaluate_track*.py` — data + eval CLIs.
+- `scripts/methods/` — per-baseline adapters + `eval_all_scannet.sh`; `scripts/methods/coda/` for Track 4.
+- `scripts/agent_designed/` — sandbox maker, auto-research round controller, supervisor, scorer.
+- `.codex/` — design notes, specs, registries, results, and analyses (start at `.codex/README.md`).
+- `examples/` — small valid package fixtures.
+
+## Documentation
+
+Start with [.codex/README.md](.codex/README.md). Key docs: `agentic_eval.md` (vision),
+`memory_package_spec.md` (contract), `baseline_registry.md` (methods), `path_registry.md` (paths),
+`modules.md` (shared modules), `agent_designed_baseline.md` (auto-design), and the results/analysis
+docs listed in the `.codex` index.

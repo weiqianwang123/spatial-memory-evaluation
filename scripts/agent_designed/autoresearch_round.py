@@ -60,7 +60,8 @@ def _best_objective_so_far() -> float | None:
         if not line.strip():
             continue
         row = json.loads(line)
-        if row.get("decision") == "keep" and isinstance(row.get("loop_objective"), (int, float)):
+        # both greedy-kept (exploit) and explore-committed rounds are real candidates
+        if row.get("decision") in ("keep", "explore_keep") and isinstance(row.get("loop_objective"), (int, float)):
             best = row["loop_objective"] if best is None else max(best, row["loop_objective"])
     return best
 
@@ -118,20 +119,26 @@ def score_all_scenes() -> dict:
     )
 
     # Aggregate to dev_eval's reported shape (per_track means + proximity + sum loop_objective).
+    LAT_KEY = dev_eval.QUERY_LATENCY_KEY
     track_scores = {t: [] for t in PRIMARY}
     track_prox = {t: [] for t in PROX}
+    track_lat = {t: [] for t in PRIMARY}
     per_eval = []
     for scene, by_track in per_scene.items():
         for track, summary in by_track.items():
             m = summary.get("metrics") if isinstance(summary, dict) else None
             s = (m or {}).get(PRIMARY[track]) if m else None
             px = (m or {}).get(PROX[track]) if (m and track in PROX) else None
+            lat = (m or {}).get(LAT_KEY) if m else None
             per_eval.append({"track": track, "scene": scene,
-                             "status": summary.get("status"), "metric": s, "proximity": px})
+                             "status": summary.get("status"), "metric": s, "proximity": px,
+                             "query_latency_ms": lat})
             if isinstance(s, (int, float)):
                 track_scores[track].append(float(s))
             if isinstance(px, (int, float)):
                 track_prox[track].append(float(px))
+            if isinstance(lat, (int, float)):
+                track_lat[track].append(float(lat))
 
     per_track, means = {}, []
     for t, vals in track_scores.items():
@@ -141,6 +148,10 @@ def score_all_scenes() -> dict:
             if pv:
                 entry["proximity_key"] = PROX[t]
                 entry["proximity_mean"] = sum(pv) / len(pv)
+            lv = track_lat.get(t) or []
+            if lv:
+                # VISIBLE-ONLY (not in loop_objective): end-to-end query->answer latency.
+                entry["query_latency_ms_mean"] = sum(lv) / len(lv)
             per_track[t] = entry
             means.append(entry["mean"])
 
@@ -149,9 +160,17 @@ def score_all_scenes() -> dict:
     accuracy_sum = sum(means) if means else None
     # Weighted objective: accuracy primary minus a soft build-cost penalty (memory
     # bloat / loss of real-time). Same logic as dev_eval so loop + manual agree.
+    # Query latency is REPORTED (below) but NOT in the penalty — a visible signal so
+    # the designer can see compute deferred to query time, without scoring it yet.
     penalty, breakdown = dev_eval._cost_penalty(build_cost)
     build_cost["cost_penalty"] = round(penalty, 4)
     build_cost["cost_penalty_breakdown"] = breakdown
+    all_lat = [v for vals in track_lat.values() for v in vals]
+    build_cost["query_latency_ms_mean"] = (sum(all_lat) / len(all_lat)) if all_lat else None
+    build_cost["query_latency_note"] = (
+        "end-to-end query->answer latency; REPORTED ONLY, not in loop_objective. "
+        "High here + low build time_per_frame = heavy compute deferred to query time."
+    )
     return {
         "status": "ok" if means else "no_dev_evals_ran",
         "per_track": per_track,
@@ -193,43 +212,80 @@ def redraw_progress() -> None:
         if any(y is not None for y in ys):
             ax.plot(xs, [y if y is not None else float("nan") for y in ys], style,
                     alpha=0.6, label=track.split("_")[0])
-    # mark kept (commit) vs reverted rounds
+    # mark rounds: ● greedy-keep, ◆ explore-commit, × revert
     for i, r in enumerate(rows):
-        ax.annotate("●" if r.get("decision") == "keep" else "×",
-                    (i, objs[i]), fontsize=8,
-                    color="green" if r.get("decision") == "keep" else "red")
+        d = r.get("decision")
+        mark, col = ("●", "green") if d == "keep" else \
+                    ("◆", "blue") if d == "explore_keep" else ("×", "red")
+        ax.annotate(mark, (i, objs[i]), fontsize=8, color=col)
     ax.set_xlabel("round"); ax.set_ylabel("score")
-    ax.set_title("AutoResearch progress (best-so-far = green step; ●keep ×revert)")
+    ax.set_title("AutoResearch progress (best-so-far = green step; ●keep ◆explore ×revert)")
     ax.legend(fontsize=8); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(PROGRESS_PNG, dpi=110); plt.close(fig)
 
 
+def _last_row() -> dict | None:
+    if not HISTORY.exists():
+        return None
+    rows = [json.loads(l) for l in HISTORY.read_text().splitlines() if l.strip()]
+    return rows[-1] if rows else None
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="One AutoResearch keep/revert round.")
+    ap = argparse.ArgumentParser(description="One AutoResearch round (explore or exploit).")
     ap.add_argument("--build-cmd", required=True, help="builder command (per-scene args appended unless --build-once)")
     ap.add_argument("--build-once", action="store_true", help="run --build-cmd verbatim (builder loops scenes itself)")
     ap.add_argument("--message", required=True, help="what you changed this round (becomes the commit message)")
     ap.add_argument("--min-delta", type=float, default=1e-4, help="min loop_objective gain to count as improvement")
+    ap.add_argument(
+        "--mode", choices=("explore", "exploit"), default="exploit",
+        help="exploit (default): keep/revert vs the GLOBAL best (greedy engineering). "
+        "explore: ALWAYS commit (no cross-design revert) — for trying radical designs; "
+        "use --design-tag to scope 'improvement' to the same design's previous round.",
+    )
+    ap.add_argument(
+        "--design-tag", default=None,
+        help="explore mode: a label for the current design family (e.g. 'scene_graph', "
+        "'neural_field'). 'improved' is judged vs the last round with the SAME tag, so a "
+        "radical design isn't punished for starting below the global best.",
+    )
     args = ap.parse_args()
 
     rnd = _round_index()
-    best_before = _best_objective_so_far()
+    explore = args.mode == "explore"
+    if explore:
+        # Reference = best objective of the SAME design family so far (or None on a
+        # fresh design). This is informational only — explore ALWAYS commits.
+        prev = [json.loads(l) for l in HISTORY.read_text().splitlines() if l.strip()] if HISTORY.exists() else []
+        same = [r.get("loop_objective") for r in prev
+                if r.get("design_tag") == args.design_tag and isinstance(r.get("loop_objective"), (int, float))]
+        best_before = max(same) if same else None
+    else:
+        best_before = _best_objective_so_far()
 
-    print(f"[round {rnd}] building {len(DEV_SCENES)} dev scenes ...")
+    print(f"[round {rnd}] mode={args.mode} building {len(DEV_SCENES)} dev scenes ...")
     build_status = build_all_scenes(args.build_cmd, args.build_once)
     print(f"[round {rnd}] scoring on fixed dev tests ...")
     scored = score_all_scenes()
     obj = scored.get("loop_objective")
 
     improved = (obj is not None) and (best_before is None or obj > best_before + args.min_delta)
-    decision = "keep" if improved else "revert"
 
-    if improved:
+    if explore:
+        # EXPLORE: never revert across designs — commit every version so radical
+        # designs survive and accumulate in the journal for the later EXPLOIT phase.
+        decision = "explore_keep"
         _git("add", "-A")
-        rc, out = _git("commit", "-m", f"[r{rnd}] {args.message} | loop_objective={obj:.4f}")
+        tag = f"[explore:{args.design_tag or 'design'}] "
+        _git("commit", "-m", f"{tag}[r{rnd}] {args.message} | loop_objective={obj if obj is None else round(obj,4)}")
+        commit = _git("rev-parse", "--short", "HEAD")[1].strip()
+    elif improved:
+        decision = "keep"
+        _git("add", "-A")
+        _git("commit", "-m", f"[r{rnd}] {args.message} | loop_objective={obj:.4f}")
         commit = _git("rev-parse", "--short", "HEAD")[1].strip()
     else:
-        # roll back uncommitted changes to the last good commit
+        decision = "revert"
         _git("reset", "--hard", "HEAD")
         _git("clean", "-fd", "memories", "starter")
         commit = _git("rev-parse", "--short", "HEAD")[1].strip()
@@ -237,6 +293,8 @@ def main() -> int:
     sbc = scored.get("build_cost", {})
     row = {
         "round": rnd,
+        "mode": args.mode,
+        "design_tag": args.design_tag,
         "message": args.message,
         "loop_objective": obj,
         "accuracy_sum": scored.get("accuracy_sum"),
@@ -249,6 +307,8 @@ def main() -> int:
             "mean_time_per_frame_seconds": sbc.get("mean_time_per_frame_seconds"),
             "cost_penalty": sbc.get("cost_penalty"),
             "cost_penalty_breakdown": sbc.get("cost_penalty_breakdown"),
+            # visible-only end-to-end query latency (not scored)
+            "query_latency_ms_mean": sbc.get("query_latency_ms_mean"),
         },
     }
     append_history(row)
@@ -258,7 +318,14 @@ def main() -> int:
     print(f"[round {rnd}] loop_objective={obj}  best_before={best_before}  -> {decision.upper()} (commit {commit})")
     for t, info in (scored.get("per_track") or {}).items():
         extra = f"  [{info.get('proximity_key')}={info.get('proximity_mean'):.3f}]" if info.get("proximity_key") else ""
-        print(f"    {t:26s} {info['metric_key']}={info['mean']:.3f}{extra}")
+        lat = info.get("query_latency_ms_mean")
+        latstr = f"  (query_latency={lat/1000:.1f}s)" if isinstance(lat, (int, float)) else ""
+        print(f"    {t:26s} {info['metric_key']}={info['mean']:.3f}{extra}{latstr}")
+    tpf = sbc.get("mean_time_per_frame_seconds")
+    qlat = sbc.get("query_latency_ms_mean")
+    print(f"  build_TPF={tpf:.3f}s/frame (SCORED)  |  query_latency="
+          f"{(qlat/1000 if isinstance(qlat,(int,float)) else float('nan')):.1f}s/query (REPORTED, NOT scored)")
+    print(f"  cost_penalty={sbc.get('cost_penalty')}  [build-TPF + memory only]")
     print(f"history -> {HISTORY.name}   plot -> {PROGRESS_PNG.name}")
     print("=" * 64)
     return 0
