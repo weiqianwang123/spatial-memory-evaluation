@@ -4,8 +4,9 @@
 # spatial-T3) on all 10 held-out ScanNet scenes, into the main-eval package
 # location so eval_all_scannet.sh scores it via the fair per-query tool_llm path.
 #
-# run2's packages (already scored; results in .codex/agent_designed_heldout_results.md)
-# are moved aside to memories/agent_designed_run2_heldout/ first, so nothing is lost.
+# run2's packages (already scored; run2 vs run3 vs baselines held-out comparison is
+# in .codex/agent_designed_run3_analysis.md) are moved aside to
+# memories/agent_designed_run2_heldout/ first, so nothing is lost.
 # The design is NOT modified — we only run its build_memory.py on the 10 scenes.
 set -uo pipefail
 cd /home/robin_wang/spatial-memory-evaluation
