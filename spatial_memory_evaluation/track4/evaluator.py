@@ -74,30 +74,35 @@ def parse_minutes(text: str) -> float | None:
 # --------------------------- per-type scoring ---------------------------
 def score_item(qtype: str, gt: dict[str, Any], pred_text: str,
                judge: JudgeFn | None) -> dict[str, Any]:
-    out: dict[str, Any] = {"type": qtype, "pred_text": pred_text}
+    # carry the OC-NaVQA length category (SHORT/MEDIUM/LONG) for stratified reporting
+    out: dict[str, Any] = {"type": qtype, "pred_text": pred_text,
+                           "length_category": gt.get("length_category")}
     if qtype == "binary":
         p = parse_binary(pred_text)
         out["pred"] = p
         out["correct"] = 1.0 if (p is not None and p == gt.get("answer")) else 0.0
+        out["score01"] = out["correct"]
     elif qtype == "position":
         p = parse_position(pred_text)
         gtp = gt.get("answer_position")
         if p is None or gtp is None:
-            out["pred"] = p; out["distance_m"] = None
+            out["pred"] = p; out["distance_m"] = None; out["score01"] = 0.0
         else:
             d = sum((a - b) ** 2 for a, b in zip(p, gtp)) ** 0.5
             out["pred"] = p; out["distance_m"] = d
             for thr in POSITION_ACC_THRESH_M:
                 out[f"acc@{thr}m"] = 1.0 if d <= thr else 0.0
+            out["score01"] = out.get("acc@1.0m", 0.0)   # per-item scalar = acc@1m
     elif qtype in ("time", "duration"):
         p = parse_minutes(pred_text)
         gtv = gt.get("minutes_ago") if qtype == "time" else gt.get("minutes")
         tol = TIME_TOL_MIN if qtype == "time" else DURATION_TOL_MIN
         if p is None or gtv is None:
-            out["pred"] = p; out["abs_error_min"] = None
+            out["pred"] = p; out["abs_error_min"] = None; out["score01"] = 0.0
         else:
             out["pred"] = p; out["abs_error_min"] = abs(p - gtv)
             out["within_tol"] = 1.0 if abs(p - gtv) <= tol else 0.0
+            out["score01"] = out["within_tol"]
     elif qtype == "text":
         gta = str(gt.get("answer") or "")
         if judge is not None:
@@ -109,6 +114,7 @@ def score_item(qtype: str, gt: dict[str, Any], pred_text: str,
             # transparent fallback: normalized substring overlap (flagged elsewhere)
             a, b = gta.lower().strip(), pred_text.lower().strip()
             out["llm_match"] = 1.0 if (a and (a in b or b in a)) else 0.0
+        out["score01"] = out["llm_match"]
     return out
 
 
@@ -148,6 +154,13 @@ def summarize(scored: list[dict[str, Any]], llm_judge_available: bool) -> dict[s
     if m["duration_within_tol"] is not None: parts.append(m["duration_within_tol"])
     if m["text_llm_match"] is not None: parts.append(m["text_llm_match"])
     m["navqa_score"] = mean(parts) if parts else None
+    # Per-length-category breakdown (SHORT/MEDIUM/LONG) — OC-NaVQA's core axis:
+    # mean per-item score01 within each horizon bucket, to see long-horizon decay.
+    m["by_length"] = {}
+    for cat in ("SHORT", "MEDIUM", "LONG"):
+        g = [s for s in scored if s.get("length_category") == cat]
+        sc = [s.get("score01") for s in g if s.get("score01") is not None]
+        m["by_length"][cat] = {"n": len(g), "mean_score01": (mean(sc) if sc else None)}
     return m
 
 
@@ -192,6 +205,7 @@ def evaluate_track4(
         pred = str(r.get("answer") or "")
         latency_by_q[qid] = float(r.get("latency_seconds") or 0.0)
         gt = dict(gt_by.get(qid, {})); gt["_question"] = q.get("raw_question") or q.get("question") or ""
+        gt.setdefault("length_category", q.get("length_category"))
         scored.append({**score_item(qtype, gt, pred, judge), "question_id": qid})
 
     metrics = summarize(scored, llm_judge_available=judge is not None)

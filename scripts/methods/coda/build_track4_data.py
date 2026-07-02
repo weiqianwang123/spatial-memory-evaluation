@@ -125,17 +125,26 @@ def main() -> int:
             if not ok:
                 stats["skipped"] += 1
                 continue
+            # OC-NaVQA length category (SHORT/MEDIUM/LONG) = the context horizon the
+            # question must reason over (seconds from seq start to "now"). Read from
+            # qa_unfilled (NOT the id prefix — that is the seq number for most seqs).
+            length_cat = fq.get("length_category")
+            length_s = fq.get("length")
+            ans["length_category"] = length_cat
             questions.append({"question_id": uuid, "question": q_aug, "type": qtype,
                               "category": ans["category"], "episode_id": f"coda-seq{seq}",
+                              "length_category": length_cat, "length_seconds": length_s,
                               "raw_question": question})
             answers.append(ans)
             stats["by_type"][qtype] = stats["by_type"].get(qtype, 0) + 1
+            stats["by_length"] = stats.get("by_length", {})
+            stats["by_length"][length_cat] = stats["by_length"].get(length_cat, 0) + 1
         (qdir / "questions.jsonl").write_text("".join(json.dumps(q) + "\n" for q in questions))
         (qdir / "answers.jsonl").write_text("".join(json.dumps(a) + "\n" for a in answers))
         stats["per_seq"][seq] = len(questions)
         print(f"[seq {seq}] {len(questions)} questions -> {qdir}")
     print(f"\nTotal: {sum(stats['per_seq'].values())} questions across {len(stats['per_seq'])} seqs "
-          f"| by_type={stats['by_type']} | skipped={stats['skipped']}")
+          f"| by_type={stats['by_type']} | by_length={stats.get('by_length',{})} | skipped={stats['skipped']}")
     return 0
 
 
